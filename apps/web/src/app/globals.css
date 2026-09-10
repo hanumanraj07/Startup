@@ -1,0 +1,145 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * Design tokens, verbatim from docs/19-ui-design-system.md.
+ *
+ * Light palette on bare :root. Dark tokens redefined under both the
+ * prefers-color-scheme media query (guarded so an explicit light choice wins)
+ * and the [data-theme="dark"] attribute (so an explicit toggle wins in both
+ * directions). Never define a color only inside one of those blocks.
+ */
+:root {
+  /* Brand — confident blue. Actions, links, active states, map pins. */
+  --brand-50: #eef2fe;
+  --brand-100: #e0e7fd;
+  --brand-500: #3d63e8;
+  --brand-600: #2b4fd8;
+  --brand-700: #1e3baa;
+  /*
+   * A solid-fill button background paired with white text needs AA contrast
+   * (4.5:1) against that white text specifically — a different requirement
+   * from --brand-600's other job as *text* color on a dark page background,
+   * which instead needs to contrast against paper-50/paper-0 and so gets
+   * lifted lighter for dark mode below. One value can't satisfy both: white
+   * text on the dark-mode-lifted #5b7cf0 only reaches 3.75:1 (caught by a
+   * real Lighthouse run, not assumed). This token is never redefined for
+   * dark mode — #2b4fd8 gives white text 6.5:1 in both themes — so use it
+   * for any bg-*-with-white-text button/fill, and keep --brand-600 for text
+   * and non-text (outline/decorative) uses.
+   */
+  --brand-solid: #2b4fd8;
+
+  /* Ink — warm-leaning near-black, never pure #000. */
+  --ink-900: #0e1116;
+  --ink-700: #1c2230;
+  --ink-500: #4a5468;
+  --ink-400: #6b7688;
+  --ink-300: #8a94a6;
+
+  /* Paper — warm off-white, not clinical white. */
+  --paper-0: #ffffff;
+  --paper-50: #faf9f7;
+  --paper-100: #f3f1ed;
+  --line: #e6e4e0;
+
+  /* State language — consistent everywhere, no exceptions. */
+  --verified: #0f8a5f;
+  --progress: #c77a17;
+  --dispute: #c4342a;
+  --info: #2b4fd8;
+
+  --font-sans:
+    'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --shadow-card:
+    0 1px 2px rgb(14 17 22 / 0.06), 0 1px 3px rgb(14 17 22 / 0.04);
+  --shadow-float:
+    0 4px 12px rgb(14 17 22 / 0.1), 0 2px 4px rgb(14 17 22 / 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --ink-900: #f4f5f7;
+    /*
+     * --ink-700/--ink-500/--ink-400/--ink-300 were never redefined here
+     * before — only --ink-900 was — so dark mode silently inherited the
+     * LIGHT palette's values for everything else. --ink-700 (#1c2230, a very
+     * dark navy) is form labels and a good share of body text app-wide; on a
+     * dark background that measured 1.09:1 in a real Lighthouse run —
+     * effectively invisible. --ink-400/--ink-300 (dt labels, captions,
+     * timestamps) measured 3.79:1, short of the 4.5:1 required. This block
+     * was the majority of the dark-mode accessibility failures found.
+     */
+    --ink-700: #cbd1da;
+    --ink-500: #a8b0bf;
+    --ink-400: #8892a0;
+    --ink-300: #808a98;
+    --paper-0: #161a21;
+    --paper-50: #0e1116;
+    --paper-100: #1e2430;
+    --line: #2a313d;
+    --brand-600: #5b7cf0;
+    --verified: #2fa97a;
+    --progress: #e0973a;
+    --dispute: #e05b4f;
+  }
+}
+
+:root[data-theme='dark'] {
+  --ink-900: #f4f5f7;
+  --ink-700: #cbd1da;
+  --ink-500: #a8b0bf;
+  --ink-400: #8892a0;
+  --ink-300: #808a98;
+  --paper-0: #161a21;
+  --paper-50: #0e1116;
+  --paper-100: #1e2430;
+  --line: #2a313d;
+  --brand-600: #5b7cf0;
+  --verified: #2fa97a;
+  --progress: #e0973a;
+  --dispute: #e05b4f;
+}
+
+* {
+  border-color: var(--line);
+}
+
+html {
+  color-scheme: light dark;
+}
+
+body {
+  background: var(--paper-50);
+  color: var(--ink-900);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Money, distance, ratings, countdowns — anything compared in a list must not
+   jitter or misalign. Mandatory per docs/19-ui-design-system.md. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Density modes: worker surfaces get larger tap targets and type, since a
+   worker is often one-handed, outdoors, in bright sun. */
+[data-surface='worker'] {
+  --tap-min: 48px;
+}
+
+[data-surface='app'] {
+  --tap-min: 40px;
+}

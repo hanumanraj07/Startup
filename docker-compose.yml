@@ -1,0 +1,97 @@
+# Local development services for OnSite.
+# Requires Docker Desktop to be running.
+#
+#   docker compose up -d
+#
+# Postgres ships with PostGIS, which is not optional: the matching engine
+# depends on ST_DWithin. See docs/06-database-design.md.
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: onsite-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: onsite
+      POSTGRES_PASSWORD: onsite
+      POSTGRES_DB: onsite
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Creates the onsite_app database from template0 on a fresh volume.
+      # See the comments in that file for why the app does not use POSTGRES_DB.
+      # Named to sort after the image's own 10_postgis.sh; the entrypoint only
+      # runs files directly in this directory, so it is mounted as a file.
+      - ./infra/docker/db-init/20-app-database.sql:/docker-entrypoint-initdb.d/20-app-database.sql:ro
+    command:
+      # Raised from the default 100 so multiple API replicas plus the worker
+      # process can be run locally without exhausting the pool.
+      # See the pool arithmetic in docs/20-scalability-performance.md.
+      - 'postgres'
+      - '-c'
+      - 'max_connections=200'
+      - '-c'
+      - 'shared_preload_libraries=pg_stat_statements'
+      - '-c'
+      - 'pg_stat_statements.track=all'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U onsite -d onsite']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: onsite-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    command: ['redis-server', '--appendonly', 'yes']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # S3-compatible object storage. Proof photos and video are uploaded
+  # browser-to-storage with presigned URLs and never pass through the API.
+  storage:
+    image: minio/minio:latest
+    container_name: onsite-storage
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - minio-data:/data
+    command: ['server', '/data', '--console-address', ':9001']
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Creates the media bucket on first run, then exits.
+  storage-init:
+    image: minio/mc:latest
+    container_name: onsite-storage-init
+    depends_on:
+      storage:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://storage:9000 minioadmin minioadmin;
+      mc mb --ignore-existing local/onsite-media;
+      echo 'Bucket onsite-media ready';
+      "
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:

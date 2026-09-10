@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "./dist",
+    // Incremental is inherited from the shared base config. It has to be off
+    // here: the Nest CLI deletes outDir before compiling, and the stale
+    // tsconfig.tsbuildinfo left tsc believing the project was already built,
+    // so it emitted nothing and the server started against an empty dist.
+    "incremental": false,
+    // Never ship a partially emitted build. Without this, a type error still
+    // produces JavaScript, and the failure surfaces as a confusing
+    // MODULE_NOT_FOUND at runtime instead of a clear compile error.
+    "noEmitOnError": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "prisma", "**/*.test.ts"]
+}

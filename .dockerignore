@@ -1,0 +1,11 @@
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/*.tsbuildinfo
+.git
+.env
+.env.backup
+**/.env
+**/.env.backup
+infra/k6

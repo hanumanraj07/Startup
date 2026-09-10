@@ -1,0 +1,868 @@
+// OnSite database schema.
+//
+// The contract is docs/06-database-design.md. Change that file first.
+//
+// PostGIS note: Prisma has no native geography type. Geography columns are
+// declared Unsupported here so Prisma manages them in migrations without
+// reading them, and are populated by the database as GENERATED columns derived
+// from the latitude and longitude Prisma does write. All spatial reads go
+// through apps/api/src/repositories/geo.repository.ts and nowhere else.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  // Only PostGIS. The postgis/postgis image also preinstalls topology,
+  // fuzzystrmatch and tiger_geocoder into the default database; the initial
+  // migration resets the schema so Prisma owns exactly this one extension.
+  extensions = [postgis]
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────
+
+enum TaskStatus {
+  DRAFT
+  PUBLISHED
+  MATCHING
+  ASSIGNED
+  WORKER_EN_ROUTE
+  ARRIVED
+  IN_PROGRESS
+  SUBMITTED
+  UNDER_REVIEW
+  COMPLETED
+  PAYMENT_RELEASED
+  DISPUTED
+  CANCELLED
+  EXPIRED
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+enum PlatformRole {
+  USER
+  ADMIN
+}
+
+enum ActorRole {
+  REQUESTER
+  WORKER
+  ADMIN
+  SYSTEM
+}
+
+enum ProofType {
+  PHOTO
+  VIDEO
+  NOTE
+  STRUCTURED_FIELD
+  SIGNATURE
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum KycStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  RESUBMIT
+}
+
+enum DocumentType {
+  AADHAAR
+  PAN
+  DRIVING_LICENCE
+  VOTER_ID
+  PASSPORT
+}
+
+enum PayoutAccountType {
+  BANK
+  UPI
+}
+
+enum OfferResponse {
+  ACCEPTED
+  DECLINED
+  EXPIRED
+}
+
+enum PaymentGateway {
+  RAZORPAY
+  MOCK
+}
+
+enum PaymentStatus {
+  CREATED
+  AUTHORIZED
+  CAPTURED
+  HELD
+  RELEASED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  FAILED
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+  REVERSED
+}
+
+enum LedgerAccount {
+  REQUESTER_FUNDS
+  ESCROW
+  PLATFORM_COMMISSION
+  WORKER_PAYABLE
+  WORKER_SETTLED
+  GATEWAY_FEE
+  GST_PAYABLE
+  TCS_PAYABLE
+  TDS_PAYABLE
+  REFUND
+}
+
+enum LedgerEntryType {
+  CAPTURE
+  COMMISSION
+  RELEASE
+  REFUND
+  PAYOUT
+  FEE
+  TAX
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  WITHDRAWN
+}
+
+enum DisputeResolution {
+  RELEASE_TO_WORKER
+  REFUND_TO_REQUESTER
+  SPLIT
+}
+
+enum ReviewDirection {
+  REQUESTER_TO_WORKER
+  WORKER_TO_REQUESTER
+}
+
+enum OtpChannel {
+  SMS
+  EMAIL
+}
+
+enum ReportStatus {
+  OPEN
+  REVIEWING
+  RESOLVED
+  DISMISSED
+}
+
+// ─── Identity ────────────────────────────────────────────────────────────
+
+model User {
+  id              String    @id @default(uuid(7))
+  email           String    @unique
+  emailVerifiedAt DateTime? @map("email_verified_at")
+  phone           String?   @unique
+  phoneVerifiedAt DateTime? @map("phone_verified_at")
+  passwordHash    String?   @map("password_hash")
+  googleId        String?   @unique @map("google_id")
+
+  // Public projection fields.
+  displayName String  @map("display_name")
+  avatarUrl   String? @map("avatar_url")
+  homeCity    String? @map("home_city")
+
+  // PRIVATE. Never crosses the marketplace boundary. See docs/12-trust-safety.md.
+  homeAddress String? @map("home_address")
+  homeLat     Float?  @map("home_lat")
+  homeLng     Float?  @map("home_lng")
+  // Requester location. Exists for convenience features. NEVER an input to matching.
+  // Database-generated from homeLat/homeLng; see the postgis_spatial migration.
+  // Declared here so Prisma does not report the generated column as drift.
+  homeGeog    Unsupported("geography(Point, 4326)")? @default(dbgenerated("(st_setsrid(st_makepoint(home_lng, home_lat), 4326))::geography")) @map("home_geog")
+
+  verificationLevel Int          @default(0) @map("verification_level")
+  platformRole      PlatformRole @default(USER) @map("platform_role")
+  status            UserStatus   @default(ACTIVE)
+  suspendedReason   String?      @map("suspended_reason")
+  // Bumped on suspension so outstanding access tokens are invalidated at once.
+  tokenVersion      Int          @default(0) @map("token_version")
+
+  /// Per-category push/email opt-outs; see notification.service.ts's
+  /// UserNotificationPrefs shape. Absent or missing keys default to enabled.
+  /// A category flagged `nonDisableable` in notifications/events.ts ignores
+  /// this at dispatch time regardless of what is stored here.
+  notificationPrefs Json? @map("notification_prefs")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  workerProfile     WorkerProfile?
+  kycSubmissions    KycSubmission[]
+  payoutAccounts    PayoutAccount[]
+  refreshTokens     RefreshToken[]
+  otpCodes          OtpCode[]
+  pushSubscriptions PushSubscription[]
+  notifications     Notification[]
+
+  requestedTasks    Task[]              @relation("RequesterTasks")
+  assignedTasks     Task[]              @relation("AssignedWorkerTasks")
+  taskOffers        TaskOffer[]
+  taskProofs        TaskProof[]
+  arrivalRecords    ArrivalRecord[]
+  messages          Message[]
+  payments          Payment[]
+  payouts           Payout[]
+  reviewsGiven      Review[]            @relation("ReviewAuthor")
+  reviewsReceived   Review[]            @relation("ReviewSubject")
+  disputesRaised    Dispute[]           @relation("DisputeRaiser")
+  disputeStatements DisputeStatement[]
+  statusChanges     TaskStatusHistory[]
+  reportsFiled      Report[]            @relation("Reporter")
+  reportsReceived   Report[]            @relation("ReportedUser")
+  auditLogs         AuditLog[]
+
+  @@index([status])
+  @@map("users")
+}
+
+model WorkerProfile {
+  id     String @id @default(uuid(7))
+  userId String @unique @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  baseLat  Float  @map("base_lat")
+  baseLng  Float  @map("base_lng")
+  baseCity String @map("base_city")
+  // THE matching input. GIST indexed. Database-generated from baseLat/baseLng.
+  baseGeog Unsupported("geography(Point, 4326)")? @default(dbgenerated("(st_setsrid(st_makepoint(base_lng, base_lat), 4326))::geography")) @map("base_geog")
+
+  workingRadiusMeters Int     @default(10000) @map("working_radius_m")
+  isAvailable         Boolean @default(false) @map("is_available")
+
+  ratingAvg      Float?  @map("rating_avg")
+  ratingCount    Int     @default(0) @map("rating_count")
+  tasksOffered   Int     @default(0) @map("tasks_offered")
+  tasksAccepted  Int     @default(0) @map("tasks_accepted")
+  tasksCompleted Int     @default(0) @map("tasks_completed")
+  tasksAbandoned Int     @default(0) @map("tasks_abandoned")
+  completionRate Float?  @map("completion_rate")
+  responseRate   Float?  @map("response_rate")
+
+  lastActiveAt DateTime? @map("last_active_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  categories WorkerCategory[]
+
+  @@index([isAvailable])
+  // The index the matching engine lives on. Declared here so Prisma knows it
+  // exists; created in the postgis_spatial migration.
+  @@index([baseGeog(ops: raw("gist_geography_ops"))], type: Gist, map: "worker_profiles_base_geog_gix")
+  @@map("worker_profiles")
+}
+
+model WorkerCategory {
+  workerProfileId String        @map("worker_profile_id")
+  categoryId      String        @map("category_id")
+  workerProfile   WorkerProfile @relation(fields: [workerProfileId], references: [id], onDelete: Cascade)
+  category        Category      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([workerProfileId, categoryId])
+  @@map("worker_categories")
+}
+
+model KycSubmission {
+  id     String @id @default(uuid(7))
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  documentType DocumentType @map("document_type")
+  // Encrypted at rest. Never returned by any API, including to the submitter.
+  documentNumberEncrypted String @map("document_number_encrypted")
+  // Storage keys, never public URLs. Access by short-lived presigned GET only.
+  documentFrontKey String  @map("document_front_key")
+  documentBackKey  String? @map("document_back_key")
+  selfieKey        String  @map("selfie_key")
+
+  status           KycStatus @default(PENDING)
+  reviewedByAdminId String?  @map("reviewed_by_admin_id")
+  reviewedAt       DateTime? @map("reviewed_at")
+  rejectionReason  String?   @map("rejection_reason")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([status, createdAt])
+  @@index([userId])
+  @@map("kyc_submissions")
+}
+
+model PayoutAccount {
+  id     String @id @default(uuid(7))
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type PayoutAccountType
+  // Masked. The full value lives with the payment gateway, not here.
+  accountNumberMasked String? @map("account_number_masked")
+  ifsc                String?
+  upiVpa              String? @map("upi_vpa")
+  panNumberEncrypted  String  @map("pan_number_encrypted")
+
+  gatewayContactId     String? @map("gateway_contact_id")
+  gatewayFundAccountId String? @map("gateway_fund_account_id")
+  isVerified           Boolean @default(false) @map("is_verified")
+  isDefault            Boolean @default(false) @map("is_default")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  payouts Payout[]
+
+  @@index([userId])
+  @@map("payout_accounts")
+}
+
+model RefreshToken {
+  id        String @id @default(uuid(7))
+  userId    String @map("user_id")
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String @unique @map("token_hash")
+  // Presenting a retired token from a family revokes the entire family.
+  familyId  String @map("family_id")
+
+  expiresAt    DateTime  @map("expires_at")
+  revokedAt    DateTime? @map("revoked_at")
+  replacedById String?   @map("replaced_by_id")
+  userAgent    String?   @map("user_agent")
+  ipAddress    String?   @map("ip_address")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+model OtpCode {
+  id        String     @id @default(uuid(7))
+  userId    String     @map("user_id")
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel   OtpChannel
+  purpose   String
+  codeHash  String     @map("code_hash")
+  expiresAt DateTime   @map("expires_at")
+  consumedAt DateTime? @map("consumed_at")
+  attempts  Int        @default(0)
+  createdAt DateTime   @default(now()) @map("created_at")
+
+  @@index([userId, purpose])
+  @@map("otp_codes")
+}
+
+// ─── Reference data ──────────────────────────────────────────────────────
+
+model Category {
+  id                     String  @id @default(uuid(7))
+  slug                   String  @unique
+  name                   String
+  description            String
+  icon                   String
+  defaultProofRequirements Json  @map("default_proof_requirements")
+  suggestedMinPaise      BigInt  @map("suggested_min_paise")
+  suggestedMaxPaise      BigInt  @map("suggested_max_paise")
+  isActive               Boolean @default(true) @map("is_active")
+
+  tasks         Task[]
+  workerLinks   WorkerCategory[]
+
+  @@map("categories")
+}
+
+/// Enforces the launch scope in data rather than in scattered conditionals.
+model City {
+  id         String  @id @default(uuid(7))
+  name       String
+  state      String
+  centerLat  Float   @map("center_lat")
+  centerLng  Float   @map("center_lng")
+  centerGeog Unsupported("geography(Point, 4326)")? @default(dbgenerated("(st_setsrid(st_makepoint(center_lng, center_lat), 4326))::geography")) @map("center_geog")
+  radiusMeters Int   @map("radius_m")
+  isActive   Boolean @default(true) @map("is_active")
+
+  tasks Task[]
+
+  @@unique([name, state])
+  @@map("cities")
+}
+
+// ─── Tasks ───────────────────────────────────────────────────────────────
+
+model Task {
+  id          String @id @default(uuid(7))
+  requesterId String @map("requester_id")
+  requester   User   @relation("RequesterTasks", fields: [requesterId], references: [id])
+  categoryId  String @map("category_id")
+  category    Category @relation(fields: [categoryId], references: [id])
+  cityId      String @map("city_id")
+  city        City   @relation(fields: [cityId], references: [id])
+
+  title       String
+  description String
+  status      TaskStatus @default(DRAFT)
+
+  // WHERE THE WORK HAPPENS. The matching input. GIST indexed.
+  taskLat       Float   @map("task_lat")
+  taskLng       Float   @map("task_lng")
+  taskGeog      Unsupported("geography(Point, 4326)")? @default(dbgenerated("(st_setsrid(st_makepoint(task_lng, task_lat), 4326))::geography")) @map("task_geog")
+  taskAddress   String  @map("task_address")
+  taskPlaceName String? @map("task_place_name")
+  taskPlaceId   String? @map("task_place_id")
+
+  // PRIVATE. Where the requester was. Never exposed, never matched on.
+  requesterLat  Float?  @map("requester_lat")
+  requesterLng  Float?  @map("requester_lng")
+  requesterGeog Unsupported("geography(Point, 4326)")? @default(dbgenerated("(st_setsrid(st_makepoint(requester_lng, requester_lat), 4326))::geography")) @map("requester_geog")
+
+  budgetPaise BigInt @map("budget_paise")
+  // Basis points, stored per task so a pricing change never rewrites history.
+  commissionRateBps Int    @map("commission_rate_bps")
+  commissionPaise   BigInt @map("commission_paise")
+  gstPaise          BigInt @default(0) @map("gst_paise")
+  tcsPaise          BigInt @default(0) @map("tcs_paise")
+  tdsPaise          BigInt @default(0) @map("tds_paise")
+  workerPayoutPaise BigInt @map("worker_payout_paise")
+
+  deadlineAt        DateTime  @map("deadline_at")
+  /// submitted_at + 24h. The authoritative auto-approval deadline the sweeper reads.
+  reviewDeadlineAt  DateTime? @map("review_deadline_at")
+
+  proofRequirements    Json      @map("proof_requirements")
+  minVerificationLevel Int       @default(1) @map("min_verification_level")
+  riskLevel            RiskLevel @default(LOW) @map("risk_level")
+  riskFlags            String[]  @map("risk_flags")
+  attachmentKeys       String[]  @map("attachment_keys")
+
+  assignedWorkerId String? @map("assigned_worker_id")
+  assignedWorker   User?   @relation("AssignedWorkerTasks", fields: [assignedWorkerId], references: [id])
+  assignedAt       DateTime? @map("assigned_at")
+
+  currentRadiusMeters Int      @default(3000) @map("current_radius_m")
+  publishedAt         DateTime? @map("published_at")
+  submittedAt         DateTime? @map("submitted_at")
+  completedAt         DateTime? @map("completed_at")
+  cancelledAt         DateTime? @map("cancelled_at")
+  cancellationReason  String?   @map("cancellation_reason")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  statusHistory  TaskStatusHistory[]
+  offers         TaskOffer[]
+  arrivalRecords ArrivalRecord[]
+  proofs         TaskProof[]
+  messages       Message[]
+  payment        Payment?
+  payout         Payout?
+  ledgerEntries  LedgerEntry[]
+  reviews        Review[]
+  disputes       Dispute[]
+  reports        Report[]
+
+  @@index([requesterId, createdAt(sort: Desc)])
+  @@index([assignedWorkerId, status])
+  @@index([status])
+  // The worker feed's spatial index. Created in the postgis_spatial migration.
+  @@index([taskGeog(ops: raw("gist_geography_ops"))], type: Gist, map: "tasks_task_geog_gix")
+  @@map("tasks")
+}
+
+/// Append-only. Written by transitions.ts on every status change, and read as
+/// dispute evidence.
+model TaskStatusHistory {
+  id           String      @id @default(uuid(7))
+  taskId       String      @map("task_id")
+  task         Task        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  fromStatus   TaskStatus? @map("from_status")
+  toStatus     TaskStatus  @map("to_status")
+  actorUserId  String?     @map("actor_user_id")
+  actor        User?       @relation(fields: [actorUserId], references: [id])
+  actorRole    ActorRole   @map("actor_role")
+  reason       String?
+  metadata     Json?
+  createdAt    DateTime    @default(now()) @map("created_at")
+
+  @@index([taskId, createdAt])
+  @@map("task_status_history")
+}
+
+/// Which workers were matched, ranked, notified, and what they did. This is
+/// what makes response rate measurable and ranking auditable.
+model TaskOffer {
+  id       String @id @default(uuid(7))
+  taskId   String @map("task_id")
+  task     Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  workerId String @map("worker_id")
+  worker   User   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+  rank          Int
+  score         Float
+  distanceMeters Float @map("distance_m")
+  radiusTierMeters Int @map("radius_tier_m")
+
+  notifiedAt   DateTime?      @map("notified_at")
+  viewedAt     DateTime?      @map("viewed_at")
+  respondedAt  DateTime?      @map("responded_at")
+  response     OfferResponse?
+  declineReason String?       @map("decline_reason")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([taskId, workerId])
+  @@index([workerId, notifiedAt(sort: Desc)])
+  @@map("task_offers")
+}
+
+model ArrivalRecord {
+  id       String @id @default(uuid(7))
+  taskId   String @map("task_id")
+  task     Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  workerId String @map("worker_id")
+  worker   User   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+  reportedLat  Float @map("reported_lat")
+  reportedLng  Float @map("reported_lng")
+  reportedGeog Unsupported("geography(Point, 4326)")? @default(dbgenerated("(st_setsrid(st_makepoint(reported_lng, reported_lat), 4326))::geography")) @map("reported_geog")
+  accuracyMeters Float? @map("accuracy_m")
+
+  /// Computed server-side with PostGIS. The client never supplies this.
+  distanceFromTaskMeters Float   @map("distance_from_task_m")
+  isWithinGeofence       Boolean @map("is_within_geofence")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([taskId])
+  @@map("arrival_records")
+}
+
+model TaskProof {
+  id       String    @id @default(uuid(7))
+  taskId   String    @map("task_id")
+  task     Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  workerId String    @map("worker_id")
+  worker   User      @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  type     ProofType
+
+  /// Object storage key, never a public URL.
+  storageKey String? @map("storage_key")
+  mimeType   String? @map("mime_type")
+  sizeBytes  Int?    @map("size_bytes")
+
+  reportedLat  Float? @map("reported_lat")
+  reportedLng  Float? @map("reported_lng")
+  reportedGeog Unsupported("geography(Point, 4326)")? @default(dbgenerated("(st_setsrid(st_makepoint(reported_lng, reported_lat), 4326))::geography")) @map("reported_geog")
+  /// Server-computed.
+  distanceFromTaskMeters Float? @map("distance_from_task_m")
+  /// Surfaced to the requester and included in dispute evidence. Never silently blocks.
+  verificationFlags      String[] @map("verification_flags")
+
+  /// Client claim.
+  capturedAt DateTime? @map("captured_at")
+  /// Server fact.
+  uploadedAt DateTime  @default(now()) @map("uploaded_at")
+
+  fieldKey   String? @map("field_key")
+  fieldValue String? @map("field_value")
+  noteBody   String? @map("note_body")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([taskId, createdAt])
+  @@map("task_proofs")
+}
+
+model Message {
+  id       String @id @default(uuid(7))
+  taskId   String @map("task_id")
+  task     Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  senderId String @map("sender_id")
+  sender   User   @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  /// Raw body, retained as dispute evidence. Never sent to a client.
+  body String
+  /// What is actually delivered, with contact details stripped server-side.
+  redactedBody   String   @map("redacted_body")
+  redactionFlags String[] @map("redaction_flags")
+  attachmentKey  String?  @map("attachment_key")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  readAt    DateTime? @map("read_at")
+
+  @@index([taskId, createdAt])
+  @@map("messages")
+}
+
+// ─── Money ───────────────────────────────────────────────────────────────
+
+model Payment {
+  id          String @id @default(uuid(7))
+  taskId      String @unique @map("task_id")
+  task        Task   @relation(fields: [taskId], references: [id])
+  requesterId String @map("requester_id")
+  requester   User   @relation(fields: [requesterId], references: [id])
+
+  gateway         PaymentGateway
+  gatewayOrderId  String?        @map("gateway_order_id")
+  gatewayPaymentId String?       @map("gateway_payment_id")
+
+  amountPaise BigInt        @map("amount_paise")
+  status      PaymentStatus @default(CREATED)
+  /// Unique constraint, so the database prevents duplicate charges rather
+  /// than application logic.
+  idempotencyKey String @unique @map("idempotency_key")
+
+  failureReason     String?   @map("failure_reason")
+  capturedAt        DateTime? @map("captured_at")
+  releasedAt        DateTime? @map("released_at")
+  refundedAt        DateTime? @map("refunded_at")
+  refundAmountPaise BigInt?   @map("refund_amount_paise")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  ledgerEntries LedgerEntry[]
+
+  @@index([status])
+  @@map("payments")
+}
+
+model Payout {
+  id              String  @id @default(uuid(7))
+  taskId          String  @unique @map("task_id")
+  task            Task    @relation(fields: [taskId], references: [id])
+  workerId        String  @map("worker_id")
+  worker          User    @relation(fields: [workerId], references: [id])
+  payoutAccountId String? @map("payout_account_id")
+  payoutAccount   PayoutAccount? @relation(fields: [payoutAccountId], references: [id])
+
+  amountPaise BigInt       @map("amount_paise")
+  status      PayoutStatus @default(PENDING)
+  gatewayTransferId String? @map("gateway_transfer_id")
+  idempotencyKey    String  @unique @map("idempotency_key")
+
+  failureReason String?   @map("failure_reason")
+  attempts      Int       @default(0)
+  processedAt   DateTime? @map("processed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  ledgerEntries LedgerEntry[]
+
+  @@index([status])
+  @@map("payouts")
+}
+
+/// Double entry. The sum of amountPaise for any task MUST be exactly zero.
+/// Append-only: corrections are new entries, never updates.
+model LedgerEntry {
+  id        String  @id @default(uuid(7))
+  taskId    String? @map("task_id")
+  task      Task?   @relation(fields: [taskId], references: [id])
+  paymentId String? @map("payment_id")
+  payment   Payment? @relation(fields: [paymentId], references: [id])
+  payoutId  String? @map("payout_id")
+  payout    Payout? @relation(fields: [payoutId], references: [id])
+
+  account   LedgerAccount
+  entryType LedgerEntryType @map("entry_type")
+  /// Signed. Debits negative, credits positive.
+  amountPaise BigInt        @map("amount_paise")
+  description String
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([taskId])
+  @@index([account, createdAt])
+  @@map("ledger_entries")
+}
+
+/// Gateways replay webhooks deliberately. The unique eventId makes replay safe.
+model WebhookEvent {
+  id                String    @id @default(uuid(7))
+  gateway           PaymentGateway
+  eventId           String    @unique @map("event_id")
+  eventType         String    @map("event_type")
+  payload           Json
+  signatureVerified Boolean   @map("signature_verified")
+  processedAt       DateTime? @map("processed_at")
+  processingError   String?   @map("processing_error")
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  @@index([eventType, createdAt])
+  @@map("webhook_events")
+}
+
+// ─── Trust ───────────────────────────────────────────────────────────────
+
+model Review {
+  id       String @id @default(uuid(7))
+  taskId   String @map("task_id")
+  task     Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  raterId  String @map("rater_id")
+  rater    User   @relation("ReviewAuthor", fields: [raterId], references: [id])
+  rateeId  String @map("ratee_id")
+  ratee    User   @relation("ReviewSubject", fields: [rateeId], references: [id])
+
+  direction ReviewDirection
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([taskId, raterId])
+  @@index([rateeId, createdAt(sort: Desc)])
+  @@map("reviews")
+}
+
+model Dispute {
+  id         String @id @default(uuid(7))
+  taskId     String @map("task_id")
+  task       Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  raisedById String @map("raised_by_id")
+  raisedBy   User   @relation("DisputeRaiser", fields: [raisedById], references: [id])
+
+  reason      String
+  description String
+  status      DisputeStatus @default(OPEN)
+
+  resolution        DisputeResolution?
+  splitWorkerPaise  BigInt?   @map("split_worker_paise")
+  splitRefundPaise  BigInt?   @map("split_refund_paise")
+  resolvedByAdminId String?   @map("resolved_by_admin_id")
+  resolutionNotes   String?   @map("resolution_notes")
+  resolvedAt        DateTime? @map("resolved_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  statements DisputeStatement[]
+
+  @@index([status, createdAt])
+  @@map("disputes")
+}
+
+model DisputeStatement {
+  id        String   @id @default(uuid(7))
+  disputeId String   @map("dispute_id")
+  dispute   Dispute  @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id])
+  body      String
+  attachmentKeys String[] @map("attachment_keys")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([disputeId])
+  @@map("dispute_statements")
+}
+
+model Report {
+  id             String       @id @default(uuid(7))
+  reporterId     String       @map("reporter_id")
+  reporter       User         @relation("Reporter", fields: [reporterId], references: [id])
+  reportedUserId String       @map("reported_user_id")
+  reportedUser   User         @relation("ReportedUser", fields: [reportedUserId], references: [id])
+  taskId         String?      @map("task_id")
+  task           Task?        @relation(fields: [taskId], references: [id])
+
+  reason      String
+  description String
+  status      ReportStatus @default(OPEN)
+  reviewedByAdminId String?  @map("reviewed_by_admin_id")
+  reviewedAt  DateTime?      @map("reviewed_at")
+  createdAt   DateTime       @default(now()) @map("created_at")
+
+  @@index([status, createdAt])
+  @@map("reports")
+}
+
+model UserBlock {
+  blockerId String   @map("blocker_id")
+  blockedId String   @map("blocked_id")
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([blockerId, blockedId])
+  @@map("user_blocks")
+}
+
+// ─── Notifications ───────────────────────────────────────────────────────
+
+model Notification {
+  id     String @id @default(uuid(7))
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type     String
+  title    String
+  body     String
+  data     Json?
+  channels String[]
+  readAt   DateTime? @map("read_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("notifications")
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid(7))
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+  lastUsedAt DateTime? @map("last_used_at")
+
+  @@index([userId])
+  @@map("push_subscriptions")
+}
+
+// ─── Audit ───────────────────────────────────────────────────────────────
+
+/// Written for every security-sensitive action. Append-only, and not
+/// deletable by admins.
+model AuditLog {
+  id          String  @id @default(uuid(7))
+  actorUserId String? @map("actor_user_id")
+  actor       User?   @relation(fields: [actorUserId], references: [id])
+  actorIp     String? @map("actor_ip")
+  action      String
+  entityType  String  @map("entity_type")
+  entityId    String? @map("entity_id")
+  before      Json?
+  after       Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId])
+  @@index([actorUserId, createdAt(sort: Desc)])
+  @@map("audit_logs")
+}

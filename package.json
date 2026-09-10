@@ -1,0 +1,46 @@
+{
+  "name": "onsite",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OnSite — a marketplace for remote physical tasks in India",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "test:watch": "turbo run test:watch",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
+    "db:generate": "pnpm --filter @onsite/api db:generate",
+    "db:migrate": "pnpm --filter @onsite/api db:migrate",
+    "db:migrate:deploy": "pnpm --filter @onsite/api db:migrate:deploy",
+    "db:seed": "pnpm --filter @onsite/api db:seed",
+    "db:studio": "pnpm --filter @onsite/api db:studio",
+    "db:reset": "pnpm --filter @onsite/api db:reset",
+    "demo:reset": "pnpm db:reset && pnpm db:seed",
+    "services:up": "docker compose up -d",
+    "services:down": "docker compose down",
+    "services:logs": "docker compose logs -f",
+    "clean": "turbo run clean && rimraf node_modules"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "prettier": "^3.4.2",
+    "rimraf": "^6.0.1",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  },
+  "prettier": {
+    "semi": true,
+    "singleQuote": true,
+    "trailingComma": "all",
+    "printWidth": 100,
+    "tabWidth": 2,
+    "endOfLine": "lf"
+  }
+}

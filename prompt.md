@@ -1477,3 +1477,1093 @@ Push Notifications
 Maps / Geocoding
 
 One thing I'd change from your original idea: don't initially market it as “any task anywhere.” Start with a narrow, high-trust category such as remote inspection/verification and local errands, prove that strangers will pay strangers to do physical tasks, and then expand. That gives you a much cleaner MVP, safer operations, and a much better chance of getting the marketplace liquidity you need.
+
+
+
+First create a project specification/documentation layer. This gives the AI a source of truth and prevents it from randomly inventing architecture, database models, APIs, and business rules as you build.
+
+I'd create this structure before writing the actual application code:
+
+remote-task-platform/
+│
+├── docs/
+│   ├── 01-product-requirements.md
+│   ├── 02-business-model.md
+│   ├── 03-user-flows.md
+│   ├── 04-feature-specification.md
+│   ├── 05-system-architecture.md
+│   ├── 06-database-design.md
+│   ├── 07-api-specification.md
+│   ├── 08-authentication-authorization.md
+│   ├── 09-task-lifecycle.md
+│   ├── 10-matching-engine.md
+│   ├── 11-payment-flow.md
+│   ├── 12-trust-safety.md
+│   ├── 13-notification-system.md
+│   ├── 14-dispute-resolution.md
+│   ├── 15-admin-panel.md
+│   ├── 16-security-requirements.md
+│   ├── 17-mvp-scope.md
+│   └── 18-future-roadmap.md
+│
+├── ai/
+│   ├── project-context.md
+│   ├── coding-rules.md
+│   ├── architecture-rules.md
+│   └── task-generation-rules.md
+│
+├── README.md
+├── CHANGELOG.md
+└── TODO.md
+
+But let's go through what each file should contain, because this part is more important than the filenames.
+
+1. 01-product-requirements.md
+
+This is the most important file.
+
+It explains exactly what you're building.
+
+For example:
+
+# Product Requirements
+
+## Product Name
+TBD
+
+## Problem
+
+Users sometimes need physical tasks completed at
+locations where they are not physically present.
+
+Example:
+
+A user in Ahmedabad wants someone in Kolkata to
+inspect a laptop before purchasing it.
+
+## Solution
+
+A marketplace connecting task requesters with
+verified local task executors.
+
+## Core Users
+
+1. Task Requester
+2. Task Executor
+3. Administrator
+
+## Core Value Proposition
+
+Requesters can get physical tasks completed remotely.
+
+Executors can earn money by completing nearby tasks.
+
+## Initial Market
+
+India
+
+## Initial MVP
+
+Remote inspection
+Local verification
+Shopping assistance
+Document collection
+Local photography
+
+This becomes the AI's business context.
+
+2. 02-business-model.md
+
+This explains how your company makes money.
+
+Include:
+
+# Business Model
+
+## Platform Fee
+
+Requester pays ₹X.
+
+Worker receives X%.
+
+Platform keeps X%.
+
+## Example
+
+Task price = ₹1,000
+
+Worker = ₹850
+
+Platform = ₹150
+
+## Future Revenue
+
+- Platform commission
+- Premium users
+- Business accounts
+- API access
+- Priority task matching
+- Subscription
+
+This is important because payment architecture depends heavily on your business model.
+
+3. 03-user-flows.md
+
+This is extremely important for AI development.
+
+Document every major journey.
+
+For example:
+
+REQUESTER
+
+Signup
+ ↓
+Login
+ ↓
+Create Task
+ ↓
+Select Location
+ ↓
+Add Instructions
+ ↓
+Set Budget
+ ↓
+Payment
+ ↓
+Task Published
+ ↓
+Worker Assigned
+ ↓
+Worker Performs Task
+ ↓
+Worker Submits Proof
+ ↓
+Requester Reviews
+ ↓
+Approve
+ ↓
+Payment Released
+ ↓
+Rating
+
+Then worker:
+
+WORKER
+
+Signup
+ ↓
+KYC
+ ↓
+Set Availability
+ ↓
+Set Location
+ ↓
+Browse Nearby Tasks
+ ↓
+View Task
+ ↓
+Accept
+ ↓
+Navigate
+ ↓
+Complete
+ ↓
+Upload Proof
+ ↓
+Submit
+ ↓
+Payment
+ ↓
+Rating
+4. 04-feature-specification.md
+
+List every feature.
+
+Example:
+
+# Features
+
+## Authentication
+
+- Email login
+- Phone login
+- OTP
+- Google login
+- Password reset
+
+## User Profile
+
+- Name
+- Profile picture
+- Phone
+- Email
+- KYC status
+- Rating
+
+## Task
+
+- Create
+- Edit
+- Cancel
+- Publish
+- Assign
+- Complete
+- Dispute
+
+## Location
+
+- Map
+- Search location
+- GPS
+- Geocoding
+- Radius search
+
+## Worker
+
+- Availability
+- Nearby tasks
+- Accept task
+- Reject task
+- Task history
+
+And importantly mark:
+
+MVP
+POST-MVP
+FUTURE
+
+Otherwise AI will happily build 400 features you didn't ask for. 😄
+
+5. 05-system-architecture.md
+
+This tells AI how the system should be built.
+
+For example:
+
+                    Mobile App
+                 React Native / Expo
+                         │
+                         ▼
+                     API Layer
+                  Node.js / NestJS
+                         │
+        ┌────────────────┼────────────────┐
+        ▼                ▼                ▼
+      Auth             Tasks           Payments
+        │                │                │
+        └────────────────┼────────────────┘
+                         ▼
+                   PostgreSQL
+                    + PostGIS
+                         │
+             ┌───────────┼───────────┐
+             ▼           ▼           ▼
+           Redis       Storage    Notifications
+
+Also specify:
+
+## Frontend
+
+React Native
+Expo
+TypeScript
+
+## Backend
+
+Node.js
+NestJS
+TypeScript
+
+## Database
+
+PostgreSQL
+PostGIS
+
+## Cache
+
+Redis
+
+## Storage
+
+Object storage
+
+## Authentication
+
+JWT + refresh tokens
+
+## API
+
+REST
+
+## Deployment
+
+Docker
+
+Now AI has architectural boundaries.
+
+6. 06-database-design.md
+
+This is another critical file.
+
+Define entities before asking AI to create Prisma/SQL schemas.
+
+For example:
+
+User
+ ├── Profile
+ ├── WorkerProfile
+ ├── KYC
+ ├── Wallet
+ └── Ratings
+
+Task
+ ├── TaskLocation
+ ├── TaskRequirements
+ ├── TaskAssignment
+ ├── TaskProof
+ ├── TaskMessages
+ ├── Payment
+ └── Review
+
+Then define tables.
+
+Example:
+
+## users
+
+id
+name
+email
+phone
+password_hash
+role
+status
+created_at
+updated_at
+## tasks
+
+id
+requester_id
+title
+description
+category_id
+location
+budget
+deadline
+status
+assigned_worker_id
+created_at
+updated_at
+
+And especially:
+
+## task_proofs
+
+id
+task_id
+worker_id
+type
+file_url
+latitude
+longitude
+captured_at
+created_at
+
+This prevents the AI from constantly changing your database structure.
+
+7. 07-api-specification.md
+
+This should define your backend API.
+
+Example:
+
+POST   /auth/register
+POST   /auth/login
+POST   /auth/verify-otp
+
+GET    /users/me
+PATCH  /users/me
+
+POST   /tasks
+GET    /tasks
+GET    /tasks/:id
+PATCH  /tasks/:id
+DELETE /tasks/:id
+
+POST   /tasks/:id/accept
+POST   /tasks/:id/cancel
+POST   /tasks/:id/submit
+
+POST   /tasks/:id/proofs
+GET    /tasks/:id/proofs
+
+POST   /tasks/:id/review
+POST   /tasks/:id/dispute
+
+For every endpoint specify:
+
+Request
+Response
+Authentication
+Authorization
+Validation
+Errors
+8. 08-authentication-authorization.md
+
+Don't leave security to "we'll figure it out later."
+
+Define:
+
+USER
+WORKER
+ADMIN
+BUSINESS
+
+And permissions.
+
+For example:
+
+Requester
+
+Can:
+✓ Create task
+✓ Edit own task
+✓ Pay
+✓ Chat with assigned worker
+✓ Approve task
+✓ Dispute task
+
+Cannot:
+✗ Access another user's tasks
+✗ Access worker KYC
+✗ Release arbitrary payments
+
+Worker:
+
+Can:
+✓ Browse available tasks
+✓ Accept task
+✓ Upload proof
+✓ Submit task
+
+Cannot:
+✗ Modify task budget
+✗ Access requester private data
+✗ Release payment
+9. 09-task-lifecycle.md
+
+I strongly recommend creating this separately.
+
+Your task is basically a state machine.
+
+Define:
+
+DRAFT
+ ↓
+PUBLISHED
+ ↓
+MATCHING
+ ↓
+ASSIGNED
+ ↓
+IN_PROGRESS
+ ↓
+SUBMITTED
+ ↓
+APPROVED
+ ↓
+COMPLETED
+
+Other paths:
+
+PUBLISHED → CANCELLED
+
+ASSIGNED → CANCELLED
+
+SUBMITTED → DISPUTED
+
+DISPUTED → COMPLETED
+
+Then define:
+
+Who can perform each transition?
+
+Example:
+
+PUBLISHED → ASSIGNED
+
+Performed by:
+Worker
+
+Condition:
+Task must be available.
+
+ASSIGNED → IN_PROGRESS
+
+Performed by:
+Worker
+
+Condition:
+Worker has accepted task.
+
+This will save you a ton of headaches later.
+
+10. 10-matching-engine.md
+
+This is one of the most unique parts of your startup.
+
+Define how workers are matched.
+
+Initial version:
+
+Task Location
+      ↓
+Find workers within 5 km
+      ↓
+Filter:
+- Available
+- Verified
+- Correct category
+- Not banned
+      ↓
+Rank by:
+- Distance
+- Rating
+- Completion rate
+- Experience
+      ↓
+Notify top workers
+
+Later:
+
+Match Score =
+distance score
++ rating score
++ reliability score
++ category experience
++ response rate
+
+Keep the first version simple.
+
+11. 11-payment-flow.md
+
+Define money movement before coding payments.
+
+Example:
+
+Requester
+    │
+    │ ₹1,000
+    ▼
+Payment Gateway
+    │
+    ▼
+Platform / Escrow-like state
+    │
+    ▼
+Worker completes task
+    │
+    ▼
+Requester approves
+    │
+    ▼
+Worker payout
+
+Define:
+
+Payment creation
+Payment success
+Payment failure
+Refund
+Cancellation
+Worker payout
+Platform fee
+Dispute
+Webhooks
+Idempotency
+
+This is one area where "AI just generate Stripe/Razorpay code" is asking for trouble.
+
+12. 12-trust-safety.md
+
+Very important for your business.
+
+Define:
+
+Worker verification
+Phone
+Email
+KYC
+Bank account
+Profile
+Task risk
+LOW
+MEDIUM
+HIGH
+PROHIBITED
+Prohibited tasks
+
+Define categories that your platform won't support.
+
+Also define:
+
+Report user
+Block user
+Safety incident
+Fraud report
+Account suspension
+13. 13-notification-system.md
+
+Define:
+
+Push notification
+Email
+SMS
+In-app notification
+
+Examples:
+
+Task created
+Worker accepted
+Worker arrived
+Worker submitted
+Requester approved
+Payment released
+Task disputed
+Task cancelled
+
+This prevents notification logic from being scattered everywhere.
+
+14. 14-dispute-resolution.md
+
+Define what happens when things go wrong.
+
+Example:
+
+Worker submits
+      ↓
+Requester disputes
+      ↓
+Payment frozen
+      ↓
+Evidence collected
+      ↓
+Admin reviews
+      ↓
+Decision
+    ↙   ↘
+Worker  Requester
+
+Evidence:
+
+Chat
+GPS
+Photos
+Videos
+Timestamp
+Task instructions
+Payment records
+15. 15-admin-panel.md
+
+Don't forget this.
+
+You need an admin system from the beginning, even if it's ugly.
+
+Admin should be able to:
+
+Users
+Workers
+Tasks
+Payments
+Disputes
+Reports
+KYC
+Reviews
+Banned users
+Categories
+
+For example:
+
+Admin Dashboard
+
+Users              12,450
+Active Workers      3,240
+Tasks Today           382
+Completed             341
+Disputes                7
+GMV                 ₹4.2L
+16. 16-security-requirements.md
+
+This should contain rules like:
+
+Never store plain passwords.
+
+Never expose private user data.
+
+Validate every API request.
+
+Use authorization on every protected endpoint.
+
+Rate-limit authentication.
+
+Validate file uploads.
+
+Verify payment webhooks.
+
+Use idempotency for payments.
+
+Do not trust client-side GPS.
+
+Do not trust client-provided prices.
+
+Log security-sensitive actions.
+
+This becomes an AI guardrail.
+
+17. 17-mvp-scope.md
+
+This file tells AI:
+
+What are we actually building right now?
+
+For example:
+
+# MVP
+
+## Include
+
+✓ Authentication
+✓ User profile
+✓ Worker profile
+✓ KYC
+✓ Create task
+✓ Location selection
+✓ Nearby task discovery
+✓ Accept task
+✓ Task status
+✓ Chat
+✓ Photo/video proof
+✓ Payment
+✓ Ratings
+✓ Basic disputes
+✓ Admin dashboard
+
+## Don't Include Yet
+
+✗ AI task matching
+✗ Subscriptions
+✗ Business API
+✗ International payments
+✗ Advanced analytics
+✗ Referral system
+✗ Multiple countries
+
+This file is gold when using AI coding agents.
+
+18. 18-future-roadmap.md
+
+Keep future ideas separate.
+
+For example:
+
+PHASE 1
+Remote inspection
+
+PHASE 2
+Local errands
+
+PHASE 3
+Multiple cities
+
+PHASE 4
+B2B
+
+PHASE 5
+API
+
+PHASE 6
+AI-powered matching
+
+This prevents future ideas from contaminating your MVP.
+
+19. The AI-Specific Files
+
+These are the files I'd add specifically because you're going to build this with AI.
+
+ai/project-context.md
+
+This is basically:
+
+"Hey AI, understand this project before touching the code."
+
+Include:
+
+# Project Context
+
+This project is a two-sided marketplace.
+
+The platform connects:
+
+1. Task Requesters
+2. Task Executors
+
+A requester can create a physical-world task
+at a location different from their own location.
+
+Workers near the task location can discover
+and complete the task for payment.
+
+The platform handles:
+
+- Matching
+- Communication
+- Proof
+- Payments
+- Ratings
+- Disputes
+- Trust
+20. ai/coding-rules.md
+
+This is where you tell your AI how to code.
+
+Example:
+
+# Coding Rules
+
+- Use TypeScript.
+- Do not use any unless absolutely necessary.
+- Use async/await.
+- Validate API inputs.
+- Never put business logic in controllers.
+- Keep services focused.
+- Use DTOs.
+- Use environment variables for secrets.
+- Never hardcode API keys.
+- Write reusable components.
+- Do not duplicate code.
+- Use proper error handling.
+- Add tests for business-critical logic.
+21. ai/architecture-rules.md
+
+This is your architecture constitution.
+
+Example:
+
+# Architecture Rules
+
+Frontend must never directly access PostgreSQL.
+
+Mobile app communicates only through API.
+
+Business logic belongs in backend services.
+
+Controllers should remain thin.
+
+Payment state must be determined by server-side
+payment verification.
+
+Client cannot decide payment success.
+
+Client GPS data must be validated server-side.
+
+All protected endpoints require authentication.
+
+Authorization must be checked server-side.
+
+This is VERY useful with AI.
+
+22. ai/task-generation-rules.md
+
+This tells AI how to work.
+
+For example:
+
+# AI Development Rules
+
+Before implementing a feature:
+
+1. Read project-context.md
+2. Read relevant documentation
+3. Understand existing architecture
+4. Inspect existing code
+5. Identify affected modules
+6. Implement the smallest change
+7. Do not modify unrelated code
+8. Run tests
+9. Fix errors
+10. Update documentation if necessary
+
+This prevents the classic AI behavior:
+
+"User asked me to add a button, so I'll rewrite the entire application." 😂
+
+23. Root README.md
+
+Your README should explain the project quickly.
+
+# Remote Task Marketplace
+
+A platform that connects people who need
+physical tasks completed remotely with
+verified people near the task location.
+
+## Example
+
+Requester:
+Ahmedabad
+
+Task:
+Inspect laptop
+
+Task Location:
+Kolkata
+
+Worker:
+Kolkata
+
+Payment:
+₹500
+
+## Architecture
+
+Mobile:
+React Native + Expo
+
+Backend:
+NestJS
+
+Database:
+PostgreSQL + PostGIS
+
+Cache:
+Redis
+
+Storage:
+Object Storage
+24. TODO.md
+
+This becomes your AI development queue.
+
+Example:
+
+# TODO
+
+## Foundation
+
+- [ ] Initialize monorepo
+- [ ] Setup TypeScript
+- [ ] Setup linting
+- [ ] Setup formatting
+- [ ] Setup environment config
+
+## Authentication
+
+- [ ] User registration
+- [ ] Login
+- [ ] OTP
+- [ ] Refresh token
+- [ ] Logout
+
+## Tasks
+
+- [ ] Create task
+- [ ] Edit task
+- [ ] Publish task
+- [ ] Cancel task
+- [ ] Task details
+
+## Worker
+
+- [ ] Worker profile
+- [ ] Location
+- [ ] Availability
+- [ ] Nearby tasks
+- [ ] Accept task
+
+## Payments
+
+- [ ] Payment creation
+- [ ] Webhook
+- [ ] Refund
+- [ ] Worker payout
+The Structure I'd Actually Recommend
+
+For your startup, I'd eventually have:
+
+remote-task-platform/
+│
+├── apps/
+│   ├── mobile/
+│   ├── admin/
+│   └── api/
+│
+├── packages/
+│   ├── types/
+│   ├── validation/
+│   ├── config/
+│   └── utils/
+│
+├── docs/
+│   ├── 01-product-requirements.md
+│   ├── 02-business-model.md
+│   ├── 03-user-flows.md
+│   ├── 04-feature-specification.md
+│   ├── 05-system-architecture.md
+│   ├── 06-database-design.md
+│   ├── 07-api-specification.md
+│   ├── 08-authentication-authorization.md
+│   ├── 09-task-lifecycle.md
+│   ├── 10-matching-engine.md
+│   ├── 11-payment-flow.md
+│   ├── 12-trust-safety.md
+│   ├── 13-notification-system.md
+│   ├── 14-dispute-resolution.md
+│   ├── 15-admin-panel.md
+│   ├── 16-security-requirements.md
+│   ├── 17-mvp-scope.md
+│   └── 18-future-roadmap.md
+│
+├── ai/
+│   ├── project-context.md
+│   ├── coding-rules.md
+│   ├── architecture-rules.md
+│   └── task-generation-rules.md
+│
+├── README.md
+├── TODO.md
+└── CHANGELOG.md
+But don't create all of these manually yet.
+
+I'd actually do this in three steps:
+
+Step 1 — Product documentation
+
+Create the docs/ files and properly define the product.
+
+Step 2 — Architecture
+
+Once the product is clear, finalize:
+
+React Native + Expo
+       +
+NestJS
+       +
+PostgreSQL/PostGIS
+       +
+Redis
+       +
+Object Storage
+       +
+Payment Gateway
+
+Step 3 — Code
+
+Only then ask your AI coding agent to initialize:
+
+apps/mobile
+apps/api
+apps/admin
+packages/*
+
+That order is important. Don't let AI decide your product architecture while simultaneously writing your business logic. Give it the rules first, then let it implement them.
