@@ -58,6 +58,19 @@ export default function FeedPage() {
       });
   }, [loadFeed, router]);
 
+  // The feed has no push channel for "a task was just published nearby" (see
+  // ai/memory.md — that gap is real, not an oversight this fixes properly).
+  // A plain poll while the tab is visible is the honest stopgap: it means a
+  // worker sitting on this screen sees new work within ~20s instead of only
+  // on their next manual navigation.
+  useEffect(() => {
+    if (!profile) return;
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') void loadFeed(profile);
+    }, 20_000);
+    return () => clearInterval(interval);
+  }, [profile, loadFeed]);
+
   async function toggleAvailability(isAvailable: boolean) {
     if (!profile) return;
     const previous = profile;
@@ -114,7 +127,7 @@ export default function FeedPage() {
         <div className="flex items-start gap-2 rounded-card border border-progress/30 bg-progress/10 p-3 text-sm text-ink-700">
           <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-progress" aria-hidden />
           <span>
-            Verify your email and phone to accept tasks — every task requires at least verification level 1, so
+            Verify your email to accept tasks — every task requires at least verification level 1, so
             none will appear here until you do.{' '}
             <Link href="/dashboard" className="font-medium text-brand-600 hover:underline">
               Verify now

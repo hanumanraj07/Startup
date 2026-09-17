@@ -1,20 +1,30 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Res } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
+import type { Response } from 'express';
 import {
+  deleteAccountSchema,
   kycPresignSchema,
   kycSubmissionSchema,
   payoutAccountSchema,
   updateProfileSchema,
   uuidSchema,
+  type DeleteAccountInput,
   type KycPresignInput,
   type KycSubmissionInput,
   type PayoutAccountInput,
 } from '@onsite/validation';
 import type { UpdateProfileInput } from '@onsite/validation';
 import { zodPipe } from '../../common/zod-validation.pipe';
+import { clearRefreshCookie } from '../auth/cookies';
 import { CurrentUser, type RequestUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { StorageService } from '../storage/storage.service';
 import { UsersService } from './users.service';
+
+// A wrong password should fail closed quickly, but a real user re-typing a
+// mistyped password twice should never feel throttled — per-user, not per-IP,
+// since the whole point is limiting attempts against ONE account.
+const DELETE_ACCOUNT_THROTTLE = { user: { limit: 5, ttl: 3_600_000 } };
 
 /**
  * Every Zod pipe here is bound to the @Body() parameter directly, not via a
@@ -41,6 +51,18 @@ export class UsersController {
     @CurrentUser() user: RequestUser,
   ) {
     return this.users.updateSelf(user.id, body);
+  }
+
+  @Throttle(DELETE_ACCOUNT_THROTTLE)
+  @Delete('me')
+  async deleteMe(
+    @Body(zodPipe(deleteAccountSchema)) body: DeleteAccountInput,
+    @CurrentUser() user: RequestUser,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.users.deleteAccount(user.id, body);
+    clearRefreshCookie(res);
+    return result;
   }
 
   @Public()

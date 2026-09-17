@@ -16,8 +16,9 @@ import { useTaskSocket } from '@/lib/use-task-socket';
 import { WorkerActions } from './worker-actions';
 import { RequesterActions } from './requester-actions';
 import { ChatPanel } from './chat-panel';
+import { ReportIssueDialog } from './report-issue-dialog';
 
-/** Chat opens once a worker is assigned (ChatService.requirePartyToTask) and stays open through completion. */
+/** Chat history is visible for a task's whole life once a worker was assigned. */
 const CHAT_VISIBLE_STATUSES: TaskStatus[] = [
   'ASSIGNED',
   'WORKER_EN_ROUTE',
@@ -28,6 +29,27 @@ const CHAT_VISIBLE_STATUSES: TaskStatus[] = [
   'COMPLETED',
   'PAYMENT_RELEASED',
   'DISPUTED',
+];
+
+/** New messages are only accepted in these — mirrors the backend's CHAT_WRITABLE_STATUSES exactly. */
+const CHAT_WRITABLE_STATUSES: TaskStatus[] = [
+  'ASSIGNED',
+  'WORKER_EN_ROUTE',
+  'ARRIVED',
+  'IN_PROGRESS',
+  'SUBMITTED',
+  'UNDER_REVIEW',
+];
+
+/** Mirrors the backend's DISPUTABLE_STATUSES exactly — see transitions.ts. */
+const REPORTABLE_STATUSES: TaskStatus[] = [
+  'ASSIGNED',
+  'WORKER_EN_ROUTE',
+  'ARRIVED',
+  'IN_PROGRESS',
+  'SUBMITTED',
+  'UNDER_REVIEW',
+  'COMPLETED',
 ];
 
 interface StatusEvent {
@@ -186,7 +208,11 @@ export default function TaskDetailPage() {
         <RequesterActions taskId={task.id} status={task.status} proofs={proofs} onChanged={load} />
       )}
 
-      {CHAT_VISIBLE_STATUSES.includes(task.status) ? <ChatPanel taskId={task.id} /> : null}
+      {CHAT_VISIBLE_STATUSES.includes(task.status) ? (
+        <ChatPanel taskId={task.id} closed={!CHAT_WRITABLE_STATUSES.includes(task.status)} />
+      ) : null}
+
+      {REPORTABLE_STATUSES.includes(task.status) ? <ReportIssueDialog taskId={task.id} onReported={load} /> : null}
 
       <div>
         <h2 className="mb-3 text-[19px] font-semibold text-ink-900">Timeline</h2>

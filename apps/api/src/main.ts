@@ -79,6 +79,12 @@ async function bootstrap(): Promise<void> {
   }
 
   const app = await NestFactory.create(AppModule, {
+    // Razorpay webhook signature verification is an HMAC over the exact raw
+    // request bytes — reconstructing JSON from the parsed body and hashing
+    // that instead does not reproduce the same bytes (key order, spacing)
+    // and silently fails verification. Nest's `rawBody` option preserves the
+    // original buffer on `req.rawBody` alongside the normal parsed body.
+    rawBody: true,
     logger:
       env.LOG_LEVEL === 'debug'
         ? ['error', 'warn', 'log', 'debug', 'verbose']

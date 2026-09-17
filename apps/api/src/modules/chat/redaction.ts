@@ -28,11 +28,26 @@ export interface RedactionResult {
 // first prevents an email address from also being flagged as a UPI id.
 
 /**
- * Indian mobile numbers, optionally +91-prefixed, with an optional
- * space/dash between any two digits — covers the common groupings (5-5,
- * 3-3-4, or none) rather than assuming one specific layout.
+ * Indian mobile numbers, optionally prefixed with a trunk `0` or `+91`, with
+ * an optional space/dash between any two digits — covers the common
+ * groupings (5-5, 3-3-4, or none) rather than assuming one specific layout.
+ *
+ * The `\b` sits BEFORE the whole optional prefix, not between the prefix and
+ * the first mobile digit — found live, the hard way, from a real message
+ * that leaked a phone number in full: `\b` only matches at a transition
+ * between a word character and a non-word one, and two adjacent digits are
+ * both "word" characters, so a `\b` placed between a digit prefix (a trunk
+ * `0`, or the `91` of a country code) and the number that follows it can
+ * never match — there is no transition to find. The previous version of
+ * this pattern anchored `\b` exactly there, so a number typed with a leading
+ * trunk `0` (`08209512102`, a common way to write a domestic number) matched
+ * nothing at all and passed through unredacted. Anchoring the single `\b` at
+ * the very start of the whole prefix+number run instead only requires a
+ * boundary where one can actually exist — before the run begins and after it
+ * ends — and a prefix immediately followed by more digits needs no boundary
+ * of its own, since it is all one contiguous match.
  */
-const PHONE_PATTERN = /(?:\+?91[-\s]?)?\b[6-9](?:[-\s]?\d){9}\b/g;
+const PHONE_PATTERN = /\b(?:\+?91[-\s]?|0)?[6-9](?:[-\s]?\d){9}\b/g;
 
 const EMAIL_PATTERN = /\b[\w.+-]+@[\w-]+\.[a-zA-Z]{2,}\b/g;
 

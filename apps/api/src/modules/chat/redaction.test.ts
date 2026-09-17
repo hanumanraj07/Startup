@@ -20,6 +20,12 @@ describe('redactContactInfo', () => {
     expect(result.flags).toContain('phone');
   });
 
+  it('redacts a number written with a leading trunk 0 (found live: this fully bypassed the previous pattern)', () => {
+    const result = redactContactInfo('call 08209512102 anytime');
+    expect(result.redactedBody).toBe('call [phone number removed] anytime');
+    expect(result.flags).toEqual(['phone']);
+  });
+
   it('does not flag a random 10-digit string that is not a valid Indian mobile prefix', () => {
     // Indian mobile numbers start 6-9; a number starting with 1-5 should not match.
     const result = redactContactInfo('Order number 1234567890 confirmed');

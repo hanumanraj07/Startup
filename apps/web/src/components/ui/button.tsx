@@ -38,6 +38,11 @@ export interface ButtonProps
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild, loading, disabled, children, ...props }, ref) => {
     const Comp = asChild ? Slot : 'button';
+    // Slot (asChild) requires exactly one React element child — it merges its
+    // props onto that element rather than rendering a wrapper. Adding the
+    // loading spinner alongside `children` (even as a `null` sibling) makes
+    // it two children and Slot throws. asChild's own consumers (Link, etc.)
+    // don't support an injected spinner anyway, so skip it in that case.
     return (
       <Comp
         ref={ref}
@@ -46,8 +51,14 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         aria-busy={loading || undefined}
         {...props}
       >
-        {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
-        {children}
+        {asChild ? (
+          children
+        ) : (
+          <>
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+            {children}
+          </>
+        )}
       </Comp>
     );
   },

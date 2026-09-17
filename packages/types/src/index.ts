@@ -47,7 +47,7 @@ export const ACTIVE_WORK_STATUSES: readonly TaskStatus[] = [
   'IN_PROGRESS',
 ];
 
-export const USER_STATUS = ['ACTIVE', 'SUSPENDED', 'BANNED'] as const;
+export const USER_STATUS = ['ACTIVE', 'SUSPENDED', 'BANNED', 'DELETED'] as const;
 export type UserStatus = (typeof USER_STATUS)[number];
 
 export const PLATFORM_ROLE = ['USER', 'ADMIN'] as const;

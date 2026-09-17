@@ -1,16 +1,44 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import type { UpdateProfileInput } from '@onsite/validation';
+import type { DeleteAccountInput, UpdateProfileInput } from '@onsite/validation';
 import { maskTail } from '@onsite/utils';
-import { NotFoundError } from '../../common/errors';
+import { AuditService } from '../../common/audit.service';
+import { BusinessRuleError, ForbiddenError, NotFoundError } from '../../common/errors';
 import { EncryptionService } from '../../common/encryption.service';
 import { toPublicUser, toPublicWorker, toSelfUser } from '../../common/projections';
 import { PrismaService } from '../../prisma/prisma.service';
+import { PasswordService } from '../auth/password.service';
+
+/**
+ * Any task status that isn't one of these means the account has unfinished
+ * business — money awaiting release, a proof awaiting review, an open
+ * dispute — and deletion must wait. Deliberately NOT importing
+ * ACTIVE_WORK_STATUSES/DISPUTABLE_STATUSES from tasks/transitions.ts: those
+ * describe what a task's OWN state machine allows, which is a different
+ * question from "is it safe to erase this person's identity right now," and
+ * conflating the two would make this list silently drift if the state
+ * machine's own sets are ever extended for unrelated reasons.
+ */
+const TASK_STATUSES_BLOCKING_DELETION = [
+  'DRAFT',
+  'PUBLISHED',
+  'MATCHING',
+  'ASSIGNED',
+  'WORKER_EN_ROUTE',
+  'ARRIVED',
+  'IN_PROGRESS',
+  'SUBMITTED',
+  'UNDER_REVIEW',
+  'DISPUTED',
+] as const;
 
 @Injectable()
 export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly encryption: EncryptionService,
+    private readonly passwords: PasswordService,
+    private readonly audit: AuditService,
   ) {}
 
   async getSelf(userId: string) {
@@ -60,6 +88,83 @@ export class UsersService {
       include: { workerProfile: { select: { id: true } } },
     });
     return toSelfUser(user);
+  }
+
+  /**
+   * Deletion is anonymization, not a row delete. A `Task`, `Payment`,
+   * `LedgerEntry` or `Dispute` this person was ever party to must survive —
+   * financial and dispute records cannot simply vanish because one side
+   * closed their account, both for the other party's sake and because
+   * India's tax/audit rules require retaining transaction records regardless
+   * of what either party later does. What actually gets erased is
+   * everything that identifies THIS person: email, phone, name, password,
+   * Google id, home address. Every other row keeps its `userId` foreign key
+   * pointing at this now-anonymized row, so a requester's task history still
+   * reads "Deleted user" instead of breaking or silently disappearing.
+   */
+  async deleteAccount(userId: string, input: DeleteAccountInput): Promise<{ success: true }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundError('User not found.');
+
+    if (user.passwordHash) {
+      if (!input.password) throw new ForbiddenError('Enter your password to confirm account deletion.');
+      const valid = await this.passwords.verify(user.passwordHash, input.password);
+      if (!valid) throw new ForbiddenError('That password is incorrect.');
+    }
+
+    const [asRequester, asWorker] = await Promise.all([
+      this.prisma.task.count({
+        where: { requesterId: userId, status: { in: [...TASK_STATUSES_BLOCKING_DELETION] } },
+      }),
+      this.prisma.task.count({
+        where: { assignedWorkerId: userId, status: { in: [...TASK_STATUSES_BLOCKING_DELETION] } },
+      }),
+    ]);
+    if (asRequester > 0 || asWorker > 0) {
+      throw new BusinessRuleError(
+        'You have a task still in progress. Finish, cancel, or wait for it to resolve before deleting your account.',
+      );
+    }
+
+    const anonymizedEmail = `deleted-${randomUUID()}@deleted.onsite.local`;
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          status: 'DELETED',
+          email: anonymizedEmail,
+          emailVerifiedAt: null,
+          phone: null,
+          phoneVerifiedAt: null,
+          passwordHash: null,
+          googleId: null,
+          displayName: 'Deleted user',
+          avatarUrl: null,
+          homeAddress: null,
+          homeLat: null,
+          homeLng: null,
+          homeCity: null,
+          notificationPrefs: undefined,
+          // Invalidates every outstanding access token immediately — the
+          // same mechanism AdminService.suspendUser uses. JwtAuthGuard
+          // compares this against the token's own claim on every request.
+          tokenVersion: { increment: 1 },
+        },
+      }),
+      this.prisma.refreshToken.deleteMany({ where: { userId } }),
+      this.prisma.pushSubscription.deleteMany({ where: { userId } }),
+      this.prisma.workerProfile.updateMany({ where: { userId }, data: { isAvailable: false } }),
+    ]);
+
+    await this.audit.record({
+      actorUserId: userId,
+      action: 'ACCOUNT_DELETE_SELF',
+      entityType: 'User',
+      entityId: userId,
+    });
+
+    return { success: true };
   }
 
   async submitKyc(

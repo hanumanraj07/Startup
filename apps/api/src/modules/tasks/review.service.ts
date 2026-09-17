@@ -5,6 +5,7 @@ import { AutoApproveQueue } from '../../queue/auto-approve.queue';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
 import { PaymentsService } from '../payments/payments.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { assertTransitionAllowed } from './transitions';
 
 /**
@@ -34,6 +35,7 @@ export class ReviewService {
     private readonly payments: PaymentsService,
     private readonly autoApproveQueue: AutoApproveQueue,
     private readonly notifications: NotificationService,
+    private readonly realtime: RealtimeGateway,
   ) {}
 
   async approve(taskId: string, requesterId: string): Promise<{ status: 'COMPLETED' }> {
@@ -78,6 +80,7 @@ export class ReviewService {
         reason,
       },
     });
+    this.realtime.emitTaskStatus(taskId, 'IN_PROGRESS');
 
     await this.autoApproveQueue.cancel(taskId);
 
@@ -163,6 +166,7 @@ export class ReviewService {
         reason: actorRole === 'SYSTEM' ? 'Auto-approved after the 24-hour review window.' : undefined,
       },
     });
+    this.realtime.emitTaskStatus(task.id, 'COMPLETED');
 
     // Only reached once this call has won the race above — money moves
     // strictly after the status write it depends on is confirmed real.

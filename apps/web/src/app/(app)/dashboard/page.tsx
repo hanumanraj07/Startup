@@ -60,7 +60,7 @@ export default function DashboardPage() {
       <Card>
         <CardHeader>
           <CardTitle>Account status</CardTitle>
-          <CardDescription>Both email and phone are required to reach verification level 1 — the minimum to post or accept any task.</CardDescription>
+          <CardDescription>Email verification is the minimum to post or accept any task. Phone is optional.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 pt-0">
           <StatusRow verified={user.emailVerified} label="Email verified" />
@@ -70,7 +70,7 @@ export default function DashboardPage() {
             </p>
           ) : null}
 
-          <StatusRow verified={user.phoneVerified} label="Phone verified" />
+          <StatusRow verified={user.phoneVerified} label="Phone verified (optional)" />
           {!user.phoneVerified ? <PhoneVerification /> : null}
 
           {user.hasWorkerProfile ? (

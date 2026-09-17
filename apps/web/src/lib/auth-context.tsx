@@ -15,6 +15,7 @@ interface AuthContextValue {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<SelfUser>;
   register: (email: string, password: string, displayName: string) => Promise<SelfUser>;
+  loginWithGoogle: (idToken: string) => Promise<SelfUser>;
   logout: () => Promise<void>;
   refetchUser: () => Promise<SelfUser>;
 }
@@ -67,6 +68,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return result.user;
   }, []);
 
+  const loginWithGoogle = useCallback(async (idToken: string) => {
+    const result = await api.post<LoginResponse>('/auth/google', { idToken }, { skipAuthRetry: true });
+    setAccessToken(result.accessToken);
+    setUser(result.user);
+    return result.user;
+  }, []);
+
   const logout = useCallback(async () => {
     await api.post('/auth/logout').catch(() => undefined);
     setAccessToken(null);
@@ -74,8 +82,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, isLoading, login, register, logout, refetchUser: fetchMe }),
-    [user, isLoading, login, register, logout, fetchMe],
+    () => ({ user, isLoading, login, register, loginWithGoogle, logout, refetchUser: fetchMe }),
+    [user, isLoading, login, register, loginWithGoogle, logout, fetchMe],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

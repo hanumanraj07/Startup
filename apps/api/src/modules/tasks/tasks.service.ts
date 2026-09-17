@@ -14,6 +14,7 @@ import { GeoRepository } from '../../repositories/geo.repository';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MatchingQueue } from '../../queue/matching.queue';
 import { NotificationService } from '../notifications/notification.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { SafetyService } from '../safety/safety.service';
 import { assertTransitionAllowed, checkTransition } from './transitions';
 import { RiskService } from './risk.service';
@@ -43,6 +44,7 @@ export class TasksService {
     private readonly matchingQueue: MatchingQueue,
     private readonly notifications: NotificationService,
     private readonly safety: SafetyService,
+    private readonly realtime: RealtimeGateway,
   ) {}
 
   // ─── Discovery ───────────────────────────────────────────────────────
@@ -298,6 +300,7 @@ export class TasksService {
         },
       }),
     ]);
+    this.realtime.emitTaskStatus(taskId, 'PUBLISHED');
 
     // Hand off to the background matching pipeline. Best-effort: if Redis is
     // down at this exact moment, the task still stays PUBLISHED and visible
@@ -339,6 +342,7 @@ export class TasksService {
         },
       });
     });
+    this.realtime.emitTaskStatus(taskId, 'CANCELLED');
 
     if (payment && payment.status === 'CAPTURED') {
       await this.payments.refundFull(taskId);
@@ -383,6 +387,7 @@ export class TasksService {
         },
       }),
     ]);
+    this.realtime.emitTaskStatus(taskId, 'EXPIRED');
 
     await this.matchingQueue.cancelPending(taskId);
 
@@ -490,6 +495,7 @@ export class TasksService {
         data: { tasksAccepted: { increment: 1 }, lastActiveAt: new Date() },
       }),
     ]);
+    this.realtime.emitTaskStatus(taskId, 'ASSIGNED');
 
     try {
       await this.notifications.notify(task.requesterId, {
@@ -508,12 +514,13 @@ export class TasksService {
 
   // ─── Retrieval, role-projected ───────────────────────────────────────
 
-  async listMine(requesterId: string, limit: number, cursor?: string) {
+  async listMine(userId: string, limit: number, cursor?: string, perspective: 'requester' | 'worker' = 'requester') {
     const cursorData = cursor ? decodeCursor<{ createdAt: string; id: string }>(cursor) : null;
+    const ownerFilter = perspective === 'worker' ? { assignedWorkerId: userId } : { requesterId: userId };
 
     const tasks = await this.prisma.task.findMany({
       where: {
-        requesterId,
+        ...ownerFilter,
         ...(cursorData && {
           OR: [
             { createdAt: { lt: new Date(cursorData.createdAt) } },

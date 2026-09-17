@@ -5,8 +5,8 @@ import {
   blockerSchema,
   cancelTaskSchema,
   createTaskSchema,
+  myTasksSchema,
   nearbyTasksSchema,
-  paginationSchema,
   presignUploadSchema,
   recordProofSchema,
   rejectTaskSchema,
@@ -17,6 +17,7 @@ import {
   type BlockerInput,
   type CancelTaskInput,
   type CreateTaskInput,
+  type MyTasksInput,
   type NearbyTasksInput,
   type PresignUploadInput,
   type RecordProofInput,
@@ -86,11 +87,8 @@ export class TasksController {
   }
 
   @Get('mine')
-  async mine(
-    @Query(zodPipe(paginationSchema)) query: { limit: number; cursor?: string },
-    @CurrentUser() user: RequestUser,
-  ) {
-    return this.tasks.listMine(user.id, query.limit, query.cursor);
+  async mine(@Query(zodPipe(myTasksSchema)) query: MyTasksInput, @CurrentUser() user: RequestUser) {
+    return this.tasks.listMine(user.id, query.limit, query.cursor, query.perspective);
   }
 
   @Get(':id')

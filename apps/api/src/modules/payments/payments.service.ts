@@ -1,33 +1,31 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { decodeCursor, encodeCursor } from '@onsite/utils';
 import { BusinessRuleError, ForbiddenError, NotFoundError } from '../../common/errors';
 import { loadEnv } from '../../config/env';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LedgerService } from './ledger.service';
+import { RazorpayService } from './razorpay.service';
 
 /**
- * Order creation and capture.
+ * Order creation, capture, and (for the real provider) webhook-driven
+ * settlement.
  *
- * SCOPE OF THIS PHASE: capture only, mock provider only. A requester funds a
- * draft task and the funds move to escrow, which is what the DRAFT →
- * PUBLISHED gate in transitions.ts checks for. This exists now, ahead of
- * Phase 6 proper, because the task lifecycle cannot be tested end to end
- * without something backing that gate — the alternative was letting a task
- * publish on trust, which is exactly the guarantee this product exists to
- * not make.
- *
- * NOT built here, and left to Phase 6: real Razorpay Route integration,
- * release, refund, payout, webhook verification, and idempotent retry of a
- * failed capture. Calling this with PAYMENT_PROVIDER=razorpay throws rather
- * than pretending to work — matching the same honesty applied to Google
- * sign-in, which also is not built without real credentials to verify it
- * against.
+ * Two providers, one interface: `mock` captures instantly and is what every
+ * other phase of this project has been tested against; `razorpay` creates a
+ * real order and does NOT capture here — capture only ever happens in
+ * `handleWebhook`, once Razorpay's own signed callback confirms it. A
+ * requester's browser completing checkout is never itself trusted to move
+ * money state forward, per docs/16-security-requirements.md and docs/11's
+ * "the webhook is the only thing that moves payment state forward."
  */
 @Injectable()
 export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly ledger: LedgerService,
+    private readonly razorpay: RazorpayService,
   ) {}
 
   async createOrder(params: { taskId: string; requesterId: string; idempotencyKey: string }) {
@@ -52,14 +50,29 @@ export class PaymentsService {
     const already = await this.prisma.payment.findUnique({ where: { taskId: task.id } });
     if (already) return this.toView(already);
 
-    if (env.PAYMENT_PROVIDER !== 'mock') {
-      throw new BusinessRuleError(
-        'Live payments are not available yet. This deployment is not configured with real Razorpay credentials.',
-      );
-    }
-
     // Amount is read from the task record. It is never accepted from the
     // client, per docs/16-security-requirements.md.
+    if (env.PAYMENT_PROVIDER === 'razorpay') {
+      const order = await this.razorpay.createOrder({
+        amountPaise: Number(task.budgetPaise),
+        receipt: task.id,
+      });
+
+      const payment = await this.prisma.payment.create({
+        data: {
+          taskId: task.id,
+          requesterId: task.requesterId,
+          gateway: 'RAZORPAY',
+          gatewayOrderId: order.id,
+          amountPaise: task.budgetPaise,
+          idempotencyKey: params.idempotencyKey,
+          status: 'CREATED',
+        },
+      });
+
+      return this.toView(payment);
+    }
+
     const payment = await this.prisma.payment.create({
       data: {
         taskId: task.id,
@@ -79,6 +92,109 @@ export class PaymentsService {
     });
 
     return this.toView(payment);
+  }
+
+  /**
+   * The only thing allowed to move a Razorpay-backed payment from CREATED to
+   * CAPTURED. Verifies the signature over the raw body before touching
+   * anything else, records the event (verified or not) for audit, and is
+   * replay-safe: `WebhookEvent.eventId` is unique, so a gateway's deliberate
+   * retry of an already-processed event is a no-op, not a double capture.
+   */
+  async handleWebhook(rawBody: Buffer, signatureHeader: string | undefined): Promise<{ received: true }> {
+    const signatureVerified = this.razorpay.verifyWebhookSignature(rawBody, signatureHeader);
+
+    let payload: { event?: string; payload?: { payment?: { entity?: RazorpayPaymentEntity } } };
+    try {
+      payload = JSON.parse(rawBody.toString('utf8'));
+    } catch {
+      throw new BusinessRuleError('Malformed webhook payload.');
+    }
+
+    const paymentEntity = payload.payload?.payment?.entity;
+    const eventId = paymentEntity?.id ? `${payload.event}:${paymentEntity.id}` : undefined;
+
+    if (!signatureVerified || !eventId) {
+      // Recorded even when unverified — a forged or malformed delivery is
+      // itself something worth an audit trail of, not silently dropped.
+      await this.prisma.webhookEvent
+        .create({
+          data: {
+            gateway: 'RAZORPAY',
+            eventId: eventId ?? `unverified:${Date.now()}:${Math.random()}`,
+            eventType: payload.event ?? 'unknown',
+            payload: payload as object,
+            signatureVerified,
+          },
+        })
+        .catch(() => undefined); // best-effort audit row; never block the 401 below on it
+      throw new BusinessRuleError('Invalid webhook signature.');
+    }
+
+    const existing = await this.prisma.webhookEvent.findUnique({ where: { eventId } });
+    if (existing?.processedAt) {
+      return { received: true };
+    }
+
+    const event = await this.prisma.webhookEvent.upsert({
+      where: { eventId },
+      create: {
+        gateway: 'RAZORPAY',
+        eventId,
+        eventType: payload.event ?? 'unknown',
+        payload: payload as object,
+        signatureVerified,
+      },
+      update: {},
+    });
+
+    try {
+      if (payload.event === 'payment.captured' && paymentEntity) {
+        await this.captureFromWebhook(paymentEntity);
+      } else if (payload.event === 'payment.failed' && paymentEntity) {
+        await this.failFromWebhook(paymentEntity);
+      }
+      await this.prisma.webhookEvent.update({ where: { id: event.id }, data: { processedAt: new Date() } });
+    } catch (error) {
+      await this.prisma.webhookEvent.update({
+        where: { id: event.id },
+        data: { processingError: String(error) },
+      });
+      this.logger.error(`Webhook ${eventId} processing failed: ${String(error)}`);
+      throw error;
+    }
+
+    return { received: true };
+  }
+
+  private async captureFromWebhook(entity: RazorpayPaymentEntity): Promise<void> {
+    const payment = await this.prisma.payment.findFirst({ where: { gatewayOrderId: entity.order_id } });
+    if (!payment) {
+      this.logger.warn(`payment.captured for unknown order ${entity.order_id} (payment ${entity.id}).`);
+      return;
+    }
+    if (payment.status === 'CAPTURED') return; // already processed — replay, not an error
+
+    await this.prisma.payment.update({
+      where: { id: payment.id },
+      data: { status: 'CAPTURED', gatewayPaymentId: entity.id, capturedAt: new Date() },
+    });
+
+    await this.ledger.recordCapture({
+      taskId: payment.taskId,
+      paymentId: payment.id,
+      amountPaise: Number(payment.amountPaise),
+    });
+  }
+
+  private async failFromWebhook(entity: RazorpayPaymentEntity): Promise<void> {
+    const payment = await this.prisma.payment.findFirst({ where: { gatewayOrderId: entity.order_id } });
+    if (!payment || payment.status === 'CAPTURED') return;
+
+    await this.prisma.payment.update({
+      where: { id: payment.id },
+      data: { status: 'FAILED', failureReason: entity.error_description ?? 'Payment failed at the gateway.' },
+    });
   }
 
   async getForTask(taskId: string, requesterId: string) {
@@ -249,15 +365,31 @@ export class PaymentsService {
     id: string;
     taskId: string;
     status: string;
+    gateway: string;
+    gatewayOrderId: string | null;
     amountPaise: bigint;
     capturedAt: Date | null;
   }) {
+    const env = loadEnv();
     return {
       id: payment.id,
       taskId: payment.taskId,
       status: payment.status,
       amountPaise: Number(payment.amountPaise),
       capturedAt: payment.capturedAt?.toISOString() ?? null,
+      // Only present for the real gateway — the mock path has nothing for a
+      // client to check out with. `keyId` is Razorpay's public key: safe to
+      // return, it's meant to be embedded in browser-side Checkout code.
+      ...(payment.gateway === 'RAZORPAY' && payment.gatewayOrderId
+        ? { razorpay: { orderId: payment.gatewayOrderId, keyId: env.RAZORPAY_KEY_ID ?? null } }
+        : {}),
     };
   }
+}
+
+/** The subset of Razorpay's payment.entity webhook payload this codebase reads. */
+interface RazorpayPaymentEntity {
+  id: string;
+  order_id: string;
+  error_description?: string;
 }

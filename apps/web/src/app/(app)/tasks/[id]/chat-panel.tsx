@@ -20,7 +20,7 @@ interface ChatMessage {
   readAt: string | null;
 }
 
-export function ChatPanel({ taskId }: { taskId: string }) {
+export function ChatPanel({ taskId, closed = false }: { taskId: string; closed?: boolean }) {
   const { user } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[] | null>(null);
   const [draft, setDraft] = useState('');
@@ -102,23 +102,30 @@ export function ChatPanel({ taskId }: { taskId: string }) {
             ))
           )}
         </div>
-        <form
-          className="flex gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void send();
-          }}
-        >
-          <Input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="Write a message&hellip;"
-            maxLength={2000}
-          />
-          <Button type="submit" size="icon" disabled={sending || !draft.trim()} aria-label="Send">
-            <Send className="h-4 w-4" aria-hidden />
-          </Button>
-        </form>
+        {closed ? (
+          <p className="rounded-card bg-paper-100 px-3 py-2 text-sm text-ink-500">
+            Chat is closed now that this task is finished. Use &ldquo;Report an issue&rdquo; below if you need to
+            raise something.
+          </p>
+        ) : (
+          <form
+            className="flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void send();
+            }}
+          >
+            <Input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Write a message&hellip;"
+              maxLength={2000}
+            />
+            <Button type="submit" size="icon" disabled={sending || !draft.trim()} aria-label="Send">
+              <Send className="h-4 w-4" aria-hidden />
+            </Button>
+          </form>
+        )}
       </CardContent>
     </Card>
   );

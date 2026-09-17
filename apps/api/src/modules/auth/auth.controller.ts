@@ -11,11 +11,13 @@ import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import {
   forgotPasswordSchema,
+  googleAuthSchema,
   loginSchema,
   registerSchema,
   resetPasswordSchema,
   sendOtpSchema,
   verifyOtpSchema,
+  type GoogleAuthInput,
   type LoginInput,
   type RegisterInput,
 } from '@onsite/validation';
@@ -71,6 +73,23 @@ export class AuthController {
   @UsePipes(zodPipe(loginSchema))
   async login(@Body() body: LoginInput, @Res({ passthrough: true }) res: Response) {
     const result = await this.auth.login(body);
+    return this.respondWithSession(result, res);
+  }
+
+  /**
+   * The body carries only an ID token — no email/phone field for
+   * AccountAwareThrottlerGuard's `account` dimension to key on, so this
+   * reuses AUTH_THROTTLE's `default` (IP) dimension only; the guard falls
+   * back to the IP suffix automatically when neither field is present,
+   * exactly as it already does for any other public route with no account
+   * identifier in its body.
+   */
+  @Public()
+  @Throttle(AUTH_THROTTLE)
+  @Post('google')
+  @UsePipes(zodPipe(googleAuthSchema))
+  async google(@Body() body: GoogleAuthInput, @Res({ passthrough: true }) res: Response) {
+    const result = await this.auth.loginWithGoogle(body.idToken);
     return this.respondWithSession(result, res);
   }
 

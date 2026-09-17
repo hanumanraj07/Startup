@@ -16,11 +16,24 @@ import { MoneyBreakdown } from '@/components/ui/money-breakdown';
 import { ApiError, api } from '@/lib/api-client';
 import type { CategoryView, CityView, ProofRequirement } from '@/lib/api-types';
 import { categoryIcon } from '@/lib/category-icons';
+import { useAuth } from '@/lib/auth-context';
+import { openRazorpayCheckout } from '@/lib/razorpay-checkout';
 import { cn } from '@/lib/utils';
 
 interface DraftTask {
   id: string;
+  title: string;
   money: { budgetPaise: number; commissionPaise: number; workerPayoutPaise: number };
+}
+
+interface PaymentOrderView {
+  id: string;
+  status: string;
+  razorpay?: { orderId: string; keyId: string | null };
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 const STEPS = ['Category', 'Location', 'Details', 'Proof', 'Review & pay'];
@@ -36,6 +49,7 @@ const ILLUSTRATIVE_COMMISSION_BPS = 1500;
 
 export default function NewTaskPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const [step, setStep] = useState(0);
 
   const [categories, setCategories] = useState<CategoryView[] | null>(null);
@@ -136,7 +150,7 @@ export default function NewTaskPage() {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const task = await api.post<{ id: string; money: DraftTask['money'] }>('/tasks', {
+      const task = await api.post<{ id: string; title: string; money: DraftTask['money'] }>('/tasks', {
         title: title.trim(),
         description: description.trim(),
         categorySlug: category.slug,
@@ -165,7 +179,48 @@ export default function NewTaskPage() {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      await api.post('/payments/orders', { taskId: draft.id }, { idempotencyKey: `create-${draft.id}` });
+      const order = await api.post<PaymentOrderView>(
+        '/payments/orders',
+        { taskId: draft.id },
+        { idempotencyKey: `create-${draft.id}` },
+      );
+
+      if (order.razorpay?.orderId && order.razorpay.keyId) {
+        // Real gateway: the modal completing is not proof of capture — only
+        // the signed webhook is (docs/16-security-requirements.md). Poll the
+        // server's own view of the payment rather than trusting the modal's
+        // callback, and let the requester know that's what's happening.
+        const outcome = await openRazorpayCheckout({
+          keyId: order.razorpay.keyId,
+          orderId: order.razorpay.orderId,
+          amountPaise: draft.money.budgetPaise,
+          description: draft.title,
+          prefillEmail: user?.email,
+        });
+
+        if (outcome === 'dismissed') {
+          setSubmitError('Payment window closed before completing. Try again when ready.');
+          setSubmitting(false);
+          return;
+        }
+
+        setSubmitError('Confirming your payment with the bank — this can take a few seconds…');
+        let captured = false;
+        for (let attempt = 0; attempt < 20 && !captured; attempt++) {
+          await wait(1500);
+          const status = await api.get<PaymentOrderView>(`/payments/${draft.id}`);
+          captured = status.status === 'CAPTURED';
+        }
+        if (!captured) {
+          setSubmitError(
+            'Payment is still confirming. This page will not auto-publish — check back in a minute, or reload.',
+          );
+          setSubmitting(false);
+          return;
+        }
+        setSubmitError(null);
+      }
+
       await api.post(`/tasks/${draft.id}/publish`);
       router.push(`/tasks/${draft.id}`);
     } catch (error) {
@@ -333,22 +388,73 @@ function LocationStep({
   onLngChange: (v: number | null) => void;
   onAddressChange: (v: string) => void;
 }) {
+  const [selectedState, setSelectedState] = useState<string | null>(null);
+
+  // Grouped by state so a district/city list only ever needs one more
+  // entry per new district OnSite launches in — the picker itself never
+  // changes. Today that's one district per state because worker supply is
+  // the actual constraint (see the note below), not anything in this code.
+  const states = useMemo(() => {
+    if (!cities) return [];
+    return [...new Set(cities.map((c) => c.state))].sort();
+  }, [cities]);
+
+  const districtsInState = useMemo(
+    () => cities?.filter((c) => c.state === selectedState) ?? [],
+    [cities, selectedState],
+  );
+
   return (
     <div className="flex flex-col gap-4">
       <h2 className="text-[19px] font-semibold text-ink-900">Where is the task?</h2>
       <p className="text-sm text-ink-500">
-        OnSite is live in Ahmedabad and Kolkata only. Pick the city, then refine the exact point.
+        OnSite only operates where we have verified local workers. Right now that&rsquo;s a small list — pick the
+        state, then the district, then refine the exact point.
       </p>
-      <div className="flex gap-2">
-        {cities?.map((c) => (
-          <Button key={c.id} type="button" variant="secondary" size="sm" onClick={() => onSelectCity(c)}>
-            <MapPin className="h-4 w-4" aria-hidden /> {c.name}
-          </Button>
-        ))}
-        <Button type="button" variant="ghost" size="sm" onClick={onUseMyLocation}>
-          <LocateFixed className="h-4 w-4" aria-hidden /> Use my location
-        </Button>
+
+      <div className="flex flex-col gap-2">
+        <span className="text-sm font-medium text-ink-700">State</span>
+        <div className="flex flex-wrap gap-2">
+          {states.map((state) => (
+            <Button
+              key={state}
+              type="button"
+              variant={selectedState === state ? 'primary' : 'secondary'}
+              size="sm"
+              onClick={() => setSelectedState(state)}
+            >
+              {state}
+            </Button>
+          ))}
+        </div>
       </div>
+
+      {selectedState ? (
+        <div className="flex flex-col gap-2">
+          <span className="text-sm font-medium text-ink-700">District</span>
+          <div className="flex flex-wrap gap-2">
+            {districtsInState.map((c) => (
+              <Button key={c.id} type="button" variant="secondary" size="sm" onClick={() => onSelectCity(c)}>
+                <MapPin className="h-4 w-4" aria-hidden /> {c.name}
+              </Button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <details className="text-xs text-ink-400">
+        <summary className="cursor-pointer select-none">Why only these places?</summary>
+        <p className="mt-1">
+          Every task needs a real, verified worker nearby to actually do it — posting somewhere with zero workers
+          would just mean nobody ever accepts. We&rsquo;re onboarding and verifying workers district by district, and
+          new ones open up here the moment there&rsquo;s real coverage. This isn&rsquo;t a technical limit.
+        </p>
+      </details>
+
+      <Button type="button" variant="ghost" size="sm" className="self-start" onClick={onUseMyLocation}>
+        <LocateFixed className="h-4 w-4" aria-hidden /> Use my current location instead
+      </Button>
+
       {cityNote ? <p className="text-xs text-ink-400">{cityNote}</p> : null}
       <div className="grid grid-cols-2 gap-3">
         <Field id="latitude" label="Latitude">

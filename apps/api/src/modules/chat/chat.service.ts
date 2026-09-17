@@ -5,7 +5,27 @@ import { ForbiddenError, NotFoundError } from '../../common/errors';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { ACTIVE_WORK, AWAITING_REVIEW } from '../tasks/transitions';
 import { redactContactInfo } from './redaction';
+
+/**
+ * The only statuses a NEW message may be sent from. Once a task leaves this
+ * set — completed, cancelled, expired, or disputed — chat becomes read-only:
+ * history stays visible (evidence, and simple reference), but nothing new
+ * can be written. Reusing the task state machine's own ACTIVE_WORK and
+ * AWAITING_REVIEW sets rather than a parallel list here, so this can never
+ * silently drift out of sync with what the state machine itself considers
+ * "the task is still being worked."
+ *
+ * This closes a real risk, not just a UX nicety: an open-ended, unmonitored
+ * channel between two strangers that outlives the transaction it was created
+ * for is exactly the kind of surface a scammer uses to keep pressuring or
+ * re-engaging someone after money has already moved. Anything legitimate
+ * left to say once a task is over belongs in a dispute, where an admin
+ * actually sees it — not in a chat neither party nor the platform is
+ * watching anymore.
+ */
+const CHAT_WRITABLE_STATUSES = [...ACTIVE_WORK, ...AWAITING_REVIEW];
 
 export interface ChatMessageView {
   id: string;
@@ -49,6 +69,11 @@ export class ChatService {
    */
   async send(taskId: string, senderId: string, input: SendMessageInput): Promise<ChatMessageView> {
     const task = await this.requirePartyToTask(taskId, senderId);
+    if (!CHAT_WRITABLE_STATUSES.includes(task.status)) {
+      throw new ForbiddenError(
+        'Chat is closed once a task is finished. Use "Report an issue" on the task if you need to raise something.',
+      );
+    }
     if (!task.assignedWorkerId) {
       // Unreachable: requirePartyToTask already refuses an unassigned task.
       // This exists only so TypeScript can narrow assignedWorkerId to
@@ -148,12 +173,12 @@ export class ChatService {
 
   /**
    * Chat opens once a worker is assigned — there is no "other party" before
-   * that — and stays open through the rest of the task's life, including
-   * after completion, since a requester or worker may still need to discuss
-   * something covered by the task (and dispute evidence review reads this
-   * same history). Anyone who is neither party gets NotFoundError, matching
-   * TasksService.getById's role-projection pattern: existence of a task they
-   * have no relationship to is not information they need.
+   * that. Reading history remains available for the task's whole life
+   * (dispute evidence review depends on it), but see CHAT_WRITABLE_STATUSES
+   * above for when new messages are actually allowed. Anyone who is neither
+   * party gets NotFoundError, matching TasksService.getById's role-projection
+   * pattern: existence of a task they have no relationship to is not
+   * information they need.
    */
   private async requirePartyToTask(taskId: string, userId: string) {
     const task = await this.prisma.task.findUnique({ where: { id: taskId } });

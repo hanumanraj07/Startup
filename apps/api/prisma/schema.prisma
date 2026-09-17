@@ -45,6 +45,7 @@ enum UserStatus {
   ACTIVE
   SUSPENDED
   BANNED
+  DELETED
 }
 
 enum PlatformRole {

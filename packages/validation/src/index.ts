@@ -54,6 +54,14 @@ export const paginationSchema = z.object({
   cursor: z.string().max(500).optional(),
 });
 
+// GET /tasks/mine defaults to the caller's posted (requester) tasks; a worker
+// viewing their own accepted work passes perspective=worker to switch which
+// column the query filters on. Additive, not a new endpoint.
+export const myTasksSchema = paginationSchema.extend({
+  perspective: z.enum(['requester', 'worker']).default('requester'),
+});
+export type MyTasksInput = z.infer<typeof myTasksSchema>;
+
 // ─── Auth ────────────────────────────────────────────────────────────────
 
 export const registerSchema = z.object({
@@ -88,6 +96,14 @@ export const resetPasswordSchema = z.object({
 });
 
 // ─── Profile ─────────────────────────────────────────────────────────────
+
+// The literal-text confirmation is required even for a Google-only account
+// with no password, so deletion always needs a deliberate, typed act — not
+// just a click that a script or a mis-tap could trigger.
+export const deleteAccountSchema = z.object({
+  confirm: z.literal('DELETE', { errorMap: () => ({ message: 'Type DELETE to confirm.' }) }),
+  password: z.string().min(1).optional(),
+});
 
 export const updateProfileSchema = z.object({
   displayName: z.string().trim().min(2).max(80).optional(),
@@ -404,6 +420,7 @@ export const kycDecisionSchema = z
 
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
+export type GoogleAuthInput = z.infer<typeof googleAuthSchema>;
 export type CreateTaskInput = z.infer<typeof createTaskSchema>;
 export type UpdateTaskInput = z.infer<typeof updateTaskSchema>;
 export type NearbyTasksInput = z.infer<typeof nearbyTasksSchema>;
@@ -423,6 +440,7 @@ export type KycSubmissionInput = z.infer<typeof kycSubmissionSchema>;
 export type KycPresignInput = z.infer<typeof kycPresignSchema>;
 export type PayoutAccountInput = z.infer<typeof payoutAccountSchema>;
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+export type DeleteAccountInput = z.infer<typeof deleteAccountSchema>;
 export type CreatePaymentOrderInput = z.infer<typeof createPaymentOrderSchema>;
 export type BlockerInput = z.infer<typeof blockerSchema>;
 export type SubmitTaskInput = z.infer<typeof submitTaskSchema>;

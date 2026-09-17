@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { NotificationBell } from '@/components/notification-bell';
 import { useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/utils';
 
@@ -12,6 +14,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, isLoading, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const [confirmingLogout, setConfirmingLogout] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !user) router.replace('/sign-in');
@@ -37,6 +40,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <NavLink href="/dashboard" pathname={pathname}>
                 Dashboard
               </NavLink>
+              <NavLink href="/tasks" pathname={pathname}>
+                My tasks
+              </NavLink>
               <NavLink href="/payments" pathname={pathname}>
                 Payments
               </NavLink>
@@ -55,13 +61,34 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   Admin
                 </NavLink>
               ) : null}
+              <NavLink href="/settings" pathname={pathname}>
+                Settings
+              </NavLink>
             </nav>
           </div>
           <div className="flex items-center gap-4">
+            <NotificationBell />
             <span className="text-sm text-ink-500">{user.displayName}</span>
+            <Button variant="ghost" size="sm" onClick={() => setConfirmingLogout(true)}>
+              Sign out
+            </Button>
+          </div>
+        </div>
+      </header>
+      <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
+
+      <Dialog open={confirmingLogout} onOpenChange={setConfirmingLogout}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Sign out?</DialogTitle>
+            <DialogDescription>You&rsquo;ll need to sign in again to access your account.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setConfirmingLogout(false)}>
+              Cancel
+            </Button>
             <Button
-              variant="ghost"
-              size="sm"
+              variant="destructive"
               onClick={async () => {
                 await logout();
                 router.push('/sign-in');
@@ -69,10 +96,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             >
               Sign out
             </Button>
-          </div>
-        </div>
-      </header>
-      <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

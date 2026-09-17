@@ -188,9 +188,16 @@ export class VerificationService {
 
   private async recomputeVerificationLevel(userId: string): Promise<void> {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
-    // Level 2+ requires an approved KYC review, handled where KYC decisions
-    // are made. This only ever raises 0 -> 1; it never lowers a higher level.
-    if (user.emailVerifiedAt && user.phoneVerifiedAt && user.verificationLevel < 1) {
+    // Email-only gate for level 1, deliberately relaxed from docs/12's
+    // original "email AND phone" — SMS requires DLT registration (a real
+    // paid, one-time compliance step in India) that launch is deferring
+    // until there's revenue to justify it. Phone verification is still
+    // fully built and still raises the level on its own if a user does
+    // complete it; this just stops it being a hard requirement to reach
+    // level 1 at all. Level 2+ still requires an approved KYC review,
+    // handled where KYC decisions are made. This only ever raises 0 -> 1;
+    // it never lowers a higher level.
+    if (user.emailVerifiedAt && user.verificationLevel < 1) {
       await this.prisma.user.update({ where: { id: userId }, data: { verificationLevel: 1 } });
     }
   }

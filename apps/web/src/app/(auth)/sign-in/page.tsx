@@ -10,13 +10,24 @@ import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { GoogleSignInButton } from '@/components/google-sign-in-button';
 import { ApiError } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
 
 export default function SignInPage() {
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const router = useRouter();
   const [formError, setFormError] = useState<string | null>(null);
+
+  const handleGoogleToken = async (idToken: string) => {
+    setFormError(null);
+    try {
+      await loginWithGoogle(idToken);
+      router.push('/dashboard');
+    } catch (error) {
+      setFormError(error instanceof ApiError ? error.message : 'Google sign-in failed. Try again.');
+    }
+  };
 
   const {
     register,
@@ -41,6 +52,12 @@ export default function SignInPage() {
         <CardDescription>Welcome back.</CardDescription>
       </CardHeader>
       <CardContent>
+        <GoogleSignInButton onToken={handleGoogleToken} onError={setFormError} />
+        <div className="my-5 flex items-center gap-3 text-xs text-ink-400">
+          <div className="h-px flex-1 bg-line" />
+          or continue with email
+          <div className="h-px flex-1 bg-line" />
+        </div>
         <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4" noValidate>
           <Field id="email" label="Email" error={errors.email?.message}>
             <Input type="email" autoComplete="email" {...register('email')} />

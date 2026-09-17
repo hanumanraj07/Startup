@@ -32,6 +32,9 @@ blob-report/
 # Turborepo
 .turbo/
 
+# Vercel CLI project links (per-machine, not shared via git)
+.vercel/
+
 # Prisma
 apps/api/prisma/*.db
 apps/api/prisma/*.db-journal

@@ -6,6 +6,7 @@ import { GeoRepository, DEFAULT_GEOFENCE_METERS } from '../../repositories/geo.r
 import { PrismaService } from '../../prisma/prisma.service';
 import { AutoApproveQueue } from '../../queue/auto-approve.queue';
 import { NotificationService } from '../notifications/notification.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { StorageService } from '../storage/storage.service';
 import { assertTransitionAllowed } from './transitions';
 
@@ -33,6 +34,7 @@ export class ExecutionService {
     private readonly storage: StorageService,
     private readonly autoApproveQueue: AutoApproveQueue,
     private readonly notifications: NotificationService,
+    private readonly realtime: RealtimeGateway,
   ) {}
 
   async markEnRoute(taskId: string, workerId: string) {
@@ -87,6 +89,7 @@ export class ExecutionService {
         },
       }),
     ]);
+    this.realtime.emitTaskStatus(taskId, 'ARRIVED');
 
     this.logger.log(
       `Task ${taskId} arrival: ${measurement.distanceMeters.toFixed(0)}m from the task location ` +
@@ -266,6 +269,7 @@ export class ExecutionService {
         },
       }),
     ]);
+    this.realtime.emitTaskStatus(taskId, 'SUBMITTED');
 
     // The fast path. If this fails or Redis is unavailable, the task is
     // still correctly SUBMITTED with review_deadline_at set — the sweeper
@@ -353,6 +357,7 @@ export class ExecutionService {
         data: { taskId, fromStatus: from, toStatus: to, actorUserId, actorRole: 'WORKER' },
       }),
     ]);
+    this.realtime.emitTaskStatus(taskId, to);
   }
 
   private async toProofView(proof: {

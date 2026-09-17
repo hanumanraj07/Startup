@@ -5,6 +5,7 @@ import { BusinessRuleError, ConflictError, UnauthenticatedError } from '../../co
 import { toSelfUser } from '../../common/projections';
 import { loadEnv } from '../../config/env';
 import { PrismaService } from '../../prisma/prisma.service';
+import { GoogleAuthService } from './google-auth.service';
 import { PasswordService } from './password.service';
 import { TokenService } from './token.service';
 import { VerificationService } from './verification.service';
@@ -35,6 +36,7 @@ export class AuthService {
     private readonly passwords: PasswordService,
     private readonly tokens: TokenService,
     private readonly verification: VerificationService,
+    private readonly google: GoogleAuthService,
   ) {}
 
   async register(input: RegisterInput): Promise<AuthResult> {
@@ -70,6 +72,60 @@ export class AuthService {
 
     if (!user || !user.passwordHash || !passwordOk) {
       throw new UnauthenticatedError('Incorrect email or password.');
+    }
+
+    if (user.status !== 'ACTIVE') {
+      throw new UnauthenticatedError('This account is not active.');
+    }
+
+    return this.issueSession(user.id);
+  }
+
+  /**
+   * Sign-in with Google. The ID token is verified against Google's own
+   * public keys and this app's client id before anything here trusts a
+   * single field of it — see GoogleAuthService.
+   *
+   * Three cases, in order: an account already linked to this Google id logs
+   * straight in; an existing password-based account with the same email
+   * gets the Google id linked onto it (safe specifically because Google has
+   * already independently verified ownership of that address — this is not
+   * the same as trusting a client's own claim to an email); otherwise a new
+   * account is created with no password at all, since Google is the only
+   * way in for it.
+   */
+  async loginWithGoogle(idToken: string): Promise<AuthResult> {
+    const profile = await this.google.verifyIdToken(idToken);
+
+    let user = await this.prisma.user.findUnique({ where: { googleId: profile.googleId } });
+
+    if (!user) {
+      const byEmail = await this.prisma.user.findUnique({ where: { email: profile.email } });
+
+      if (byEmail) {
+        user = await this.prisma.user.update({
+          where: { id: byEmail.id },
+          data: {
+            googleId: profile.googleId,
+            // Google already verified this address; that's a stronger proof
+            // than this app's own email-link flow, not a weaker one. Never
+            // downgrades an already-verified account.
+            ...(profile.emailVerified && !byEmail.emailVerifiedAt ? { emailVerifiedAt: new Date() } : {}),
+            ...(profile.emailVerified && byEmail.verificationLevel < 1 ? { verificationLevel: 1 } : {}),
+          },
+        });
+      } else {
+        user = await this.prisma.user.create({
+          data: {
+            email: profile.email,
+            googleId: profile.googleId,
+            displayName: profile.displayName,
+            avatarUrl: profile.avatarUrl,
+            passwordHash: null,
+            ...(profile.emailVerified ? { emailVerifiedAt: new Date(), verificationLevel: 1 } : {}),
+          },
+        });
+      }
     }
 
     if (user.status !== 'ACTIVE') {

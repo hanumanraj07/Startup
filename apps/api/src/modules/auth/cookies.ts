@@ -11,22 +11,26 @@ export const REFRESH_COOKIE_NAME = 'onsite_rt';
  * rather than hardcoded true, because the Secure attribute requires HTTPS and
  * local development runs over plain http.
  *
- * KNOWN GAP, recorded here and in ai/memory.md: web and api run on different
- * origins (localhost:3000 vs localhost:4000) in this setup. sameSite=lax
- * cookies are not sent on a cross-origin fetch/XHR, only on top-level
- * navigation. The API itself is correct and this is verified with curl (which
- * does not enforce SameSite), but the browser-facing web app will need either
- * a same-site production deployment (api.onsite.app + onsite.app is
- * cross-subdomain, not cross-site, once cookies are scoped appropriately) or
- * a same-origin proxy (Next.js rewrites) before login works from the browser.
- * That wiring belongs to whichever phase builds the web app's auth pages.
+ * Web and API run on different registrable domains in this deployment
+ * (onsite-orcin.vercel.app vs onsite-api.duckdns.org) — genuinely cross-site,
+ * not just cross-origin-same-site. sameSite=lax cookies are never sent on a
+ * cross-site fetch/XHR, only on top-level navigation, which silently broke
+ * `/auth/refresh` from the browser (curl doesn't enforce SameSite, so this
+ * was invisible to every curl-based verification this project has relied on
+ * — only a real browser session caught it). sameSite=none is required for a
+ * cross-site cookie to be sent at all, which in turn requires secure=true
+ * (browsers reject `SameSite=None` without `Secure`) — both already true in
+ * production since this backend only serves HTTPS there. Local dev keeps
+ * sameSite=lax: web and api are same-site there (both localhost), and lax is
+ * the safer default when none is not needed.
  */
 function cookieOptions(maxAgeMs: number): CookieOptions {
   const env = loadEnv();
+  const isProduction = env.NODE_ENV === 'production';
   return {
     httpOnly: true,
-    secure: env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax',
     path: '/api/v1/auth',
     maxAge: maxAgeMs,
   };

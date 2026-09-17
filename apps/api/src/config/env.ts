@@ -71,6 +71,12 @@ const envSchema = z
     GEOCODING_PROVIDER: z.enum(['google', 'mock']).default('mock'),
     GOOGLE_MAPS_API_KEY: z.string().optional(),
 
+    // Sign-in with Google. Only the client ID is needed server-side — ID
+    // token verification checks the token's `aud` claim against it; no
+    // secret changes hands in this flow (that's only needed for the
+    // server-side OAuth code exchange, which this app doesn't use).
+    GOOGLE_CLIENT_ID: z.string().optional(),
+
     VAPID_PUBLIC_KEY: z.string().optional(),
     VAPID_PRIVATE_KEY: z.string().optional(),
     VAPID_SUBJECT: z.string().optional(),

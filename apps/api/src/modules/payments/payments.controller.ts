@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Headers, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post, Query, RawBody } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { createPaymentOrderSchema, paginationSchema, type CreatePaymentOrderInput } from '@onsite/validation';
 import { ValidationError } from '../../common/errors';
 import { zodPipe } from '../../common/zod-validation.pipe';
 import { CurrentUser, type RequestUser } from '../auth/decorators/current-user.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 import { PaymentsService } from './payments.service';
 
 // docs/07: "Payment creation: 10 per hour per user." `user` is what actually
@@ -32,6 +33,21 @@ export class PaymentsController {
       requesterId: user.id,
       idempotencyKey,
     });
+  }
+
+  /**
+   * docs/07: "public, signature-verified. Signature verified before
+   * anything else. Deduplicated on event id. Replay-safe." Also declared
+   * before ':taskId' for the same route-ordering reason as 'mine' below.
+   *
+   * `@RawBody()` needs `rawBody: true` on `NestFactory.create` (see
+   * main.ts) — signature verification is an HMAC over the exact request
+   * bytes, which the parsed-and-reserialized JSON body would not reproduce.
+   */
+  @Public()
+  @Post('webhook')
+  async webhook(@RawBody() rawBody: Buffer, @Headers('x-razorpay-signature') signature: string | undefined) {
+    return this.payments.handleWebhook(rawBody, signature);
   }
 
   // Declared before ':taskId' — route matching follows declaration order,

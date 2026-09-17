@@ -7,13 +7,15 @@ Trust is not a feature of this product. It is the product. The technology is str
 | Level | Requires | Grants |
 |---|---|---|
 | 0 | Registered | Browse only |
-| 1 | Email and phone verified | Post tasks. Accept up to ₹1,000 |
+| 1 | Email verified | Post tasks. Accept up to ₹1,000 |
 | 2 | Government ID and selfie, admin approved | Accept ₹1,000 to ₹5,000 |
 | 3 | Address verified | Accept above ₹5,000 |
 | 4 | 50+ completions, ≥4.5 rating, ≥95% completion rate | Priority ranking, higher-value work |
 | 5 | Professional tier, manually granted | Reserved for business customers |
 
 **Verification requirements scale with what is at stake.** A ₹200 photograph does not warrant KYC friction; a ₹5,000 property inspection does. Enforced server-side at acceptance by reading the database, never from a token claim.
+
+**Launch note:** level 1 originally required phone verification alongside email. Deliberately relaxed to email-only for launch — SMS OTP requires DLT registration in India, a real one-time compliance cost, and it isn't worth paying before there's revenue to justify it. Phone verification is still fully built (`/auth/phone/send-otp`, `/auth/phone/verify-otp`) and still available to any user who wants it; it is simply no longer a hard gate on reaching level 1. Revisit once DLT registration is in place.
 
 ## KYC
 
