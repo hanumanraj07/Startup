@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { PageTransition } from '@/components/page-transition';
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -6,7 +7,9 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       <Link href="/" className="mb-8 text-xl font-bold tracking-tight text-ink-900">
         OnSite
       </Link>
-      <main className="w-full max-w-[400px]">{children}</main>
+      <main className="w-full max-w-[400px]">
+        <PageTransition>{children}</PageTransition>
+      </main>
     </div>
   );
 }

@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
 import { Bell, CheckCircle2, CircleDashed } from 'lucide-react';
 import { phoneSchema, verifyOtpSchema } from '@onsite/validation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { CategoryBadge, type CategorySlug } from '@/components/ui/category-badge';
 import { Input } from '@/components/ui/input';
 import { ApiError, api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
@@ -31,7 +33,14 @@ export default function DashboardPage() {
             <CardTitle>Post a task</CardTitle>
             <CardDescription>Get a verified local person to inspect, verify or collect something.</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex flex-col gap-4">
+            <div className="flex gap-3">
+              {(['product-inspection', 'shop-verification', 'property-inspection', 'local-photography'] as CategorySlug[]).map(
+                (slug) => (
+                  <CategoryBadge key={slug} slug={slug} size={44} />
+                ),
+              )}
+            </div>
             <Button asChild>
               <Link href="/tasks/new">Create a task</Link>
             </Button>
@@ -141,7 +150,21 @@ function StatusRow({ verified, label }: { verified: boolean; label: string }) {
   const Icon = verified ? CheckCircle2 : CircleDashed;
   return (
     <div className={`flex items-center gap-2 text-sm ${verified ? 'text-verified' : 'text-ink-400'}`}>
-      <Icon className="h-4 w-4" aria-hidden />
+      {verified ? (
+        // Spring pop-in — the moment this row flips to verified (email link
+        // clicked, OTP confirmed) is the one time it should draw the eye;
+        // it never loops, so it doesn't keep asking for attention after.
+        <motion.span
+          className="inline-flex"
+          initial={{ scale: 0, rotate: -20 }}
+          animate={{ scale: 1, rotate: 0 }}
+          transition={{ type: 'spring', stiffness: 320, damping: 14 }}
+        >
+          <Icon className="h-4 w-4" aria-hidden />
+        </motion.span>
+      ) : (
+        <Icon className="h-4 w-4" aria-hidden />
+      )}
       {label}
     </div>
   );

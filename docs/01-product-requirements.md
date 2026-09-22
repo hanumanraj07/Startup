@@ -47,13 +47,13 @@ One account can act as both requester and executor. Role is a mode, not a separa
 
 **Trust is the product.** The technology is not the difficult part. Convincing someone in Ahmedabad to send ₹80,000 of intent through a stranger in Kolkata is. Everything, verification levels, proof requirements, escrow, ratings, disputes, exists to make that leap smaller.
 
-**It is a two-sided cold start.** With no workers, tasks go unaccepted. With no tasks, workers leave. This is why launch is deliberately confined to two cities and one category.
+**It is a two-sided cold start.** With no workers, tasks go unaccepted. With no tasks, workers leave. This is why launch is deliberately confined to one category set, and why worker recruitment stays concentrated even though task creation does not.
 
 ## Initial market
 
-India. Launch cities **Ahmedabad and Kolkata only**.
+India, any task location. Verified worker recruitment is concentrated in **Ahmedabad and Kolkata**, the founding use case's origin and destination cities, kept to a size one person can recruit by hand.
 
-The pairing is deliberate: it matches the founding use case, gives one origin city and one destination city, and keeps worker recruitment to a size one person can do by hand.
+Task creation is not geofenced to those two cities: a requester anywhere in India can post a task at any in-country location (see `ai/memory.md`, 2026-09-22). What is genuinely constrained is supply, not the software. A task posted far from where workers are recruited will simply find few or no nearby workers, get few or no offers through the matching tiers, and expire and refund at its deadline like any other task nobody accepts — the same honest, documented outcome as a supply gap inside the founding cities, not a special case.
 
 ## Launch categories
 
@@ -77,7 +77,6 @@ Everything else is out of scope at launch. Not because it lacks value, but becau
 ## What is explicitly not being built
 
 - Any task category outside the six above
-- Cities beyond Ahmedabad and Kolkata
 - Cash handling, purchasing on the requester's behalf, or any task where the worker fronts money
 - Tasks involving valuables in transit
 - Anything on the prohibited list in `docs/12-trust-safety.md`

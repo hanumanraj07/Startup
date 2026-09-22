@@ -84,7 +84,9 @@ describe('UsersService.deleteAccount', () => {
 
     await service.deleteAccount('u1', { confirm: 'DELETE', password: 'correct' });
 
-    const data = update.mock.calls[0][0].data;
+    const firstCall = update.mock.calls[0];
+    if (!firstCall) throw new Error('update was not called');
+    const [{ data }] = firstCall;
     expect(data.status).toBe('DELETED');
     expect(data.phone).toBeNull();
     expect(data.passwordHash).toBeNull();

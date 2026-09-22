@@ -7,6 +7,7 @@ import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { NotificationBell } from '@/components/notification-bell';
+import { PageTransition } from '@/components/page-transition';
 import { useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/utils';
 
@@ -75,7 +76,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
+      <main className="mx-auto max-w-6xl px-4 py-8">
+        <PageTransition>{children}</PageTransition>
+      </main>
 
       <Dialog open={confirmingLogout} onOpenChange={setConfirmingLogout}>
         <DialogContent>

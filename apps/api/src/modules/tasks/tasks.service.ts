@@ -10,7 +10,7 @@ import {
   NotFoundError,
 } from '../../common/errors';
 import { loadEnv } from '../../config/env';
-import { GeoRepository } from '../../repositories/geo.repository';
+import { GeoRepository, isWithinIndiaBounds } from '../../repositories/geo.repository';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MatchingQueue } from '../../queue/matching.queue';
 import { NotificationService } from '../notifications/notification.service';
@@ -116,13 +116,17 @@ export class TasksService {
     });
     if (!category) throw new NotFoundError('That category is not currently available.');
 
-    // The launch scope is enforced in data, not scattered conditionals. A
-    // task location outside an active city radius is rejected outright.
-    const city = await this.geo.findContainingCity(input.taskLocation.latitude, input.taskLocation.longitude);
+    // India-wide launch: any in-country location is accepted. The bounding
+    // box only catches obviously-bogus coordinates (0,0, wrong hemisphere,
+    // another country); it is not a precision border check. The nearest
+    // active city is attached purely as a display label — it never gates
+    // creation and worker matching never joins on it (see geo.repository.ts).
+    if (!isWithinIndiaBounds(input.taskLocation.latitude, input.taskLocation.longitude)) {
+      throw new BusinessRuleError('The task location must be within India.');
+    }
+    const city = await this.geo.findNearestCity(input.taskLocation.latitude, input.taskLocation.longitude);
     if (!city) {
-      throw new BusinessRuleError(
-        'OnSite is currently available only in Ahmedabad and Kolkata. The task location must fall within one of these cities.',
-      );
+      throw new BusinessRuleError('No service area is configured yet. Please try again shortly.');
     }
 
     // Hard prohibitions block creation outright; risk scoring below only
@@ -195,9 +199,12 @@ export class TasksService {
 
     let cityId = task.cityId;
     if (input.taskLocation) {
-      const city = await this.geo.findContainingCity(input.taskLocation.latitude, input.taskLocation.longitude);
+      if (!isWithinIndiaBounds(input.taskLocation.latitude, input.taskLocation.longitude)) {
+        throw new BusinessRuleError('The task location must be within India.');
+      }
+      const city = await this.geo.findNearestCity(input.taskLocation.latitude, input.taskLocation.longitude);
       if (!city) {
-        throw new BusinessRuleError('The task location must fall within Ahmedabad or Kolkata.');
+        throw new BusinessRuleError('No service area is configured yet. Please try again shortly.');
       }
       cityId = city.id;
     }

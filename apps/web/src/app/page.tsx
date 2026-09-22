@@ -74,7 +74,7 @@ export default function HomePage() {
             </a>
           </div>
           <p className="mt-6 text-xs text-ink-400">
-            Launching in Ahmedabad and Kolkata. Remote inspection and verification only.
+            Available across India. Remote inspection and verification only.
           </p>
         </div>
 
@@ -131,7 +131,7 @@ export default function HomePage() {
       </section>
 
       <footer className="mt-24 border-t border-line pt-8 text-sm text-ink-400 sm:mt-32">
-        <p>© 2026 OnSite. Ahmedabad · Kolkata.</p>
+        <p>© 2026 OnSite. Available across India.</p>
       </footer>
     </main>
   );

@@ -48,7 +48,7 @@ These are not preferences. Breaking any one of them is a defect.
 5. **Money never moves on trust.** Requester funds are captured before a task becomes visible to workers, held, and released only on approval, auto-approval, or an admin dispute decision.
 6. **Personal data never crosses the marketplace.** A worker never learns the requester's home address, phone or email. A requester never learns the worker's home address, phone or email. They share the task location and in-app chat. Nothing else.
 7. **Every rupee is double-entry.** All money movement is recorded as balanced ledger rows. The sum of ledger entries for any task must be exactly zero.
-8. **The launch scope is narrow on purpose.** Remote inspection and verification, Ahmedabad and Kolkata only. This platform is not "any task anywhere," and proposals to widen it belong in `docs/18-future-roadmap.md`, not in code.
+8. **The launch scope is narrow on purpose.** Remote inspection and verification, one launch category set, any task location within India — but worker recruitment and verified supply remain concentrated in Ahmedabad and Kolkata, so coverage outside them is thin by fact, not by a code gate. This platform is not "any task category, anywhere in the world," and proposals to widen the category list or go outside India belong in `docs/18-future-roadmap.md`, not in code. See `ai/memory.md`, 2026-09-22, for why the geographic gate specifically was lifted.
 
 ## Non-negotiable code locations
 

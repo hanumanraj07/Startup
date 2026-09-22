@@ -3,104 +3,75 @@
 @tailwind utilities;
 
 /**
- * Design tokens, verbatim from docs/19-ui-design-system.md.
+ * Design tokens — warm, illustrated "journey" aesthetic: moss green + cream
+ * + orange accent. Light theme only, by design; dark mode was deliberately
+ * removed here (a prior phase of this project built and Lighthouse-audited
+ * a dark palette — see ai/memory.md — this is an intentional visual
+ * direction change, not an oversight).
  *
- * Light palette on bare :root. Dark tokens redefined under both the
- * prefers-color-scheme media query (guarded so an explicit light choice wins)
- * and the [data-theme="dark"] attribute (so an explicit toggle wins in both
- * directions). Never define a color only inside one of those blocks.
+ * Every component in this codebase already reads color through these
+ * variable names rather than a literal hex value, so this file is the
+ * entire re-skin: nothing else needs to change for the palette itself to
+ * apply everywhere at once.
  */
 :root {
-  /* Brand — confident blue. Actions, links, active states, map pins. */
-  --brand-50: #eef2fe;
-  --brand-100: #e0e7fd;
-  --brand-500: #3d63e8;
-  --brand-600: #2b4fd8;
-  --brand-700: #1e3baa;
-  /*
-   * A solid-fill button background paired with white text needs AA contrast
-   * (4.5:1) against that white text specifically — a different requirement
-   * from --brand-600's other job as *text* color on a dark page background,
-   * which instead needs to contrast against paper-50/paper-0 and so gets
-   * lifted lighter for dark mode below. One value can't satisfy both: white
-   * text on the dark-mode-lifted #5b7cf0 only reaches 3.75:1 (caught by a
-   * real Lighthouse run, not assumed). This token is never redefined for
-   * dark mode — #2b4fd8 gives white text 6.5:1 in both themes — so use it
-   * for any bg-*-with-white-text button/fill, and keep --brand-600 for text
-   * and non-text (outline/decorative) uses.
-   */
-  --brand-solid: #2b4fd8;
+  /* Primary — moss/olive green. Headings, active states, links, route lines. */
+  --brand-50: #eef3e6;
+  --brand-100: #dce8c8;
+  --brand-500: #8fae68;
+  --brand-600: #5c7a3d;
+  --brand-700: #43592c;
+  /* The solid CTA fill is orange (--accent-solid below), not this — moss
+     green here is reserved for non-CTA solid uses: map pins, active-state
+     fills, anything that needs the brand color as a fill but isn't "the"
+     button on the screen. */
+  --brand-solid: #5c7a3d;
 
-  /* Ink — warm-leaning near-black, never pure #000. */
-  --ink-900: #0e1116;
-  --ink-700: #1c2230;
-  --ink-500: #4a5468;
-  --ink-400: #6b7688;
-  --ink-300: #8a94a6;
+  /* Accent — orange. The main call-to-action button and highlight moments. */
+  --accent-500: #f2884b;
+  --accent-600: #f2884b;
+  --accent-700: #d96f35;
+  --accent-solid: #f2884b;
 
-  /* Paper — warm off-white, not clinical white. */
+  /* Pastel tints — category-badge and illustration backgrounds. */
+  --tint-green: #dce8c8;
+  --tint-blue: #d6e9ea;
+  --tint-orange: #fbe0c7;
+  --tint-yellow: #f5eac2;
+
+  /* Text — warm dark olive, never pure black. Three tones, not five: this
+     palette is deliberately flatter than the previous one. */
+  --ink-900: #26291f;
+  --ink-700: #26291f;
+  --ink-500: #767a6b;
+  --ink-400: #a6a995;
+  --ink-300: #a6a995;
+
+  /* Backgrounds — cream, never stark white for the page itself. */
   --paper-0: #ffffff;
-  --paper-50: #faf9f7;
-  --paper-100: #f3f1ed;
-  --line: #e6e4e0;
+  --paper-0-light: #fffdf9;
+  --paper-50: #faf7f0;
+  --paper-100: #f2eee3;
+  --line: #e8e3d5;
+  --line-light: #f0ece0;
 
   /* State language — consistent everywhere, no exceptions. */
-  --verified: #0f8a5f;
-  --progress: #c77a17;
-  --dispute: #c4342a;
-  --info: #2b4fd8;
+  --verified: #4c9a5b;
+  --progress: #e0a339;
+  --dispute: #e4572e;
+  /* No blue in this palette; anything purely informational reuses primary. */
+  --info: #5c7a3d;
 
+  /* No custom font family — system font, weight does all the work. */
   --font-sans:
-    'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    system-ui, -apple-system, 'Segoe UI', sans-serif;
 
+  /* Shadow color is always the dark text tone, never black — warm tint
+     instead of a cold gray one. rgb(38 41 31) is #26291F. */
   --shadow-card:
-    0 1px 2px rgb(14 17 22 / 0.06), 0 1px 3px rgb(14 17 22 / 0.04);
+    0 1px 2px rgb(38 41 31 / 0.08), 0 1px 3px rgb(38 41 31 / 0.06);
   --shadow-float:
-    0 4px 12px rgb(14 17 22 / 0.1), 0 2px 4px rgb(14 17 22 / 0.06);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --ink-900: #f4f5f7;
-    /*
-     * --ink-700/--ink-500/--ink-400/--ink-300 were never redefined here
-     * before — only --ink-900 was — so dark mode silently inherited the
-     * LIGHT palette's values for everything else. --ink-700 (#1c2230, a very
-     * dark navy) is form labels and a good share of body text app-wide; on a
-     * dark background that measured 1.09:1 in a real Lighthouse run —
-     * effectively invisible. --ink-400/--ink-300 (dt labels, captions,
-     * timestamps) measured 3.79:1, short of the 4.5:1 required. This block
-     * was the majority of the dark-mode accessibility failures found.
-     */
-    --ink-700: #cbd1da;
-    --ink-500: #a8b0bf;
-    --ink-400: #8892a0;
-    --ink-300: #808a98;
-    --paper-0: #161a21;
-    --paper-50: #0e1116;
-    --paper-100: #1e2430;
-    --line: #2a313d;
-    --brand-600: #5b7cf0;
-    --verified: #2fa97a;
-    --progress: #e0973a;
-    --dispute: #e05b4f;
-  }
-}
-
-:root[data-theme='dark'] {
-  --ink-900: #f4f5f7;
-  --ink-700: #cbd1da;
-  --ink-500: #a8b0bf;
-  --ink-400: #8892a0;
-  --ink-300: #808a98;
-  --paper-0: #161a21;
-  --paper-50: #0e1116;
-  --paper-100: #1e2430;
-  --line: #2a313d;
-  --brand-600: #5b7cf0;
-  --verified: #2fa97a;
-  --progress: #e0973a;
-  --dispute: #e05b4f;
+    0 4px 12px rgb(38 41 31 / 0.12), 0 2px 4px rgb(38 41 31 / 0.08);
 }
 
 * {
@@ -108,7 +79,7 @@
 }
 
 html {
-  color-scheme: light dark;
+  color-scheme: light;
 }
 
 body {

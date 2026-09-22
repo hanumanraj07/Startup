@@ -6,6 +6,20 @@ Newest entries at the top. Every entry states the decision, the reasoning, and w
 
 ---
 
+## 2026-09-22 — Task location gate widened from Ahmedabad/Kolkata to all of India; worker supply is unaffected and stays where it is
+
+**Decided.** `TasksService.create`/`update` no longer reject a task location outside a seeded city's radius. They now only reject coordinates outside a generous India bounding box (`isWithinIndiaBounds`, `geo.repository.ts` — 6–38°N, 68–98°E, catching obviously-wrong input like `0,0` or a different country, not a precise border check). `GeoRepository.findContainingCity` (reject-if-outside) was replaced with `findNearestCity` (always attach the closest active city, for display only — "near Lucknow" — never as a gate). The seed data grew from two cities to 49, at least one per state/UT, purely so that label has something sensible to attach to. The frontend task wizard's copy and the state/city picker changed to match.
+
+**Why.** The founding two-city pairing was originally chosen to bound *worker recruitment*, not to bound *where a requester is allowed to point a task*. Those are two different constraints that had been conflated into one code gate. Matching was already keyed entirely off task-location-to-worker-location geo-distance (`findNearbyWorkers`/`findNearbyTasks` in `geo.repository.ts`) and never joined on `cityId` — so removing the city gate changes nothing about who can be matched to what; it only changes whether a requester outside the two founding cities is allowed to try. A task posted somewhere with no nearby verified workers already had a documented, honest outcome before this change: the matching tiers find nobody, and the task expires and refunds at its deadline (`matching.service.ts`'s own comment: "This signals a supply gap; the task will expire and refund"). Widening the geographic gate does not introduce a new failure mode, it just lets that existing, already-safe fallback be reached from more places.
+
+**What did NOT change, and matters more than what did.** Worker recruitment, verification and actual coverage remain concentrated in Ahmedabad and Kolkata — nothing about worker onboarding, KYC, or the launch category list moved. `docs/17-mvp-scope.md`'s "twenty workers recruited and verified in Kolkata" launch-readiness item is unaffected. A requester in, say, Guwahati can now technically post a task, but should expect it to expire unaccepted until real supply exists there. This is a change to what the software *permits*, not a claim that the business is pan-India-ready.
+
+**Rejected.** Leaving the two-city gate in code while treating the "real" scope decision as a business/docs-only matter — rejected because `docs/`, `ai/project-context.md` invariant 8, and this file's own prior entry ("Launch scope stays narrow," below) all treated the geographic gate as settled, and `ai/task-generation-rules.md` is explicit that widening launch scope must never happen silently in code. This entry, and the accompanying updates to `CLAUDE.md`, `ai/project-context.md`, `docs/01-product-requirements.md` and `docs/17-mvp-scope.md`, exist specifically so this change is recorded rather than discovered later as an unexplained drift between code and spec — it was found exactly that way, as uncommitted working-tree changes with no matching doc or memory update, during an unrelated logic-and-fallback audit of the repository.
+
+**Trigger to revisit.** If real-world abuse, fraud, or worker-safety incidents show up specifically from far-flung, low-supply locations, the bounding box can be tightened back toward a city allow-list without touching the matching engine at all, since matching never depended on the city gate in the first place.
+
+---
+
 ## 2026-09-07 — Build sequence: specs before code
 
 **Decided.** Write the complete `docs/` and `ai/` specification layer before writing application code.

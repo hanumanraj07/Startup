@@ -26,6 +26,12 @@ import { UsersService } from './users.service';
 // since the whole point is limiting attempts against ONE account.
 const DELETE_ACCOUNT_THROTTLE = { user: { limit: 5, ttl: 3_600_000 } };
 
+// Mirrors PRESIGN_THROTTLE in tasks.controller.ts and for the identical
+// reason: each call mints a presigned PUT against real, billed object
+// storage. A KYC submission needs at most two documents (front + selfie);
+// nobody legitimate approaches even a fraction of this in an hour.
+const KYC_PRESIGN_THROTTLE = { default: { limit: 20, ttl: 3_600_000 } };
+
 /**
  * Every Zod pipe here is bound to the @Body() parameter directly, not via a
  * method-level @UsePipes(). A method-level pipe runs against every
@@ -72,6 +78,7 @@ export class UsersController {
     return this.users.getPublicProfile(parsed);
   }
 
+  @Throttle(KYC_PRESIGN_THROTTLE)
   @Post('me/kyc/presign')
   async presignKycDocument(
     @Body(zodPipe(kycPresignSchema)) body: KycPresignInput,

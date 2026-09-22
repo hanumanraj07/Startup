@@ -27,6 +27,16 @@ import { Prisma, PrismaClient } from '@prisma/client';
  * ai/memory.md so it is not rediscovered the hard way.
  */
 
+/**
+ * A generous bounding box around India (including J&K, the Andaman &
+ * Nicobar and Lakshadweep islands), used only to reject obviously-wrong
+ * coordinates at task creation (e.g. a client bug sending 0,0, or a
+ * different country entirely) — not a precise border check.
+ */
+export function isWithinIndiaBounds(lat: number, lng: number): boolean {
+  return lat >= 6 && lat <= 38 && lng >= 68 && lng <= 98;
+}
+
 export interface NearbyWorker {
   userId: string;
   workerProfileId: string;
@@ -248,20 +258,18 @@ export class GeoRepository {
   }
 
   /**
-   * The active city containing a point, or null if it falls outside the launch
-   * area. Enforcing the launch scope in data rather than in scattered
-   * conditionals means widening it is an admin action, not a deploy.
+   * The nearest active city to a point, for display/labeling only (e.g. "near
+   * Lucknow"). Deliberately NOT filtered by the city's own radius_m — task
+   * creation is India-wide, so a point far from every seeded city still gets
+   * tagged with whichever one is closest rather than being rejected. Worker
+   * matching never joins on cityId (see findNearbyWorkers/findNearbyTasks
+   * below), so this has no effect on who can see or claim a task.
    */
-  async findContainingCity(lat: number, lng: number): Promise<{ id: string; name: string } | null> {
+  async findNearestCity(lat: number, lng: number): Promise<{ id: string; name: string } | null> {
     const rows = await this.prisma.$queryRaw<{ id: string; name: string }[]>`
       SELECT c.id, c.name
       FROM cities c
       WHERE c.is_active = true
-        AND ST_DWithin(
-          c.center_geog,
-          ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
-          c.radius_m
-        )
       ORDER BY ST_Distance(
         c.center_geog,
         ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography

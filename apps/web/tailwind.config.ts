@@ -23,6 +23,18 @@ const config: Config = {
           700: 'var(--brand-700)',
           solid: 'var(--brand-solid)',
         },
+        accent: {
+          500: 'var(--accent-500)',
+          600: 'var(--accent-600)',
+          700: 'var(--accent-700)',
+          solid: 'var(--accent-solid)',
+        },
+        tint: {
+          green: 'var(--tint-green)',
+          blue: 'var(--tint-blue)',
+          orange: 'var(--tint-orange)',
+          yellow: 'var(--tint-yellow)',
+        },
         ink: {
           900: 'var(--ink-900)',
           700: 'var(--ink-700)',
@@ -32,10 +44,12 @@ const config: Config = {
         },
         paper: {
           0: 'var(--paper-0)',
+          '0-light': 'var(--paper-0-light)',
           50: 'var(--paper-50)',
           100: 'var(--paper-100)',
         },
         line: 'var(--line)',
+        'line-light': 'var(--line-light)',
         verified: 'var(--verified)',
         progress: 'var(--progress)',
         dispute: 'var(--dispute)',
@@ -48,6 +62,7 @@ const config: Config = {
         input: '8px',
         card: '12px',
         sheet: '16px',
+        xl: '24px',
       },
       boxShadow: {
         card: 'var(--shadow-card)',

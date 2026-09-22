@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Loader2, LocateFixed, MapPin, Plus, Trash2 } from 'lucide-react';
 import type { ProofType } from '@onsite/types';
 import { calculateSplit, formatPaise, rupeesToPaise, ZERO_DEDUCTIONS } from '@onsite/money';
@@ -38,6 +39,13 @@ function wait(ms: number) {
 
 const STEPS = ['Category', 'Location', 'Details', 'Proof', 'Review & pay'];
 
+/** Slide direction is a prop (`custom`), not baked into fixed values, so the same variants serve both directions. */
+const STEP_VARIANTS = {
+  enter: (direction: number) => ({ opacity: 0, x: direction > 0 ? 24 : -24 }),
+  center: { opacity: 1, x: 0 },
+  exit: (direction: number) => ({ opacity: 0, x: direction > 0 ? -24 : 24 }),
+};
+
 /**
  * A rough, client-side illustration only — the server computes and returns
  * the authoritative split the moment the draft is created (see
@@ -51,6 +59,15 @@ export default function NewTaskPage() {
   const router = useRouter();
   const { user } = useAuth();
   const [step, setStep] = useState(0);
+  // +1 slides the new step in from the right (moving forward), -1 from the
+  // left (going back) — a plain step index change alone gives no sense of
+  // which direction you're moving, which matters more here than on most
+  // pages since the whole point of this screen is "one decision at a time."
+  const [direction, setDirection] = useState(1);
+  function goToStep(next: number) {
+    setDirection(next > step ? 1 : -1);
+    setStep(next);
+  }
 
   const [categories, setCategories] = useState<CategoryView[] | null>(null);
   const [cities, setCities] = useState<CityView[] | null>(null);
@@ -243,72 +260,84 @@ export default function NewTaskPage() {
 
       <StepProgress steps={STEPS} current={step} />
 
-      <Card>
+      <Card className="overflow-hidden">
         <CardContent className="pt-6">
-          {step === 0 && (
-            <CategoryStep categories={categories} selected={category} onSelect={selectCategory} />
-          )}
-          {step === 1 && (
-            <LocationStep
-              cities={cities}
-              latitude={latitude}
-              longitude={longitude}
-              address={address}
-              cityNote={cityNote}
-              onSelectCity={selectCity}
-              onUseMyLocation={useMyLocation}
-              onLatChange={setLatitude}
-              onLngChange={setLongitude}
-              onAddressChange={setAddress}
-            />
-          )}
-          {step === 2 && (
-            <DetailsStep
-              category={category}
-              title={title}
-              description={description}
-              deadlineLocal={deadlineLocal}
-              budgetRupees={budgetRupees}
-              estimate={estimate}
-              onTitleChange={setTitle}
-              onDescriptionChange={setDescription}
-              onDeadlineChange={setDeadlineLocal}
-              onBudgetChange={setBudgetRupees}
-            />
-          )}
-          {step === 3 && (
-            <ProofStep
-              requirements={proofRequirements}
-              onUpdate={updateProof}
-              onRemove={removeProof}
-              onAdd={addProof}
-            />
-          )}
-          {step === 4 && (
-            <ReviewStep
-              title={title}
-              description={description}
-              categoryName={category?.name ?? ''}
-              address={address}
-              deadlineLocal={deadlineLocal}
-              proofRequirements={proofRequirements}
-              estimate={estimate}
-              draft={draft}
-              submitting={submitting}
-              submitError={submitError}
-              onCreateDraft={createDraft}
-              onFundAndPublish={fundAndPublish}
-            />
-          )}
+          <AnimatePresence mode="wait" custom={direction} initial={false}>
+            <motion.div
+              key={step}
+              custom={direction}
+              variants={STEP_VARIANTS}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
+            >
+              {step === 0 && (
+                <CategoryStep categories={categories} selected={category} onSelect={selectCategory} />
+              )}
+              {step === 1 && (
+                <LocationStep
+                  cities={cities}
+                  latitude={latitude}
+                  longitude={longitude}
+                  address={address}
+                  cityNote={cityNote}
+                  onSelectCity={selectCity}
+                  onUseMyLocation={useMyLocation}
+                  onLatChange={setLatitude}
+                  onLngChange={setLongitude}
+                  onAddressChange={setAddress}
+                />
+              )}
+              {step === 2 && (
+                <DetailsStep
+                  category={category}
+                  title={title}
+                  description={description}
+                  deadlineLocal={deadlineLocal}
+                  budgetRupees={budgetRupees}
+                  estimate={estimate}
+                  onTitleChange={setTitle}
+                  onDescriptionChange={setDescription}
+                  onDeadlineChange={setDeadlineLocal}
+                  onBudgetChange={setBudgetRupees}
+                />
+              )}
+              {step === 3 && (
+                <ProofStep
+                  requirements={proofRequirements}
+                  onUpdate={updateProof}
+                  onRemove={removeProof}
+                  onAdd={addProof}
+                />
+              )}
+              {step === 4 && (
+                <ReviewStep
+                  title={title}
+                  description={description}
+                  categoryName={category?.name ?? ''}
+                  address={address}
+                  deadlineLocal={deadlineLocal}
+                  proofRequirements={proofRequirements}
+                  estimate={estimate}
+                  draft={draft}
+                  submitting={submitting}
+                  submitError={submitError}
+                  onCreateDraft={createDraft}
+                  onFundAndPublish={fundAndPublish}
+                />
+              )}
+            </motion.div>
+          </AnimatePresence>
         </CardContent>
       </Card>
 
       <div className="flex justify-between">
-        <Button variant="ghost" disabled={step === 0 || submitting} onClick={() => setStep((s) => s - 1)}>
+        <Button variant="ghost" disabled={step === 0 || submitting} onClick={() => goToStep(step - 1)}>
           Back
         </Button>
         {step < STEPS.length - 1 ? (
-          <Button disabled={!canAdvance} onClick={() => setStep((s) => s + 1)}>
+          <Button disabled={!canAdvance} onClick={() => goToStep(step + 1)}>
             Continue
           </Button>
         ) : null}
@@ -390,10 +419,8 @@ function LocationStep({
 }) {
   const [selectedState, setSelectedState] = useState<string | null>(null);
 
-  // Grouped by state so a district/city list only ever needs one more
-  // entry per new district OnSite launches in — the picker itself never
-  // changes. Today that's one district per state because worker supply is
-  // the actual constraint (see the note below), not anything in this code.
+  // Grouped by state so adding a new city to the picker (any city, any
+  // state) is a data change (seed-reference-data.ts), never a code change.
   const states = useMemo(() => {
     if (!cities) return [];
     return [...new Set(cities.map((c) => c.state))].sort();
@@ -408,8 +435,8 @@ function LocationStep({
     <div className="flex flex-col gap-4">
       <h2 className="text-[19px] font-semibold text-ink-900">Where is the task?</h2>
       <p className="text-sm text-ink-500">
-        OnSite only operates where we have verified local workers. Right now that&rsquo;s a small list — pick the
-        state, then the district, then refine the exact point.
+        OnSite works anywhere in India. Pick the state and nearest city to get started, then refine the exact
+        point — or use your current location below.
       </p>
 
       <div className="flex flex-col gap-2">
@@ -431,7 +458,7 @@ function LocationStep({
 
       {selectedState ? (
         <div className="flex flex-col gap-2">
-          <span className="text-sm font-medium text-ink-700">District</span>
+          <span className="text-sm font-medium text-ink-700">City</span>
           <div className="flex flex-wrap gap-2">
             {districtsInState.map((c) => (
               <Button key={c.id} type="button" variant="secondary" size="sm" onClick={() => onSelectCity(c)}>
@@ -443,11 +470,11 @@ function LocationStep({
       ) : null}
 
       <details className="text-xs text-ink-400">
-        <summary className="cursor-pointer select-none">Why only these places?</summary>
+        <summary className="cursor-pointer select-none">Why pick a city first?</summary>
         <p className="mt-1">
-          Every task needs a real, verified worker nearby to actually do it — posting somewhere with zero workers
-          would just mean nobody ever accepts. We&rsquo;re onboarding and verifying workers district by district, and
-          new ones open up here the moment there&rsquo;s real coverage. This isn&rsquo;t a technical limit.
+          It&rsquo;s just a fast way to set the point — the list above is a shortcut for common cities, not a
+          restriction. Every task still needs a real, verified worker nearby to actually get done, so if your exact
+          town isn&rsquo;t listed, tap &ldquo;Use my current location&rdquo; or type the coordinates directly below.
         </p>
       </details>
 

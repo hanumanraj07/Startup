@@ -5,14 +5,18 @@ import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-input text-[15px] font-semibold ' +
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-card text-[15px] font-semibold ' +
     'transition-colors duration-micro ease-onsite disabled:pointer-events-none disabled:opacity-50 ' +
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 ' +
     'focus-visible:ring-offset-paper-0 min-h-[var(--tap-min,44px)] px-4',
   {
     variants: {
       variant: {
-        primary: 'bg-brand-solid text-white hover:bg-brand-700 active:bg-brand-700',
+        // The accent orange is reserved for the main call-to-action —
+        // moss green (brand-solid) fills non-CTA solid uses instead (map
+        // pins, active-state chips), so the accent stays a rare, deliberate
+        // highlight rather than the color of every button on the screen.
+        primary: 'bg-accent-solid text-white hover:bg-accent-700 active:bg-accent-700',
         secondary: 'bg-paper-100 text-ink-900 border border-line hover:bg-paper-0',
         ghost: 'text-ink-900 hover:bg-paper-100',
         destructive: 'bg-dispute text-white hover:opacity-90',

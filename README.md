@@ -81,9 +81,9 @@ Everything runs offline. Payments default to a mock provider, OTPs print to the 
 
 ## Launch scope
 
-Deliberately narrow: **remote inspection and verification, in Ahmedabad and Kolkata only.**
+Deliberately narrow on category: **remote inspection and verification only**, six launch categories. Not "any task, anywhere."
 
-Not "any task, anywhere." A broad launch invites fraud, prohibited tasks and safety incidents before the marketplace has the liquidity to survive them. Expansion is planned in `docs/18-future-roadmap.md` and gated on completion rate, time to match and dispute rate.
+Task locations are accepted anywhere in India; verified worker recruitment is still concentrated in Ahmedabad and Kolkata (see `ai/memory.md`, 2026-09-22), so a task posted far from current worker coverage will typically find no one and expire. A broad category launch invites fraud, prohibited tasks and safety incidents before the marketplace has the liquidity to survive them. Category expansion is planned in `docs/18-future-roadmap.md` and gated on completion rate, time to match and dispute rate.
 
 ## License
 

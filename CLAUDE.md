@@ -22,7 +22,7 @@ Then read the specific `docs/` file governing the area you are changing. `docs/`
 - **Money never moves on trust**: funds are captured before a task is visible, held, released on approval.
 - **Personal data never crosses** the requester and worker boundary. No phone numbers, no email addresses, no home addresses.
 - **Every rupee is double-entry** and a task's ledger must sum to zero.
-- Launch scope is **remote inspection and verification, Ahmedabad and Kolkata only**.
+- Launch scope is **remote inspection and verification, task location anywhere in India**. Worker recruitment and verified supply are still concentrated in Ahmedabad and Kolkata; posting elsewhere is allowed but will often find no nearby worker and expire. See `ai/memory.md`, 2026-09-22.
 
 ## Centralized concerns
 

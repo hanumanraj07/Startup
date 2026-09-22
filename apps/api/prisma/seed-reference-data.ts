@@ -11,8 +11,6 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-const KOLKATA = { lat: 22.5726, lng: 88.3639 };
-const AHMEDABAD = { lat: 23.0225, lng: 72.5714 };
 
 const CATEGORIES = [
   {
@@ -100,9 +98,62 @@ const CATEGORIES = [
   },
 ] as const;
 
+// India-wide launch: at least one city per state/UT, plus a couple of extra
+// entries in the most populous states for better "nearest city" granularity.
+// These rows do not gate task creation (see geo.repository.ts findNearestCity)
+// — they only power the state -> city picker and the display label attached
+// to a task. A 40km label radius is a reasonable "city area" for that.
 const CITIES = [
-  { name: 'Kolkata', state: 'West Bengal', center: KOLKATA },
-  { name: 'Ahmedabad', state: 'Gujarat', center: AHMEDABAD },
+  { name: 'Visakhapatnam', state: 'Andhra Pradesh', center: { lat: 17.6868, lng: 83.2185 } },
+  { name: 'Vijayawada', state: 'Andhra Pradesh', center: { lat: 16.5062, lng: 80.648 } },
+  { name: 'Itanagar', state: 'Arunachal Pradesh', center: { lat: 27.0844, lng: 93.6053 } },
+  { name: 'Guwahati', state: 'Assam', center: { lat: 26.1445, lng: 91.7362 } },
+  { name: 'Patna', state: 'Bihar', center: { lat: 25.5941, lng: 85.1376 } },
+  { name: 'Raipur', state: 'Chhattisgarh', center: { lat: 21.2514, lng: 81.6296 } },
+  { name: 'Panaji', state: 'Goa', center: { lat: 15.4909, lng: 73.8278 } },
+  { name: 'Ahmedabad', state: 'Gujarat', center: { lat: 23.0225, lng: 72.5714 } },
+  { name: 'Surat', state: 'Gujarat', center: { lat: 21.1702, lng: 72.8311 } },
+  { name: 'Gurugram', state: 'Haryana', center: { lat: 28.4595, lng: 77.0266 } },
+  { name: 'Faridabad', state: 'Haryana', center: { lat: 28.4089, lng: 77.3178 } },
+  { name: 'Shimla', state: 'Himachal Pradesh', center: { lat: 31.1048, lng: 77.1734 } },
+  { name: 'Ranchi', state: 'Jharkhand', center: { lat: 23.3441, lng: 85.3096 } },
+  { name: 'Bengaluru', state: 'Karnataka', center: { lat: 12.9716, lng: 77.5946 } },
+  { name: 'Mysuru', state: 'Karnataka', center: { lat: 12.2958, lng: 76.6394 } },
+  { name: 'Kochi', state: 'Kerala', center: { lat: 9.9312, lng: 76.2673 } },
+  { name: 'Thiruvananthapuram', state: 'Kerala', center: { lat: 8.5241, lng: 76.9366 } },
+  { name: 'Bhopal', state: 'Madhya Pradesh', center: { lat: 23.2599, lng: 77.4126 } },
+  { name: 'Indore', state: 'Madhya Pradesh', center: { lat: 22.7196, lng: 75.8577 } },
+  { name: 'Mumbai', state: 'Maharashtra', center: { lat: 19.076, lng: 72.8777 } },
+  { name: 'Pune', state: 'Maharashtra', center: { lat: 18.5204, lng: 73.8567 } },
+  { name: 'Nagpur', state: 'Maharashtra', center: { lat: 21.1458, lng: 79.0882 } },
+  { name: 'Imphal', state: 'Manipur', center: { lat: 24.817, lng: 93.9368 } },
+  { name: 'Shillong', state: 'Meghalaya', center: { lat: 25.5788, lng: 91.8933 } },
+  { name: 'Aizawl', state: 'Mizoram', center: { lat: 23.7271, lng: 92.7176 } },
+  { name: 'Kohima', state: 'Nagaland', center: { lat: 25.6751, lng: 94.1086 } },
+  { name: 'Bhubaneswar', state: 'Odisha', center: { lat: 20.2961, lng: 85.8245 } },
+  { name: 'Ludhiana', state: 'Punjab', center: { lat: 30.901, lng: 75.8573 } },
+  { name: 'Amritsar', state: 'Punjab', center: { lat: 31.634, lng: 74.8723 } },
+  { name: 'Jaipur', state: 'Rajasthan', center: { lat: 26.9124, lng: 75.7873 } },
+  { name: 'Jodhpur', state: 'Rajasthan', center: { lat: 26.2389, lng: 73.0243 } },
+  { name: 'Gangtok', state: 'Sikkim', center: { lat: 27.3389, lng: 88.6065 } },
+  { name: 'Chennai', state: 'Tamil Nadu', center: { lat: 13.0827, lng: 80.2707 } },
+  { name: 'Coimbatore', state: 'Tamil Nadu', center: { lat: 11.0168, lng: 76.9558 } },
+  { name: 'Hyderabad', state: 'Telangana', center: { lat: 17.385, lng: 78.4867 } },
+  { name: 'Agartala', state: 'Tripura', center: { lat: 23.8315, lng: 91.2868 } },
+  { name: 'Lucknow', state: 'Uttar Pradesh', center: { lat: 26.8467, lng: 80.9462 } },
+  { name: 'Kanpur', state: 'Uttar Pradesh', center: { lat: 26.4499, lng: 80.3319 } },
+  { name: 'Noida', state: 'Uttar Pradesh', center: { lat: 28.5355, lng: 77.391 } },
+  { name: 'Dehradun', state: 'Uttarakhand', center: { lat: 30.3165, lng: 78.0322 } },
+  { name: 'Kolkata', state: 'West Bengal', center: { lat: 22.5726, lng: 88.3639 } },
+  { name: 'New Delhi', state: 'Delhi', center: { lat: 28.6139, lng: 77.209 } },
+  { name: 'Srinagar', state: 'Jammu and Kashmir', center: { lat: 34.0837, lng: 74.7973 } },
+  { name: 'Jammu', state: 'Jammu and Kashmir', center: { lat: 32.7266, lng: 74.857 } },
+  { name: 'Leh', state: 'Ladakh', center: { lat: 34.1526, lng: 77.5771 } },
+  { name: 'Puducherry', state: 'Puducherry', center: { lat: 11.9416, lng: 79.8083 } },
+  { name: 'Chandigarh', state: 'Chandigarh', center: { lat: 30.7333, lng: 76.7794 } },
+  { name: 'Port Blair', state: 'Andaman and Nicobar Islands', center: { lat: 11.6234, lng: 92.7265 } },
+  { name: 'Daman', state: 'Dadra and Nagar Haveli and Daman and Diu', center: { lat: 20.3974, lng: 72.8328 } },
+  { name: 'Kavaratti', state: 'Lakshadweep', center: { lat: 10.5593, lng: 72.6358 } },
 ];
 
 async function main() {

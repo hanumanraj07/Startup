@@ -6,7 +6,7 @@ The most useful file in this repository for keeping work in bounds.
 
 ## The MVP in one sentence
 
-A requester in Ahmedabad can post a funded inspection task at a specific location in Kolkata, a verified worker nearby can find and accept it, complete it with photo, video and GPS evidence, and be paid automatically on approval.
+A requester anywhere in India can post a funded inspection task at a specific location, a verified worker nearby can find and accept it, complete it with photo, video and GPS evidence, and be paid automatically on approval. The canonical proof case remains a requester in Ahmedabad and a task in Kolkata, since that is where verified worker supply is concentrated at launch (see `ai/memory.md`, 2026-09-22).
 
 If that works reliably, the concept is proven. If it does not, no additional feature rescues it.
 
@@ -71,7 +71,6 @@ Each of these sounds reasonable, and each would harm the launch.
 | Excluded | Why |
 |---|---|
 | Any category beyond the launch six | Every category brings unfamiliar fraud and safety modes |
-| Any city beyond Ahmedabad and Kolkata | Liquidity spread thin is liquidity nobody experiences |
 | Purchasing on a requester's behalf, or cash handling | A worker carrying someone's ₹80,000 is a different, harder business |
 | Worker bidding | A negotiation round trip in a marketplace with no liquidity, and it worsens time to match |
 | Machine-learned matching | No training data exists, and a model cannot explain itself to a worker who asks why they rank low |
@@ -95,6 +94,7 @@ Each of these sounds reasonable, and each would harm the launch.
 The MVP is complete when all of the following are true:
 
 - [ ] The full Ahmedabad-to-Kolkata scenario runs end to end in a live environment with real accounts
+- [ ] A task posted at a location outside Ahmedabad/Kolkata correctly finds no workers and expires/refunds cleanly, proving the India-wide geographic gate removal (`ai/memory.md`, 2026-09-22) degrades to the existing supply-gap path rather than a new failure mode
 - [ ] Payment captures, holds and releases correctly in Razorpay test mode, with the ledger balancing
 - [ ] Auto-approval fires reliably, including when the queue job is deleted
 - [ ] Fifty concurrent accepts yield exactly one winner

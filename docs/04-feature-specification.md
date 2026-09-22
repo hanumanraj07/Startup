@@ -204,7 +204,6 @@ Stated plainly, because each is a plausible-sounding addition that would harm th
 
 - **Cash handling or purchasing on a requester's behalf.** Changes the liability model entirely.
 - **Task categories beyond the launch six.** Every new category brings unfamiliar fraud and safety modes.
-- **Cities beyond Ahmedabad and Kolkata.** Liquidity spread thin is liquidity nobody experiences.
 - **Worker bidding.** Adds a negotiation round trip to a marketplace with no liquidity.
 - **Machine-learned matching.** There is no data to learn from yet. A transparent scoring formula is debuggable; a model is not.
 - **Wallets and stored balances.** Holding user balances is a heavier regulatory obligation than escrowing a single transaction.
