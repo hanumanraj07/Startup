@@ -101,6 +101,7 @@ describe('TasksService.getById — PII projection snapshot', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
 
     const result = await service.getById('t1', REQUESTER_ID);
@@ -145,6 +146,7 @@ describe('TasksService.getById — PII projection snapshot', () => {
     const { client } = { client: fakePrisma(fakeTask()) };
     const service = new TasksService(
       client as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -199,6 +201,7 @@ describe('TasksService.getById — PII projection snapshot', () => {
     const { client } = { client: fakePrisma(fakeTask()) };
     const service = new TasksService(
       client as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,

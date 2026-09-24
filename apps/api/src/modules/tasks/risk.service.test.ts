@@ -38,6 +38,21 @@ describe('assertNotProhibited', () => {
     ).toThrow(BusinessRuleError);
   });
 
+  it('blocks violence or a threat against a person', () => {
+    expect(() => service.assertNotProhibited('Task', 'I need someone to kill my neighbor')).toThrow(
+      BusinessRuleError,
+    );
+    expect(() => service.assertNotProhibited('Task', 'Kidnap this person for me')).toThrow(BusinessRuleError);
+  });
+
+  it('does not block ordinary photography or video tasks', () => {
+    // The false-positive risk this pattern deliberately avoids: "shoot" is
+    // an everyday verb for this app's own task categories.
+    expect(() =>
+      service.assertNotProhibited('Shoot a video', 'Take photos and shoot a short video of the storefront'),
+    ).not.toThrow();
+  });
+
   it('blocks purchasing on the requester\'s behalf, the launch-scope exclusion', () => {
     expect(() =>
       service.assertNotProhibited('Buy a laptop', 'Please buy this laptop for me and ship it'),

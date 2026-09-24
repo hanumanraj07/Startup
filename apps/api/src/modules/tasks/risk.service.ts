@@ -44,6 +44,17 @@ export class RiskService {
       pattern: /\b(hack(ing)?|unauthoriz(ed|e) access|break ?in|bypass security)\b/i,
       reason: 'unauthorized access',
     },
+    // "Anything illegal" and "anything endangering the worker" (docs/12) are
+    // broad catch-alls the earlier patterns above only cover obliquely —
+    // this is the direct case: violence or a threat against a person. Words
+    // chosen have essentially no legitimate use in a physical-task
+    // description (unlike, say, "shoot" or "attack", both common outside
+    // this context — "shoot a video" is a real task type here), so this
+    // stays a precise hard block rather than a proximity-matched pattern.
+    {
+      pattern: /\b(kill|murder|assassinat(e|ion)|kidnap(ping)?|abduct(ion)?|torture)\b/i,
+      reason: 'violence or a threat against a person',
+    },
     // The MVP scope explicitly excludes purchasing on the requester's behalf
     // and any task where the worker fronts money. See docs/01, "do NOT
     // purchase it" in the founding example. The gap between the verb and
@@ -68,15 +79,24 @@ export class RiskService {
     { pattern: /\bdo not tell\b|\bdon'?t (tell|inform|call)\b/i, flag: 'secrecy_request' },
   ];
 
+  /**
+   * Non-throwing check, for callers that need to know *why* content was
+   * blocked before deciding what else to do about it (audit logging, most
+   * immediately) — `assertNotProhibited` below is the throwing wrapper most
+   * callers actually want.
+   */
+  findProhibitedMatch(title: string, description: string): string | undefined {
+    const text = `${title}\n${description}`;
+    return this.prohibitedPatterns.find(({ pattern }) => pattern.test(text))?.reason;
+  }
+
   /** Throws if the task content matches a hard prohibition. */
   assertNotProhibited(title: string, description: string): void {
-    const text = `${title}\n${description}`;
-    for (const { pattern, reason } of this.prohibitedPatterns) {
-      if (pattern.test(text)) {
-        throw new BusinessRuleError(
-          `This task cannot be created: ${reason}. See docs/12-trust-safety.md for the full list of prohibited categories.`,
-        );
-      }
+    const reason = this.findProhibitedMatch(title, description);
+    if (reason) {
+      throw new BusinessRuleError(
+        `This task cannot be created: ${reason}. See docs/12-trust-safety.md for the full list of prohibited categories.`,
+      );
     }
   }
 

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Ip, Param, Patch, Post, Query } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import {
   arriveSchema,
@@ -84,8 +84,12 @@ export class TasksController {
 
   @Throttle(CREATE_THROTTLE)
   @Post()
-  async create(@Body(zodPipe(createTaskSchema)) body: CreateTaskInput, @CurrentUser() user: RequestUser) {
-    return this.tasks.create(user.id, body);
+  async create(
+    @Body(zodPipe(createTaskSchema)) body: CreateTaskInput,
+    @CurrentUser() user: RequestUser,
+    @Ip() ip: string,
+  ) {
+    return this.tasks.create(user.id, body, ip);
   }
 
   @Get('mine')
@@ -103,8 +107,9 @@ export class TasksController {
     @Param('id') id: string,
     @Body(zodPipe(updateTaskSchema)) body: UpdateTaskInput,
     @CurrentUser() user: RequestUser,
+    @Ip() ip: string,
   ) {
-    return this.tasks.update(uuidSchema.parse(id), user.id, body);
+    return this.tasks.update(uuidSchema.parse(id), user.id, body, ip);
   }
 
   @Post(':id/publish')

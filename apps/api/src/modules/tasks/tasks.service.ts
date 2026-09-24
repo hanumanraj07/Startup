@@ -9,6 +9,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from '../../common/errors';
+import { AuditService } from '../../common/audit.service';
 import { loadEnv } from '../../config/env';
 import { GeoRepository, isWithinIndiaBounds } from '../../repositories/geo.repository';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -45,7 +46,35 @@ export class TasksService {
     private readonly notifications: NotificationService,
     private readonly safety: SafetyService,
     private readonly realtime: RealtimeGateway,
+    private readonly audit: AuditService,
   ) {}
+
+  /**
+   * Runs the hard-prohibition check and, on a block, records it before
+   * rethrowing — a blocked attempt is exactly the kind of signal trust &
+   * safety needs visibility into (repeat offenders, escalating severity),
+   * not just a 400 the client silently absorbs. See ai/memory.md, 2026-09-24.
+   */
+  private async assertNotProhibitedAndAudit(
+    requesterId: string,
+    title: string,
+    description: string,
+    actorIp: string | undefined,
+    taskId?: string,
+  ): Promise<void> {
+    const reason = this.risk.findProhibitedMatch(title, description);
+    if (reason) {
+      await this.audit.record({
+        actorUserId: requesterId,
+        actorIp,
+        action: 'PROHIBITED_TASK_BLOCKED',
+        entityType: 'Task',
+        entityId: taskId,
+        after: { reason, title, description },
+      });
+    }
+    this.risk.assertNotProhibited(title, description);
+  }
 
   // ─── Discovery ───────────────────────────────────────────────────────
 
@@ -110,7 +139,7 @@ export class TasksService {
 
   // ─── Creation ────────────────────────────────────────────────────────
 
-  async create(requesterId: string, input: CreateTaskInput) {
+  async create(requesterId: string, input: CreateTaskInput, actorIp?: string) {
     const category = await this.prisma.category.findFirst({
       where: { slug: input.categorySlug, isActive: true },
     });
@@ -131,7 +160,7 @@ export class TasksService {
 
     // Hard prohibitions block creation outright; risk scoring below only
     // gates publication. See docs/12-trust-safety.md.
-    this.risk.assertNotProhibited(input.title, input.description);
+    await this.assertNotProhibitedAndAudit(requesterId, input.title, input.description, actorIp);
     const riskResult = this.risk.scoreRisk({
       title: input.title,
       description: input.description,
@@ -187,14 +216,20 @@ export class TasksService {
     return this.getById(task.id, requesterId);
   }
 
-  async update(taskId: string, requesterId: string, input: UpdateTaskInput) {
+  async update(taskId: string, requesterId: string, input: UpdateTaskInput, actorIp?: string) {
     const task = await this.requireOwnedTask(taskId, requesterId);
     if (task.status !== 'DRAFT') {
       throw new BusinessRuleError('A task can only be edited while it is still a draft.');
     }
 
     if (input.title || input.description) {
-      this.risk.assertNotProhibited(input.title ?? task.title, input.description ?? task.description);
+      await this.assertNotProhibitedAndAudit(
+        requesterId,
+        input.title ?? task.title,
+        input.description ?? task.description,
+        actorIp,
+        taskId,
+      );
     }
 
     let cityId = task.cityId;

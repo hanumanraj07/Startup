@@ -6,6 +6,21 @@ Newest entries at the top. Every entry states the decision, the reasoning, and w
 
 ---
 
+## 2026-09-24 — A blocked "kill someone" task now leaves an audit trail; the block itself was also a real gap, found by a direct question rather than code review
+
+**Decided.** Two things, found in sequence:
+
+1. `RiskService.assertNotProhibited` — the hard-block prohibited-content check run at task creation — had **zero patterns for violence against a person**. Weapons, drugs, fraud, impersonation, hacking and the two launch-scope exclusions were all covered; "kill", "murder", "kidnap" were not, despite `docs/12-trust-safety.md` explicitly listing "Anything illegal" and "Anything endangering the worker" as prohibited. A task titled "I need someone to kill my neighbor" would have passed creation cleanly. Fixed by adding a pattern for `kill|murder|assassinate|kidnap|abduct|torture` — words chosen specifically because they have no legitimate use in a physical-task description, unlike "shoot" or "attack" (this app has an actual photography category; "shoot a video" is real, common phrasing that must not trip a hard block).
+2. **A blocked attempt recorded nothing.** The client got a `400`-equivalent and that was the entire trace — no audit row, no signal to the platform operator that someone tried this. For a marketplace that dispatches real people to real addresses, "we silently rejected it" isn't the same as "we know it happened." `TasksService` now has an `AuditService` dependency (already `@Global()`, no new module wiring needed) and calls it — via a new `RiskService.findProhibitedMatch`, a non-throwing sibling to `assertNotProhibited` — before rethrowing, recording actor, IP, the matched reason, and the full title/description. `create` and `update` both wired; both routes gained `@Ip()`.
+
+**Why the audit content includes the raw text, not just a flag.** A bare "blocked, reason: violence" row is useless to a human deciding whether to escalate — trust & safety needs to actually read what was written to judge severity and intent (test message vs. a real threat vs. a darkly-phrased legitimate task). The `AuditLog.after` JSON column already exists for exactly this "before/after" shape.
+
+**Considered and deliberately not built.** Auto-banning or auto-notifying-authorities on a match — that is a policy decision (what threshold, what channel, false-positive tolerance) this session was explicitly asked not to make unilaterally; the mechanical piece (the record existing at all, queryable by `action: 'PROHIBITED_TASK_BLOCKED'`) is what was asked for. No admin UI to browse these rows was built either — `AuditLog` has none for any action type yet, and adding one for just this action would be inconsistent scope-creep beyond what was requested.
+
+**Live-verified against the real local database**, not just unit tests: a real authenticated `POST /tasks` with "kill my business rival" in the description returned the expected `422` with the exact reason, and a direct query of `AuditLog` confirmed the row — actor, IP, reason, and the full text — landed correctly.
+
+---
+
 ## 2026-09-24 — Task wizard's "Back" silently showed stale numbers after Create task; found live, fixed, and traced to the dev-mode service worker actively hiding the fix
 
 **Decided.** `tasks/new/page.tsx`'s review step caches a server-created `draft` object (set by `createDraft()`, read by `ReviewStep` to decide between "review and create" vs "confirm and pay"). Nothing ever invalidated it. Going Back after "Create task" to edit the budget (or anything else) and returning to Review re-showed the *original* draft's numbers, unchanged — the requester could edit the budget, see the live estimate update correctly on the Details step, then watch it silently revert to the old amount on Review, with no error and no visual difference from a working screen. Fixed in `goToStep`: since `draft` is only ever non-null while on the review step, any call that leaves it with a draft already set (only possible via "Back") now clears `draft` and `submitError` first, so the next visit to Review falls back to the live client-side estimate and requires a fresh "Create task" — a fresh, correct server draft — before paying.
