@@ -23,7 +23,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   if (user && user.platformRole !== 'ADMIN') {
     return (
       <div className="mx-auto max-w-xl py-12 text-center">
-        <p className="text-ink-500">You don't have access to the admin console.</p>
+        <p className="text-ink-500">You don&rsquo;t have access to the admin console.</p>
       </div>
     );
   }

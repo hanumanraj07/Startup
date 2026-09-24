@@ -208,7 +208,7 @@ export default function AdminDisputeDetailPage() {
           </div>
           {resolution === 'SPLIT' ? (
             <label className="flex items-center gap-2 text-sm text-ink-700">
-              Worker's share
+              Worker&rsquo;s share
               <Input
                 type="number"
                 min={0}

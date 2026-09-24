@@ -89,7 +89,9 @@ export function scoreCandidate(candidate: ScoringCandidate, ctx: ScoringContext)
   const proximity = proximityFraction * SCORE_WEIGHTS.proximity;
 
   const hasOwnRating = candidate.ratingCount >= MIN_RATINGS_FOR_OWN_SCORE && candidate.ratingAvg !== null;
-  const ratingFraction = clamp01((hasOwnRating ? candidate.ratingAvg! : ctx.platformMeans.ratingAvg) / 5);
+  const ratingFraction = clamp01(
+    (hasOwnRating && candidate.ratingAvg !== null ? candidate.ratingAvg : ctx.platformMeans.ratingAvg) / 5,
+  );
   const rating = ratingFraction * SCORE_WEIGHTS.rating;
 
   const completionFraction = clamp01(

@@ -89,7 +89,7 @@ export default function SignUpPage() {
           </Link>
         </p>
         <p className="mt-4 text-center text-xs text-ink-300">
-          By continuing you agree to OnSite's Terms and Privacy Policy.
+          By continuing you agree to OnSite&rsquo;s Terms and Privacy Policy.
         </p>
       </CardContent>
     </Card>

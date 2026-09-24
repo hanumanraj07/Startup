@@ -20,7 +20,12 @@ export function PwaInstallBanner() {
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    if ('serviceWorker' in navigator) {
+    // Dev-mode registration was a real, recurring source of stale-content
+    // bugs: the service worker caches the app shell and intercepts
+    // navigation, so `next dev`'s Fast Refresh can silently keep serving an
+    // old bundle after an edit — indistinguishable from the edit not having
+    // worked at all. Production is where offline support actually matters.
+    if (process.env.NODE_ENV === 'production' && 'serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => undefined);
     }
 

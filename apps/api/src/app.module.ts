@@ -7,6 +7,7 @@ import { AuditModule } from './common/audit.module';
 import { DomainExceptionFilter } from './common/domain-exception.filter';
 import { RedisThrottlerStorage } from './common/redis-throttler-storage';
 import { loadEnv } from './config/env';
+import { LoggingModule } from './logging/logging.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CategoriesModule } from './modules/categories/categories.module';
@@ -34,6 +35,7 @@ import { PrismaModule } from './prisma/prisma.module';
       // configuration rather than failing later at an inconvenient moment.
       validate: () => loadEnv(),
     }),
+    LoggingModule,
     // A baseline limit. Per-endpoint-class limits from
     // docs/07-api-specification.md are applied on the routes themselves, with
     // the strictest on auth and payments. `storage` is Redis-backed — see

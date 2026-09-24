@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 import type { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
+import { Logger as PinoLogger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { loadEnv } from './config/env';
 import { MatchingService } from './modules/matching/matching.service';
@@ -42,9 +43,11 @@ async function bootstrap(): Promise<void> {
   if (env.ROLE === 'worker') {
     // No HTTP server: this process only runs background work. See
     // docs/05-system-architecture.md's process split.
-    const context = await NestFactory.createApplicationContext(AppModule, {
-      logger: env.LOG_LEVEL === 'debug' ? ['error', 'warn', 'log', 'debug', 'verbose'] : ['error', 'warn', 'log'],
-    });
+    // bufferLogs holds anything logged during bootstrap until useLogger
+    // below takes over, so nothing prints through Nest's default console
+    // logger before pino is wired in.
+    const context = await NestFactory.createApplicationContext(AppModule, { bufferLogs: true });
+    context.useLogger(context.get(PinoLogger));
 
     const review = context.get(ReviewService);
     const sweeper = context.get(SweeperService);
@@ -85,11 +88,10 @@ async function bootstrap(): Promise<void> {
     // and silently fails verification. Nest's `rawBody` option preserves the
     // original buffer on `req.rawBody` alongside the normal parsed body.
     rawBody: true,
-    logger:
-      env.LOG_LEVEL === 'debug'
-        ? ['error', 'warn', 'log', 'debug', 'verbose']
-        : ['error', 'warn', 'log'],
+    // See the worker branch's comment on bufferLogs + useLogger.
+    bufferLogs: true,
   });
+  app.useLogger(app.get(PinoLogger));
 
   app.setGlobalPrefix('api/v1', { exclude: ['health', 'health/ready'] });
 

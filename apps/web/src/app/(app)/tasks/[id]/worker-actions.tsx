@@ -58,7 +58,7 @@ export function WorkerActions({
     return (
       <Card>
         <CardContent className="flex items-center justify-between pt-6">
-          <p className="text-sm text-ink-500">Let the requester know you're on your way.</p>
+          <p className="text-sm text-ink-500">Let the requester know you&rsquo;re on your way.</p>
           <Button loading={busy} onClick={() => run(() => api.post(`/tasks/${taskId}/en-route`))}>
             <Navigation className="h-4 w-4" aria-hidden /> Mark en route
           </Button>
@@ -73,7 +73,7 @@ export function WorkerActions({
       <Card>
         <CardContent className="flex flex-col gap-3 pt-6">
           <p className="text-sm text-ink-500">
-            When you're at the location, confirm arrival. Your GPS position is measured against the task's exact
+            When you&rsquo;re at the location, confirm arrival. Your GPS position is measured against the task&rsquo;s exact
             address — the app never asks you to type a distance.
           </p>
           <Button

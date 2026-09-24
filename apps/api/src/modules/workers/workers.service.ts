@@ -79,7 +79,8 @@ export class WorkersService {
   }
 
   async getSelf(userId: string) {
-    const profile = await this.requireProfile(userId);
+    // Called for its existence check; the fetch below needs the category relations anyway.
+    await this.requireProfile(userId);
     const full = await this.prisma.workerProfile.findUniqueOrThrow({
       where: { userId },
       include: { categories: { include: { category: true } } },

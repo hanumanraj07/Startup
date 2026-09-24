@@ -81,7 +81,7 @@ export default function ResetPasswordPage() {
     <Card intent="glass">
       <CardHeader>
         <CardTitle>Set a new password</CardTitle>
-        <CardDescription>Choose something you haven't used before.</CardDescription>
+        <CardDescription>Choose something you haven&rsquo;t used before.</CardDescription>
       </CardHeader>
       <CardContent>
         <Suspense fallback={null}>

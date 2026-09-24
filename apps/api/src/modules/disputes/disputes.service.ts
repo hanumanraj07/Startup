@@ -104,7 +104,8 @@ export class DisputesService {
   }
 
   async addStatement(disputeId: string, userId: string, input: DisputeStatementInput): Promise<DisputeView> {
-    const dispute = await this.requirePartyDispute(disputeId, userId);
+    // Called for its authorization side effect: throws if the caller isn't a party to this dispute.
+    await this.requirePartyDispute(disputeId, userId);
 
     await this.prisma.disputeStatement.create({
       data: { disputeId, userId, body: input.body, attachmentKeys: input.attachmentKeys ?? [] },
@@ -168,6 +169,7 @@ export class DisputesService {
     });
     const hasMore = disputes.length > limit;
     const page = disputes.slice(0, limit);
+    const last = page.at(-1);
     return {
       data: page.map((d) => ({
         id: d.id,
@@ -178,7 +180,7 @@ export class DisputesService {
         createdAt: d.createdAt.toISOString(),
         ageHours: Math.round((Date.now() - d.createdAt.getTime()) / 3_600_000),
       })),
-      nextCursor: hasMore ? encodeCursor({ createdAt: page.at(-1)!.createdAt.toISOString() }) : null,
+      nextCursor: hasMore && last ? encodeCursor({ createdAt: last.createdAt.toISOString() }) : null,
     };
   }
 

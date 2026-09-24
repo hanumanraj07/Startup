@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { ApiError, api } from '@/lib/api-client';
 
+const DEFAULT_REASON = 'WORK_NOT_DONE';
+
 const REASONS: { value: string; label: string }[] = [
   { value: 'WORK_NOT_DONE', label: 'The work was not actually done' },
   { value: 'EVIDENCE_INSUFFICIENT', label: 'The proof provided is not enough' },
@@ -28,7 +30,7 @@ const REASONS: { value: string; label: string }[] = [
  */
 export function ReportIssueDialog({ taskId, onReported }: { taskId: string; onReported: () => void }) {
   const [open, setOpen] = useState(false);
-  const [reason, setReason] = useState<string>(REASONS[0]!.value);
+  const [reason, setReason] = useState<string>(DEFAULT_REASON);
   const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);

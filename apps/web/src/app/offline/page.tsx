@@ -13,7 +13,7 @@ export default function OfflinePage() {
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-paper-50 px-6 text-center">
       <WifiOff className="h-10 w-10 text-ink-300" aria-hidden />
       <div>
-        <h1 className="text-[19px] font-semibold text-ink-900">You're offline</h1>
+        <h1 className="text-[19px] font-semibold text-ink-900">You&rsquo;re offline</h1>
         <p className="mt-1 max-w-xs text-sm text-ink-500">
           OnSite needs a connection for live task data. Reconnect and reload to continue.
         </p>

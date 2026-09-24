@@ -8,7 +8,6 @@ import type { CategorySlug } from '@onsite/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
 import { ApiError, api } from '@/lib/api-client';
 import type { CategoryView, CityView } from '@/lib/api-types';
 import { categoryIcon } from '@/lib/category-icons';
@@ -78,7 +77,7 @@ export default function WorkerOnboardingPage() {
     <div className="mx-auto flex max-w-xl flex-col gap-6">
       <div>
         <h1 className="text-[32px] font-bold tracking-tight text-ink-900">Become a worker</h1>
-        <p className="mt-1 text-ink-500">Tell us where you work from and what you're good at.</p>
+        <p className="mt-1 text-ink-500">Tell us where you work from and what you&rsquo;re good at.</p>
       </div>
 
       <Card>
@@ -117,7 +116,7 @@ export default function WorkerOnboardingPage() {
       <Card>
         <CardHeader>
           <CardTitle>Categories</CardTitle>
-          <CardDescription>Choose every kind of task you're willing to accept.</CardDescription>
+          <CardDescription>Choose every kind of task you&rsquo;re willing to accept.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-2 sm:grid-cols-2">

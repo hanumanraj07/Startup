@@ -83,9 +83,11 @@ export class AdminService {
       })),
     );
 
+    const last = page.at(-1);
+
     return {
       data,
-      nextCursor: hasMore ? encodeCursor({ createdAt: page.at(-1)!.createdAt.toISOString(), id: page.at(-1)!.id }) : null,
+      nextCursor: hasMore && last ? encodeCursor({ createdAt: last.createdAt.toISOString(), id: last.id }) : null,
     };
   }
 

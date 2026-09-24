@@ -5,6 +5,7 @@ import {
   blockerSchema,
   cancelTaskSchema,
   createTaskSchema,
+  declineTaskSchema,
   myTasksSchema,
   nearbyTasksSchema,
   presignUploadSchema,
@@ -17,6 +18,7 @@ import {
   type BlockerInput,
   type CancelTaskInput,
   type CreateTaskInput,
+  type DeclineTaskInput,
   type MyTasksInput,
   type NearbyTasksInput,
   type PresignUploadInput,
@@ -123,6 +125,16 @@ export class TasksController {
   @Post(':id/accept')
   async accept(@Param('id') id: string, @CurrentUser() user: RequestUser) {
     return this.tasks.accept(uuidSchema.parse(id), user.id);
+  }
+
+  @Post(':id/decline')
+  async decline(
+    @Param('id') id: string,
+    @Body(zodPipe(declineTaskSchema)) body: DeclineTaskInput,
+    @CurrentUser() user: RequestUser,
+  ) {
+    await this.tasks.decline(uuidSchema.parse(id), user.id, body);
+    return { success: true };
   }
 
   // ─── Execution (assigned worker) ───────────────────────────────────

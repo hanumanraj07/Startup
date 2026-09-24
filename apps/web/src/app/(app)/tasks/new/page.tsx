@@ -67,6 +67,16 @@ export default function NewTaskPage() {
   const [direction, setDirection] = useState(1);
   function goToStep(next: number) {
     setDirection(next > step ? 1 : -1);
+    // draft is only ever non-null while on the review step (set by
+    // createDraft, called from there). The only way to reach this function
+    // with a draft already set is going Back from review to edit something
+    // — the server-computed numbers in that draft are now stale, so drop it
+    // rather than silently keep showing them. The review step falls back to
+    // its live client-side estimate until "Create task" is pressed again.
+    if (draft) {
+      setDraft(null);
+      setSubmitError(null);
+    }
     setStep(next);
   }
 

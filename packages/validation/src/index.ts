@@ -150,7 +150,7 @@ export const payoutAccountSchema = z
     upiVpa: z
       .string()
       .trim()
-      .regex(/^[\w.\-]{2,64}@[a-zA-Z]{2,64}$/, 'Enter a valid UPI ID')
+      .regex(/^[\w.-]{2,64}@[a-zA-Z]{2,64}$/, 'Enter a valid UPI ID')
       .optional(),
     panNumber: z
       .string()
@@ -500,6 +500,7 @@ export type UpdateCategoryInput = z.infer<typeof updateCategorySchema>;
 export type CreateCityInput = z.infer<typeof createCitySchema>;
 export type UpdateCityInput = z.infer<typeof updateCitySchema>;
 export type BlockerInput = z.infer<typeof blockerSchema>;
+export type DeclineTaskInput = z.infer<typeof declineTaskSchema>;
 export type SubmitTaskInput = z.infer<typeof submitTaskSchema>;
 export type RejectTaskInput = z.infer<typeof rejectTaskSchema>;
 export type CancelTaskInput = z.infer<typeof cancelTaskSchema>;

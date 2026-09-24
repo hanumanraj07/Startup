@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { ArriveInput, BlockerInput, PresignUploadInput, RecordProofInput } from '@onsite/validation';
 import { BusinessRuleError, ForbiddenError, NotFoundError } from '../../common/errors';
 import { loadEnv } from '../../config/env';
-import { GeoRepository, DEFAULT_GEOFENCE_METERS } from '../../repositories/geo.repository';
+import { GeoRepository } from '../../repositories/geo.repository';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AutoApproveQueue } from '../../queue/auto-approve.queue';
 import { NotificationService } from '../notifications/notification.service';

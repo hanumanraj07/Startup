@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { CreateTaskInput, NearbyTasksInput, UpdateTaskInput } from '@onsite/validation';
+import type { CreateTaskInput, DeclineTaskInput, NearbyTasksInput, UpdateTaskInput } from '@onsite/validation';
 import { calculateSplit } from '@onsite/money';
 import { decodeCursor, encodeCursor } from '@onsite/utils';
 import { ACTIVE_WORK_STATUSES } from '@onsite/types';
@@ -517,6 +517,46 @@ export class TasksService {
 
     this.logger.log(`Task ${taskId} accepted by worker ${workerId}.`);
     return this.getById(taskId, workerId);
+  }
+
+  /**
+   * Records an explicit decline on a formal offer, per docs/07's "Records a
+   * decline and reason" and docs/10's "repeated declines on a task | flag
+   * for operations" (the budget/instructions signal that surfaces through
+   * `AdminService.getDashboardMetrics`'s existing `taskOffer.groupBy(by:
+   * ['response'])` query, unused until now for the same reason this route
+   * was — nothing ever wrote to `TaskOffer.response`).
+   *
+   * Deliberately scoped to workers who were actually offered this task: the
+   * `TaskOffer` row already carries real, matching-engine-computed rank,
+   * score and distance (see that model's own comment on why it exists —
+   * "what makes ranking auditable"), and fabricating one for a worker who
+   * merely browsed the open feed without ever being offered would corrupt
+   * that audit trail with data the matching engine never actually produced.
+   * A worker who was never offered has nothing to decline; they simply
+   * don't accept, exactly as already works today.
+   */
+  async decline(taskId: string, workerId: string, input: DeclineTaskInput) {
+    const offer = await this.prisma.taskOffer.findUnique({
+      where: { taskId_workerId: { taskId, workerId } },
+    });
+    if (!offer) {
+      throw new NotFoundError('You have not been offered this task.');
+    }
+    if (offer.response) {
+      throw new ConflictError('You have already responded to this offer.');
+    }
+
+    await this.prisma.taskOffer.update({
+      where: { id: offer.id },
+      data: {
+        response: 'DECLINED',
+        declineReason: input.note ? `${input.reason}: ${input.note}` : input.reason,
+        respondedAt: new Date(),
+      },
+    });
+
+    this.logger.log(`Task ${taskId} declined by worker ${workerId} (${input.reason}).`);
   }
 
   // ─── Retrieval, role-projected ───────────────────────────────────────

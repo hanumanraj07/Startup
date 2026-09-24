@@ -34,7 +34,7 @@ export default function ForgotPasswordPage() {
     <Card intent="glass">
       <CardHeader>
         <CardTitle>Reset your password</CardTitle>
-        <CardDescription>We'll email you a link if an account exists.</CardDescription>
+        <CardDescription>We&rsquo;ll email you a link if an account exists.</CardDescription>
       </CardHeader>
       <CardContent>
         {sent ? (

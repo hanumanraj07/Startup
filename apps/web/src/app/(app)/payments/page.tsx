@@ -46,7 +46,7 @@ export default function PaymentsPage() {
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
       <div>
         <h1 className="text-[32px] font-bold tracking-tight text-ink-900">Payment history</h1>
-        <p className="mt-1 text-ink-500">Every task you've funded, and where the money stands.</p>
+        <p className="mt-1 text-ink-500">Every task you&rsquo;ve funded, and where the money stands.</p>
       </div>
 
       {error ? (

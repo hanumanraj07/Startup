@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  # Real secrets are never needed here — these exist only to satisfy the
+  # startup env validation in apps/api/src/config/env.ts (which refuses to
+  # boot on missing config) and to point at the service containers below.
+  NODE_ENV: test
+  DATABASE_URL: postgresql://onsite:onsite@localhost:5432/onsite_app?schema=public
+  REDIS_URL: redis://localhost:6379
+  JWT_ACCESS_SECRET: ci-only-access-secret-do-not-use-in-prod-xxxx
+  JWT_REFRESH_SECRET: ci-only-refresh-secret-do-not-use-in-prod-xxx
+  STORAGE_ENDPOINT: http://localhost:9000
+  STORAGE_BUCKET: onsite-uploads-ci
+  STORAGE_ACCESS_KEY: ci-only-access-key
+  STORAGE_SECRET_KEY: ci-only-secret-key
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: onsite
+          POSTGRES_PASSWORD: onsite
+          POSTGRES_DB: onsite
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U onsite -d onsite"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create app database
+        # docker-compose.yml's own db-init script does this locally; the
+        # postgis service image here starts from a plain POSTGRES_DB, so the
+        # same "fresh template0 database, owned by Prisma alone" step is
+        # replicated by hand. See infra/docker/db-init/20-app-database.sql.
+        run: |
+          PGPASSWORD=onsite psql -h localhost -U onsite -d onsite \
+            -c "CREATE DATABASE onsite_app TEMPLATE template0 OWNER onsite;"
+
+      - name: Apply database migrations
+        run: pnpm --filter @onsite/api db:migrate:deploy
+
+      - name: Seed reference + demo data
+        # geo.repository.explain.test.ts genuinely needs 10,000+ seeded
+        # workers to assert the query planner picks the GIST index over a
+        # sequential scan — see that file's own comment.
+        run: pnpm --filter @onsite/api db:seed
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test
+
+      - name: Dependency audit
+        # Informational, not a gate: every high/critical finding today is
+        # transitive (pulled in by pinned majors of next/@nestjs/prisma), not
+        # a direct dependency this repo controls without a larger, separate
+        # upgrade. Failing every PR on pre-existing, already-triaged
+        # transitive advisories trains people to ignore CI, which is worse
+        # than not gating on it. Revisit when those majors are bumped.
+        run: pnpm audit --audit-level=high
+        continue-on-error: true
