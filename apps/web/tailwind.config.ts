@@ -67,6 +67,15 @@ const config: Config = {
       boxShadow: {
         card: 'var(--shadow-card)',
         float: 'var(--shadow-float)',
+        elevated: 'var(--shadow-elevated)',
+        'glow-brand': 'var(--shadow-glow-brand)',
+        'glow-accent': 'var(--shadow-glow-accent)',
+      },
+      backgroundImage: {
+        'brand-gradient': 'var(--brand-gradient)',
+        'accent-gradient': 'var(--accent-gradient)',
+        'hero-gradient': 'var(--hero-gradient)',
+        'mesh-gradient': 'var(--mesh-gradient)',
       },
       transitionTimingFunction: {
         onsite: 'cubic-bezier(0.2, 0, 0, 1)',

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Loader2, LocateFixed, MapPin, Plus, Trash2 } from 'lucide-react';
+import { Check, Loader2, LocateFixed, MapPin, Plus, Trash2 } from 'lucide-react';
 import type { ProofType } from '@onsite/types';
 import { calculateSplit, formatPaise, rupeesToPaise, ZERO_DEDUCTIONS } from '@onsite/money';
 import { MIN_TASK_BUDGET_PAISE, MAX_TASK_BUDGET_PAISE } from '@onsite/validation';
@@ -19,6 +19,7 @@ import type { CategoryView, CityView, ProofRequirement } from '@/lib/api-types';
 import { categoryIcon } from '@/lib/category-icons';
 import { useAuth } from '@/lib/auth-context';
 import { openRazorpayCheckout } from '@/lib/razorpay-checkout';
+import { toast } from '@/lib/use-toast';
 import { cn } from '@/lib/utils';
 
 interface DraftTask {
@@ -239,6 +240,7 @@ export default function NewTaskPage() {
       }
 
       await api.post(`/tasks/${draft.id}/publish`);
+      toast({ title: 'Task published', description: 'Funds are held in escrow until you approve the work.', variant: 'success' });
       router.push(`/tasks/${draft.id}`);
     } catch (error) {
       setSubmitError(error instanceof ApiError ? error.message : 'Payment or publishing failed. Try again.');
@@ -375,11 +377,22 @@ function CategoryStep({
               type="button"
               onClick={() => onSelect(c)}
               className={cn(
-                'flex flex-col gap-2 rounded-card border p-4 text-left transition-colors duration-micro ease-onsite',
+                'relative flex flex-col gap-2 rounded-card border p-4 text-left',
+                'transition-all duration-base ease-onsite hover:-translate-y-0.5 hover:shadow-float',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500',
                 active ? 'border-brand-600 bg-brand-50' : 'border-line bg-paper-0 hover:bg-paper-100',
               )}
             >
+              {active ? (
+                <motion.span
+                  initial={{ scale: 0, rotate: -20 }}
+                  animate={{ scale: 1, rotate: 0 }}
+                  transition={{ type: 'spring', stiffness: 320, damping: 14 }}
+                  className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-brand-600 text-white"
+                >
+                  <Check className="h-3 w-3" aria-hidden />
+                </motion.span>
+              ) : null}
               <Icon className={cn('h-5 w-5', active ? 'text-brand-600' : 'text-ink-500')} aria-hidden />
               <span className="font-medium text-ink-900">{c.name}</span>
               <span className="text-sm text-ink-500">{c.description}</span>
@@ -669,7 +682,7 @@ function ReviewStep({
         </p>
         <MoneyBreakdown {...draft.money} />
         {submitError ? <p className="text-sm text-dispute">{submitError}</p> : null}
-        <Button onClick={onFundAndPublish} loading={submitting} className="w-full">
+        <Button variant="gradient" onClick={onFundAndPublish} loading={submitting} className="w-full">
           Fund {formatPaise(draft.money.budgetPaise)} and publish
         </Button>
       </div>

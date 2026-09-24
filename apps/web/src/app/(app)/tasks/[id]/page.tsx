@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { Loader2, MapPin } from 'lucide-react';
+import { MapPin } from 'lucide-react';
 import type { TaskStatus } from '@onsite/types';
 import { formatPaise } from '@onsite/money';
 import { Card, CardContent } from '@/components/ui/card';
+import { ScrollReveal } from '@/components/ui/scroll-reveal';
+import { Skeleton } from '@/components/ui/skeleton';
 import { StatusPill } from '@/components/ui/status-pill';
 import { MoneyBreakdown } from '@/components/ui/money-breakdown';
 import type { ProofView } from '@/components/ui/proof-tile';
@@ -130,18 +132,15 @@ export default function TaskDetailPage() {
 
   if (error) return <p className="text-sm text-dispute">{error}</p>;
   if (!task) {
-    return (
-      <div className="flex items-center gap-2 text-sm text-ink-500">
-        <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Loading&hellip;
-      </div>
-    );
+    return <TaskDetailSkeleton />;
   }
 
   const owner = isOwnerView(task);
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
-      <div className="flex flex-col gap-2">
+      <ScrollReveal className="flex flex-col gap-2">
+        <div className="h-1 w-12 rounded-full bg-accent-gradient" aria-hidden />
         <div className="flex items-center gap-2">
           <StatusPill status={task.status} />
           <span className="text-sm text-ink-400">{task.categoryName}</span>
@@ -150,7 +149,7 @@ export default function TaskDetailPage() {
         <p className="flex items-center gap-1.5 text-sm text-ink-500">
           <MapPin className="h-4 w-4" aria-hidden /> {task.location.address}
         </p>
-      </div>
+      </ScrollReveal>
 
       <Card>
         <CardContent className="pt-6">
@@ -230,6 +229,32 @@ export default function TaskDetailPage() {
             </li>
           ))}
         </ol>
+      </div>
+    </div>
+  );
+}
+
+/** Shape-matched loading placeholder — see docs/19: skeletons match content, never a bare spinner. */
+function TaskDetailSkeleton() {
+  return (
+    <div className="mx-auto flex max-w-2xl flex-col gap-6">
+      <div className="flex flex-col gap-2">
+        <Skeleton className="h-1 w-12 rounded-full" />
+        <Skeleton className="h-5 w-24" />
+        <Skeleton className="h-8 w-3/4" />
+        <Skeleton className="h-4 w-1/2" />
+      </div>
+      <Card>
+        <CardContent className="flex flex-col gap-2 pt-6">
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-5/6" />
+        </CardContent>
+      </Card>
+      <Skeleton className="h-20 w-full rounded-card" />
+      <div className="flex flex-col gap-3">
+        <Skeleton className="h-5 w-20" />
+        <Skeleton className="h-16 w-full rounded-card" />
+        <Skeleton className="h-16 w-full rounded-card" />
       </div>
     </div>
   );

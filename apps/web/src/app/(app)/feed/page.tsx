@@ -1,15 +1,17 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Loader2, ShieldAlert } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { EmptyState } from '@/components/ui/empty-state';
-import { TaskCard, type FeedTask } from '@/components/ui/task-card';
+import { StaggerItem, StaggerList } from '@/components/ui/stagger-list';
+import { TaskCard, TaskCardSkeleton, type FeedTask } from '@/components/ui/task-card';
 import { ApiError, api } from '@/lib/api-client';
 import type { CategoryView } from '@/lib/api-types';
 import { useAuth } from '@/lib/auth-context';
+import { toast } from '@/lib/use-toast';
 
 interface WorkerProfile {
   id: string;
@@ -30,6 +32,10 @@ export default function FeedPage() {
   const [error, setError] = useState<string | null>(null);
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // The stagger entrance should play once, on the first real load — not on
+  // every 20s background poll refresh, or the list would visibly replay its
+  // entrance animation each time and read as janky rather than delightful.
+  const hasAnimatedRef = useRef(false);
 
   const loadFeed = useCallback(async (p: WorkerProfile) => {
     const [{ data: categories }, { data: items }] = await Promise.all([
@@ -57,6 +63,13 @@ export default function FeedPage() {
         setError('Could not load your worker profile.');
       });
   }, [loadFeed, router]);
+
+  // Marks the stagger entrance as already played, right after the render
+  // that used it commits — so the NEXT tasks update (a poll refresh) reads
+  // hasAnimatedRef.current as true and renders the plain, unanimated list.
+  useEffect(() => {
+    if (tasks) hasAnimatedRef.current = true;
+  }, [tasks]);
 
   // The feed has no push channel for "a task was just published nearby" (see
   // ai/memory.md — that gap is real, not an oversight this fixes properly).
@@ -87,6 +100,7 @@ export default function FeedPage() {
     setActionError(null);
     try {
       await api.post(`/tasks/${taskId}/accept`);
+      toast({ title: 'Task accepted', description: 'Head to the task to get started.', variant: 'success' });
       router.push(`/tasks/${taskId}`);
     } catch (err) {
       setActionError(
@@ -144,17 +158,27 @@ export default function FeedPage() {
           description="Turn availability on to see and accept nearby tasks."
         />
       ) : !tasks ? (
-        <div className="flex items-center gap-2 text-sm text-ink-500">
-          <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Loading tasks&hellip;
+        <div className="flex flex-col gap-3">
+          <TaskCardSkeleton />
+          <TaskCardSkeleton />
+          <TaskCardSkeleton />
         </div>
       ) : tasks.length === 0 ? (
         <EmptyState title="Nothing nearby right now" description="New tasks in your categories will show up here." />
-      ) : (
+      ) : hasAnimatedRef.current ? (
         <div className="flex flex-col gap-3">
           {tasks.map((t) => (
             <TaskCard key={t.id} task={t} onAccept={accept} accepting={acceptingId === t.id} />
           ))}
         </div>
+      ) : (
+        <StaggerList className="flex flex-col gap-3">
+          {tasks.map((t) => (
+            <StaggerItem key={t.id}>
+              <TaskCard task={t} onAccept={accept} accepting={acceptingId === t.id} />
+            </StaggerItem>
+          ))}
+        </StaggerList>
       )}
     </div>
   );

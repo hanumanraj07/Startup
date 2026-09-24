@@ -46,7 +46,7 @@ export default function SignUpPage() {
   };
 
   return (
-    <Card>
+    <Card intent="glass">
       <CardHeader>
         <CardTitle>Create your account</CardTitle>
         <CardDescription>Get someone on the ground, wherever you need them.</CardDescription>

@@ -3,6 +3,7 @@ import { formatPaise } from '@onsite/money';
 import { categoryIcon } from '@/lib/category-icons';
 import { Button } from './button';
 import { Card } from './card';
+import { Skeleton } from './skeleton';
 
 export interface FeedTask {
   id: string;
@@ -37,7 +38,7 @@ export function TaskCard({
   const hoursLeft = Math.max(0, Math.round((deadline.getTime() - Date.now()) / 3_600_000));
 
   return (
-    <Card className="p-4">
+    <Card className="p-4 transition-all duration-base ease-onsite hover:-translate-y-0.5 hover:shadow-float">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2 text-sm text-ink-500">
           <Icon className="h-4 w-4" aria-hidden />
@@ -65,6 +66,27 @@ export function TaskCard({
         <Button size="sm" loading={accepting} onClick={() => onAccept(task.id)}>
           Accept
         </Button>
+      </div>
+    </Card>
+  );
+}
+
+/** Shape-matched loading placeholder for TaskCard — see docs/19: skeletons match content, never a bare spinner. */
+export function TaskCardSkeleton() {
+  return (
+    <Card className="p-4">
+      <div className="flex items-start justify-between gap-3">
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="h-5 w-16" />
+      </div>
+      <Skeleton className="mt-3 h-5 w-3/4" />
+      <div className="mt-3 flex gap-4">
+        <Skeleton className="h-4 w-24" />
+        <Skeleton className="h-4 w-16" />
+      </div>
+      <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
+        <Skeleton className="h-4 w-28" />
+        <Skeleton className="h-8 w-20" />
       </div>
     </Card>
   );

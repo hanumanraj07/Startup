@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Loader2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError, api } from '@/lib/api-client';
 
 interface DisputeQueueItem {
@@ -31,9 +31,19 @@ export default function AdminDisputesPage() {
   if (error) return <p className="text-sm text-dispute">{error}</p>;
   if (!disputes) {
     return (
-      <div className="flex items-center gap-2 text-sm text-ink-500">
-        <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Loading&hellip;
-      </div>
+      <Card>
+        <CardContent className="flex flex-col divide-y divide-line p-0">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="flex items-center justify-between gap-4 px-6 py-4">
+              <div className="flex flex-col gap-2">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-3 w-28" />
+              </div>
+              <Skeleton className="h-3 w-14" />
+            </div>
+          ))}
+        </CardContent>
+      </Card>
     );
   }
   if (disputes.length === 0) {

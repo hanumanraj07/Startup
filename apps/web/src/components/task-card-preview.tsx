@@ -1,4 +1,4 @@
-import { StatusPill } from './status-pill';
+import { StatusPill } from './ui/status-pill';
 
 /**
  * A static preview of the TaskCard component described in
@@ -19,7 +19,7 @@ export function TaskCardPreview() {
             Inspect MacBook Air M4 at XYZ Computer Store
           </p>
         </div>
-        <StatusPill tone="progress">Open</StatusPill>
+        <StatusPill status="PUBLISHED" />
       </div>
 
       <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">

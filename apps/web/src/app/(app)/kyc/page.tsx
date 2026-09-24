@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { CheckCircle2, Clock, Loader2, Upload, XCircle } from 'lucide-react';
+import { CheckCircle2, Clock, Upload, XCircle } from 'lucide-react';
 import type { KycStatus } from '@onsite/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError, api } from '@/lib/api-client';
 
 interface KycStatusResponse {
@@ -37,8 +39,20 @@ export default function KycPage() {
   if (error) return <p className="text-sm text-dispute">{error}</p>;
   if (!status) {
     return (
-      <div className="flex items-center gap-2 text-sm text-ink-500">
-        <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Loading&hellip;
+      <div className="mx-auto flex max-w-xl flex-col gap-6">
+        <div className="flex flex-col gap-2">
+          <Skeleton className="h-8 w-2/3" />
+          <Skeleton className="h-4 w-full" />
+        </div>
+        <Card>
+          <CardContent className="flex items-start gap-3 pt-6">
+            <Skeleton className="h-5 w-5 rounded-full" />
+            <div className="flex flex-col gap-2">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-3 w-48" />
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -139,20 +153,20 @@ function KycForm({ onSubmitted }: { onSubmitted: () => void }) {
         <CardDescription>Accepted: Aadhaar, PAN, driving licence, voter ID, passport.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <Field id="documentType" label="Document type">
-          <select
-            id="documentType"
-            value={documentType}
-            onChange={(e) => setDocumentType(e.target.value as typeof documentType)}
-            className="min-h-[var(--tap-min,44px)] rounded-input border border-line bg-paper-0 px-3.5 text-base"
-          >
+        <Select value={documentType} onValueChange={(v) => setDocumentType(v as typeof documentType)}>
+          <Field id="documentType" label="Document type">
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+          </Field>
+          <SelectContent>
             {DOCUMENT_TYPES.map((d) => (
-              <option key={d.value} value={d.value}>
+              <SelectItem key={d.value} value={d.value}>
                 {d.label}
-              </option>
+              </SelectItem>
             ))}
-          </select>
-        </Field>
+          </SelectContent>
+        </Select>
 
         <Field id="documentNumber" label="Document number">
           <Input value={documentNumber} onChange={(e) => setDocumentNumber(e.target.value)} maxLength={40} />

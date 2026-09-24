@@ -2,16 +2,16 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Loader2 } from 'lucide-react';
 import type { TaskStatus } from '@onsite/types';
 import { formatPaise } from '@onsite/money';
 import { Card, CardContent } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Skeleton } from '@/components/ui/skeleton';
 import { StatusPill } from '@/components/ui/status-pill';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
-import { cn } from '@/lib/utils';
 
 interface TaskListItem {
   id: string;
@@ -71,21 +71,32 @@ export default function MyTasksPage() {
       </div>
 
       {user?.hasWorkerProfile ? (
-        <div className="flex gap-2 border-b border-line">
-          <TabButton active={perspective === 'requester'} onClick={() => setPerspective('requester')}>
-            Posted by me
-          </TabButton>
-          <TabButton active={perspective === 'worker'} onClick={() => setPerspective('worker')}>
-            I&rsquo;m working on
-          </TabButton>
-        </div>
+        <Tabs value={perspective} onValueChange={(v) => setPerspective(v as Perspective)}>
+          <TabsList>
+            <TabsTrigger value="requester">Posted by me</TabsTrigger>
+            <TabsTrigger value="worker">I&rsquo;m working on</TabsTrigger>
+          </TabsList>
+        </Tabs>
       ) : null}
 
       {error ? <p className="text-sm text-dispute">{error}</p> : null}
 
       {!tasks ? (
-        <div className="flex items-center gap-2 text-sm text-ink-500">
-          <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Loading&hellip;
+        <div className="flex flex-col gap-3">
+          {[0, 1, 2].map((i) => (
+            <Card key={i}>
+              <CardContent className="flex items-center justify-between gap-4 py-4">
+                <div className="flex flex-col gap-2">
+                  <Skeleton className="h-4 w-40" />
+                  <Skeleton className="h-3 w-24" />
+                </div>
+                <div className="flex flex-col items-end gap-2">
+                  <Skeleton className="h-5 w-20" />
+                  <Skeleton className="h-3 w-14" />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       ) : tasks.length === 0 ? (
         <EmptyState
@@ -119,28 +130,5 @@ export default function MyTasksPage() {
         </div>
       )}
     </div>
-  );
-}
-
-function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        '-mb-px border-b-2 px-1 pb-2 text-sm font-medium transition-colors duration-micro ease-onsite',
-        active ? 'border-brand-600 text-brand-600' : 'border-transparent text-ink-500 hover:text-ink-900',
-      )}
-    >
-      {children}
-    </button>
   );
 }

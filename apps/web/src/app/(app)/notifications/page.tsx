@@ -1,11 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Bell, Loader2 } from 'lucide-react';
+import { Bell } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api-client';
+import { toast } from '@/lib/use-toast';
 import { cn } from '@/lib/utils';
 
 interface NotificationItem {
@@ -35,6 +37,7 @@ export default function NotificationsPage() {
   async function markAllRead() {
     await api.post('/notifications/read', {});
     await load();
+    toast({ title: 'All notifications marked read', variant: 'success' });
   }
 
   const unreadCount = items?.filter((n) => !n.readAt).length ?? 0;
@@ -53,15 +56,28 @@ export default function NotificationsPage() {
       {error ? <p className="text-sm text-dispute">{error}</p> : null}
 
       {!items ? (
-        <div className="flex items-center gap-2 text-sm text-ink-500">
-          <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Loading&hellip;
+        <div className="flex flex-col gap-2">
+          {[0, 1, 2].map((i) => (
+            <Card key={i}>
+              <CardContent className="flex flex-col gap-2 py-4">
+                <Skeleton className="h-4 w-1/3" />
+                <Skeleton className="h-3 w-2/3" />
+              </CardContent>
+            </Card>
+          ))}
         </div>
       ) : items.length === 0 ? (
         <EmptyState icon={Bell} title="Nothing yet" description="Updates on your tasks will show up here." />
       ) : (
         <div className="flex flex-col gap-2">
           {items.map((n) => (
-            <Card key={n.id} className={cn(!n.readAt && 'border-brand-600')}>
+            <Card
+              key={n.id}
+              className={cn(
+                'transition-all duration-base ease-onsite hover:-translate-y-0.5 hover:shadow-float',
+                !n.readAt && 'border-brand-600',
+              )}
+            >
               <CardContent className="flex flex-col gap-1 py-4">
                 <div className="flex items-center justify-between gap-4">
                   <span className="font-medium text-ink-900">{n.title}</span>

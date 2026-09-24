@@ -1,13 +1,27 @@
 import * as React from 'react';
+import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
-export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div
-      className={cn('rounded-card border border-line bg-paper-0 shadow-card', className)}
-      {...props}
-    />
-  );
+const cardVariants = cva('rounded-card', {
+  variants: {
+    intent: {
+      // Byte-identical to the pre-variant className, so every unconverted
+      // call site (the vast majority — calm-tier surfaces stay on this by
+      // design) renders exactly as before.
+      default: 'border border-line bg-paper-0 shadow-card',
+      // Vibrant-tier chrome only — see globals.css's glass-panel comment.
+      // Never used on a money/evidence surface.
+      glass: 'glass-panel shadow-float',
+      gradient: 'border border-transparent bg-hero-gradient shadow-elevated',
+    },
+  },
+  defaultVariants: { intent: 'default' },
+});
+
+export interface CardProps extends React.HTMLAttributes<HTMLDivElement>, VariantProps<typeof cardVariants> {}
+
+export function Card({ className, intent, ...props }: CardProps) {
+  return <div className={cn(cardVariants({ intent }), className)} {...props} />;
 }
 
 export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {

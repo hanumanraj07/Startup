@@ -20,6 +20,11 @@ const buttonVariants = cva(
         secondary: 'bg-paper-100 text-ink-900 border border-line hover:bg-paper-0',
         ghost: 'text-ink-900 hover:bg-paper-100',
         destructive: 'bg-dispute text-white hover:opacity-90',
+        // Vibrant-tier only — hero CTAs and step-wizard "pay & publish"-style
+        // moments, never a plain form submit. `primary` stays the workhorse
+        // solid CTA everywhere else so the accent doesn't lose its meaning.
+        gradient:
+          'bg-accent-gradient text-white shadow-glow-accent hover:shadow-none hover:bg-accent-700',
       },
       size: {
         default: '',

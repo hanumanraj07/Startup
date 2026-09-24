@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { CategoryBadge, type CategorySlug } from '@/components/ui/category-badge';
 import { Input } from '@/components/ui/input';
+import { StaggerItem, StaggerList } from '@/components/ui/stagger-list';
 import { ApiError, api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
 import { currentPushSubscription, pushSupported, subscribeToPush } from '@/lib/push';
@@ -28,26 +29,28 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Card>
+        <Card intent="gradient">
           <CardHeader>
             <CardTitle>Post a task</CardTitle>
             <CardDescription>Get a verified local person to inspect, verify or collect something.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            <div className="flex gap-3">
+            <StaggerList className="flex gap-3">
               {(['product-inspection', 'shop-verification', 'property-inspection', 'local-photography'] as CategorySlug[]).map(
                 (slug) => (
-                  <CategoryBadge key={slug} slug={slug} size={44} />
+                  <StaggerItem key={slug}>
+                    <CategoryBadge slug={slug} size={44} />
+                  </StaggerItem>
                 ),
               )}
-            </div>
-            <Button asChild>
+            </StaggerList>
+            <Button asChild variant="gradient">
               <Link href="/tasks/new">Create a task</Link>
             </Button>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card intent="gradient">
           <CardHeader>
             <CardTitle>{user.hasWorkerProfile ? 'Find work nearby' : 'Become a worker'}</CardTitle>
             <CardDescription>

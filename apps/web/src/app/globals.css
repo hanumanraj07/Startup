@@ -72,6 +72,34 @@
     0 1px 2px rgb(38 41 31 / 0.08), 0 1px 3px rgb(38 41 31 / 0.06);
   --shadow-float:
     0 4px 12px rgb(38 41 31 / 0.12), 0 2px 4px rgb(38 41 31 / 0.08);
+
+  /* ── Vibrant-tier tokens ─────────────────────────────────────────────
+     Every value below is derived algebraically from the five color vars
+     above (color-mix / linear-gradient), never a new hue. Reserved for the
+     marketing/auth/browsing surfaces — see docs/19 and ai/memory.md's
+     tiering decision. Money and evidence screens never use these. */
+  --brand-gradient: linear-gradient(135deg, var(--brand-500) 0%, var(--brand-700) 100%);
+  --accent-gradient: linear-gradient(135deg, var(--accent-500) 0%, var(--accent-700) 100%);
+  --hero-gradient: linear-gradient(180deg, var(--tint-orange) 0%, var(--paper-50) 55%, var(--paper-50) 100%);
+  --mesh-gradient:
+    radial-gradient(at 15% 15%, color-mix(in srgb, var(--brand-500) 20%, transparent) 0px, transparent 55%),
+    radial-gradient(at 85% 0%, color-mix(in srgb, var(--accent-500) 18%, transparent) 0px, transparent 55%),
+    radial-gradient(at 50% 100%, color-mix(in srgb, var(--brand-100) 45%, transparent) 0px, transparent 60%);
+
+  /* Glass chrome — fixed/short-lived surfaces only (bottom nav, modals),
+     never a scrolling list. See docs/20's performance budget. */
+  --glass-bg: color-mix(in srgb, var(--paper-0) 72%, transparent);
+  --glass-border: color-mix(in srgb, var(--line) 60%, transparent);
+
+  /* One shadow tier above --shadow-float, for hero cards/modals in the
+     vibrant tier. Glow is sparing: primary CTAs and active states only. */
+  --shadow-elevated: 0 12px 32px rgb(38 41 31 / 0.14), 0 4px 8px rgb(38 41 31 / 0.08);
+  --shadow-glow-brand:
+    0 0 0 1px color-mix(in srgb, var(--brand-500) 25%, transparent),
+    0 8px 24px color-mix(in srgb, var(--brand-500) 25%, transparent);
+  --shadow-glow-accent:
+    0 0 0 1px color-mix(in srgb, var(--accent-500) 25%, transparent),
+    0 8px 24px color-mix(in srgb, var(--accent-500) 28%, transparent);
 }
 
 * {
@@ -93,6 +121,21 @@ body {
    jitter or misalign. Mandatory per docs/19-ui-design-system.md. */
 .tabular {
   font-variant-numeric: tabular-nums;
+}
+
+/* Vibrant-tier chrome utilities. Reserved for fixed/short-lived surfaces
+   (bottom nav, modals, hero panels) — never a scrolling list or a
+   money/evidence figure. backdrop-filter is real GPU cost; keep it off the
+   worker feed's card list, which is the perf-budgeted screen (docs/20). */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+}
+
+.mesh-bg {
+  background-image: var(--mesh-gradient);
 }
 
 @media (prefers-reduced-motion: reduce) {

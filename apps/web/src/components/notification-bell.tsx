@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
 import { Bell } from 'lucide-react';
 import { api } from '@/lib/api-client';
 
@@ -42,9 +43,17 @@ export function NotificationBell() {
     <Link href="/notifications" className="relative inline-flex" aria-label="Notifications">
       <Bell className="h-5 w-5 text-ink-500 hover:text-ink-900" aria-hidden />
       {unread > 0 ? (
-        <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-dispute px-1 text-[10px] font-semibold text-white">
+        // Same one-shot spring pop-in as StatusPill's "verified" tone — a new
+        // unread count is a "this just changed" moment, not an ongoing state,
+        // so it doesn't loop.
+        <motion.span
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          transition={{ type: 'spring', stiffness: 320, damping: 14 }}
+          className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-dispute px-1 text-[10px] font-semibold text-white"
+        >
           {unread > 9 ? '9+' : unread}
-        </span>
+        </motion.span>
       ) : null}
     </Link>
   );

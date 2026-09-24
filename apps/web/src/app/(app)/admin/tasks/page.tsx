@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
 import type { TaskStatus } from '@onsite/types';
 import { formatPaise } from '@onsite/money';
 import { Card, CardContent } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { StatusPill } from '@/components/ui/status-pill';
 import { ApiError, api } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
@@ -58,9 +58,22 @@ export default function AdminTasksPage() {
       {error ? (
         <p className="text-sm text-dispute">{error}</p>
       ) : !tasks ? (
-        <div className="flex items-center gap-2 text-sm text-ink-500">
-          <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Loading&hellip;
-        </div>
+        <Card>
+          <CardContent className="flex flex-col divide-y divide-line p-0">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="flex items-center justify-between gap-4 px-6 py-4">
+                <div className="flex flex-col gap-2">
+                  <Skeleton className="h-4 w-48" />
+                  <div className="flex gap-2">
+                    <Skeleton className="h-5 w-20 rounded-full" />
+                    <Skeleton className="h-5 w-16 rounded-full" />
+                  </div>
+                </div>
+                <Skeleton className="h-4 w-16" />
+              </div>
+            ))}
+          </CardContent>
+        </Card>
       ) : (
         <Card>
           <CardContent className="flex flex-col divide-y divide-line p-0">

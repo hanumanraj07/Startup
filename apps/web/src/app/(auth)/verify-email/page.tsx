@@ -54,7 +54,7 @@ function VerifyEmailBody() {
 
 export default function VerifyEmailPage() {
   return (
-    <Card>
+    <Card intent="glass">
       <CardHeader>
         <CardTitle>Verify your email</CardTitle>
       </CardHeader>

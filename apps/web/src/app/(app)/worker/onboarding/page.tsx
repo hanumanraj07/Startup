@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { MapPin } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Check, MapPin } from 'lucide-react';
 import type { CategorySlug } from '@onsite/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,6 +13,7 @@ import { ApiError, api } from '@/lib/api-client';
 import type { CategoryView, CityView } from '@/lib/api-types';
 import { categoryIcon } from '@/lib/category-icons';
 import { useAuth } from '@/lib/auth-context';
+import { toast } from '@/lib/use-toast';
 import { cn } from '@/lib/utils';
 
 export default function WorkerOnboardingPage() {
@@ -61,6 +63,7 @@ export default function WorkerOnboardingPage() {
         categorySlugs: selectedSlugs,
       });
       await refetchUser();
+      toast({ title: 'Worker profile created', description: 'Browse nearby tasks whenever you’re ready.', variant: 'success' });
       router.push('/feed');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not create your worker profile. Try again.');
@@ -127,13 +130,24 @@ export default function WorkerOnboardingPage() {
                   type="button"
                   onClick={() => toggleCategory(c.slug)}
                   className={cn(
-                    'flex items-center gap-2 rounded-input border p-3 text-left text-sm transition-colors duration-micro ease-onsite',
+                    'relative flex items-center gap-2 rounded-input border p-3 text-left text-sm',
+                    'transition-all duration-base ease-onsite hover:-translate-y-0.5 hover:shadow-float',
                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500',
                     active ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-line bg-paper-0 text-ink-700',
                   )}
                 >
                   <Icon className="h-4 w-4" aria-hidden />
                   {c.name}
+                  {active ? (
+                    <motion.span
+                      initial={{ scale: 0, rotate: -20 }}
+                      animate={{ scale: 1, rotate: 0 }}
+                      transition={{ type: 'spring', stiffness: 320, damping: 14 }}
+                      className="ml-auto flex h-4 w-4 items-center justify-center rounded-full bg-brand-600 text-white"
+                    >
+                      <Check className="h-2.5 w-2.5" aria-hidden />
+                    </motion.span>
+                  ) : null}
                 </button>
               );
             })}

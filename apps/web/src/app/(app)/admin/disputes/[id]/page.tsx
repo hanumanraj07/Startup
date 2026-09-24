@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { AlertTriangle, Loader2 } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { formatPaise } from '@onsite/money';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { ApiError, api } from '@/lib/api-client';
@@ -79,8 +80,30 @@ export default function AdminDisputeDetailPage() {
   if (error) return <p className="text-sm text-dispute">{error}</p>;
   if (!bundle) {
     return (
-      <div className="flex items-center gap-2 text-sm text-ink-500">
-        <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Loading&hellip;
+      <div className="flex flex-col gap-6">
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-5 w-1/2" />
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2 pt-0">
+            <Skeleton className="h-3 w-1/3" />
+            <Skeleton className="h-4 w-full" />
+          </CardContent>
+        </Card>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Card>
+            <CardContent className="flex flex-col gap-2 pt-6">
+              <Skeleton className="h-3 w-16" />
+              <Skeleton className="h-4 w-24" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="flex flex-col gap-2 pt-6">
+              <Skeleton className="h-3 w-16" />
+              <Skeleton className="h-4 w-24" />
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }

@@ -46,7 +46,7 @@ export default function SignInPage() {
   };
 
   return (
-    <Card>
+    <Card intent="glass">
       <CardHeader>
         <CardTitle>Sign in</CardTitle>
         <CardDescription>Welcome back.</CardDescription>

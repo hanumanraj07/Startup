@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { Loader2 } from 'lucide-react';
 import type { PublicUser, PublicWorker } from '@onsite/types';
 import { Card, CardContent } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { TrustBadge } from '@/components/ui/trust-badge';
 import { ApiError, api } from '@/lib/api-client';
 
@@ -27,20 +27,26 @@ export default function PublicProfilePage() {
   if (error) return <p className="text-sm text-dispute">{error}</p>;
   if (!profile) {
     return (
-      <div className="flex items-center gap-2 text-sm text-ink-500">
-        <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Loading&hellip;
+      <div className="mx-auto flex max-w-xl flex-col gap-6">
+        <div className="flex items-center gap-4 rounded-card bg-hero-gradient p-4">
+          <Skeleton className="h-16 w-16 rounded-full" />
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-6 w-32" />
+            <Skeleton className="h-4 w-20" />
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="mx-auto flex max-w-xl flex-col gap-6">
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-4 rounded-card bg-hero-gradient p-4">
         {profile.avatarUrl ? (
           // eslint-disable-next-line @next/next/no-img-element -- external, non-Next-optimizable avatar URL
           <img src={profile.avatarUrl} alt="" className="h-16 w-16 rounded-full object-cover" />
         ) : (
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-paper-100 text-xl font-semibold text-ink-500">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-paper-0 text-xl font-semibold text-ink-500">
             {profile.displayName.charAt(0).toUpperCase()}
           </div>
         )}

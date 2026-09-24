@@ -5,6 +5,7 @@ import { Flag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { ApiError, api } from '@/lib/api-client';
 
@@ -61,20 +62,20 @@ export function ReportIssueDialog({ taskId, onReported }: { taskId: string; onRe
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
-            <Field id="reason" label="What went wrong?">
-              <select
-                id="reason"
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                className="min-h-[var(--tap-min,44px)] w-full rounded-input border border-line bg-paper-0 px-3 text-sm"
-              >
+            <Select value={reason} onValueChange={setReason}>
+              <Field id="reason" label="What went wrong?">
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+              </Field>
+              <SelectContent>
                 {REASONS.map((r) => (
-                  <option key={r.value} value={r.value}>
+                  <SelectItem key={r.value} value={r.value}>
                     {r.label}
-                  </option>
+                  </SelectItem>
                 ))}
-              </select>
-            </Field>
+              </SelectContent>
+            </Select>
             <Field id="description" label="Explain what happened" hint="At least 20 characters.">
               <Textarea
                 value={description}

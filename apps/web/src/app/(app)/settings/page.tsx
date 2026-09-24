@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ApiError, api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
+import { toast } from '@/lib/use-toast';
 
 interface WorkerSettings {
   workingRadiusMeters: number;
@@ -22,13 +23,11 @@ export default function SettingsPage() {
 
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [savingProfile, setSavingProfile] = useState(false);
-  const [profileSaved, setProfileSaved] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
 
   const [worker, setWorker] = useState<WorkerSettings | null>(null);
   const [radiusKm, setRadiusKm] = useState(10);
   const [savingRadius, setSavingRadius] = useState(false);
-  const [radiusSaved, setRadiusSaved] = useState(false);
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [confirmText, setConfirmText] = useState('');
@@ -47,11 +46,10 @@ export default function SettingsPage() {
   async function saveProfile() {
     setSavingProfile(true);
     setProfileError(null);
-    setProfileSaved(false);
     try {
       await api.patch('/users/me', { displayName: displayName.trim() });
       await refetchUser();
-      setProfileSaved(true);
+      toast({ title: 'Profile saved', variant: 'success' });
     } catch (err) {
       setProfileError(err instanceof ApiError ? err.message : 'Could not save your name.');
     } finally {
@@ -61,10 +59,9 @@ export default function SettingsPage() {
 
   async function saveRadius() {
     setSavingRadius(true);
-    setRadiusSaved(false);
     try {
       await api.patch('/workers/me', { workingRadiusMeters: radiusKm * 1000 });
-      setRadiusSaved(true);
+      toast({ title: 'Working radius saved', variant: 'success' });
     } finally {
       setSavingRadius(false);
     }
@@ -98,7 +95,6 @@ export default function SettingsPage() {
             <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={80} />
           </Field>
           {profileError ? <p className="text-sm text-dispute">{profileError}</p> : null}
-          {profileSaved ? <p className="text-sm text-verified">Saved.</p> : null}
           <Button
             className="self-start"
             size="sm"
@@ -133,17 +129,13 @@ export default function SettingsPage() {
                     min={1}
                     max={50}
                     value={radiusKm}
-                    onChange={(e) => {
-                      setRadiusKm(Number(e.target.value));
-                      setRadiusSaved(false);
-                    }}
+                    onChange={(e) => setRadiusKm(Number(e.target.value))}
                     className="w-full accent-brand-600"
                   />
                 </Field>
                 <p className="text-xs text-ink-400">
                   Wider covers more tasks but means more travel. Most workers do well between 10&ndash;20 km.
                 </p>
-                {radiusSaved ? <p className="text-sm text-verified">Saved.</p> : null}
                 <Button className="self-start" size="sm" onClick={saveRadius} loading={savingRadius}>
                   Save
                 </Button>

@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Loader2 } from 'lucide-react';
 import { formatPaise } from '@onsite/money';
 import type { PayoutStatus } from '@onsite/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError, api } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 
@@ -61,8 +61,17 @@ export default function EarningsPage() {
   if (error) return <p className="text-sm text-dispute">{error}</p>;
   if (!stats || !payouts) {
     return (
-      <div className="flex items-center gap-2 text-sm text-ink-500">
-        <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Loading&hellip;
+      <div className="mx-auto flex max-w-2xl flex-col gap-6">
+        <div className="grid grid-cols-2 gap-4">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <Card key={i}>
+              <CardContent className="flex flex-col gap-2 pt-6">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-7 w-16" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       </div>
     );
   }

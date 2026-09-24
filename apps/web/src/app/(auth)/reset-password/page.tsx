@@ -78,7 +78,7 @@ function ResetPasswordForm() {
 
 export default function ResetPasswordPage() {
   return (
-    <Card>
+    <Card intent="glass">
       <CardHeader>
         <CardTitle>Set a new password</CardTitle>
         <CardDescription>Choose something you haven't used before.</CardDescription>

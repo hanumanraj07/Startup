@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { ApiError, api } from '@/lib/api-client';
 
@@ -51,8 +51,25 @@ export default function AdminKycPage() {
   if (error) return <p className="text-sm text-dispute">{error}</p>;
   if (!queue) {
     return (
-      <div className="flex items-center gap-2 text-sm text-ink-500">
-        <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Loading&hellip;
+      <div className="flex flex-col gap-4">
+        {[0, 1].map((i) => (
+          <Card key={i}>
+            <CardContent className="flex flex-col gap-4 pt-6">
+              <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-2">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-3 w-40" />
+                </div>
+                <Skeleton className="h-3 w-24" />
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <Skeleton className="aspect-[4/3] w-full" />
+                <Skeleton className="aspect-[4/3] w-full" />
+                <Skeleton className="aspect-[4/3] w-full" />
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
     );
   }
