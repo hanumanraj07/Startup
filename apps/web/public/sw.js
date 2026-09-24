@@ -7,7 +7,7 @@
  * useful when offline. See docs/05-system-architecture.md's PWA notes.
  */
 
-const CACHE_NAME = 'onsite-shell-v1';
+const CACHE_NAME = 'onsite-shell-v2';
 const OFFLINE_URL = '/offline';
 const SHELL_ASSETS = [OFFLINE_URL, '/icon-192.png', '/manifest.webmanifest'];
 
@@ -57,7 +57,7 @@ self.addEventListener('fetch', (event) => {
             }
             return response;
           })
-          .catch(() => cached),
+          .catch(() => cached ?? Response.error()),
     ),
   );
 });
