@@ -1,13 +1,21 @@
-import { Body, Controller, Get, Ip, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Ip, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import {
+  createCategorySchema,
+  createCitySchema,
   kycDecisionSchema,
   paginationSchema,
   resolveDisputeSchema,
   suspendUserSchema,
+  updateCategorySchema,
+  updateCitySchema,
   uuidSchema,
+  type CreateCategoryInput,
+  type CreateCityInput,
   type KycDecisionInput,
   type ResolveDisputeInput,
   type SuspendUserInput,
+  type UpdateCategoryInput,
+  type UpdateCityInput,
 } from '@onsite/validation';
 import { zodPipe } from '../../common/zod-validation.pipe';
 import { CurrentUser, type RequestUser } from '../auth/decorators/current-user.decorator';
@@ -19,7 +27,7 @@ import { AdminService } from './admin.service';
  * docs/07-api-specification.md's Admin section: "All require
  * `platform_role = ADMIN`. All write actions produce an audit log entry."
  * See admin.service.ts's comment for what this pass deliberately does not
- * cover yet (task blocking, payout retry, metrics dashboard).
+ * cover yet (task blocking, payout retry).
  */
 @Controller('admin')
 @UseGuards(AdminGuard)
@@ -86,5 +94,63 @@ export class AdminController {
     @Query(zodPipe(paginationSchema)) query: { limit: number },
   ) {
     return { data: await this.admin.listTasks({ status, riskLevel }, query.limit) };
+  }
+
+  @Get('tasks/:id')
+  async taskDetail(@Param('id') id: string) {
+    return this.admin.getTaskDetail(uuidSchema.parse(id));
+  }
+
+  @Get('metrics')
+  async metrics() {
+    return this.admin.getDashboardMetrics();
+  }
+
+  @Get('categories')
+  async listCategories() {
+    return { data: await this.admin.listCategoriesAdmin() };
+  }
+
+  @Post('categories')
+  async createCategory(
+    @Body(zodPipe(createCategorySchema)) body: CreateCategoryInput,
+    @CurrentUser() admin: RequestUser,
+    @Ip() ip: string,
+  ) {
+    return this.admin.createCategory(admin.id, ip, body);
+  }
+
+  @Patch('categories/:id')
+  async updateCategory(
+    @Param('id') id: string,
+    @Body(zodPipe(updateCategorySchema)) body: UpdateCategoryInput,
+    @CurrentUser() admin: RequestUser,
+    @Ip() ip: string,
+  ) {
+    return this.admin.updateCategory(uuidSchema.parse(id), admin.id, ip, body);
+  }
+
+  @Get('cities')
+  async listCities() {
+    return { data: await this.admin.listCitiesAdmin() };
+  }
+
+  @Post('cities')
+  async createCity(
+    @Body(zodPipe(createCitySchema)) body: CreateCityInput,
+    @CurrentUser() admin: RequestUser,
+    @Ip() ip: string,
+  ) {
+    return this.admin.createCity(admin.id, ip, body);
+  }
+
+  @Patch('cities/:id')
+  async updateCity(
+    @Param('id') id: string,
+    @Body(zodPipe(updateCitySchema)) body: UpdateCityInput,
+    @CurrentUser() admin: RequestUser,
+    @Ip() ip: string,
+  ) {
+    return this.admin.updateCity(uuidSchema.parse(id), admin.id, ip, body);
   }
 }

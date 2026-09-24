@@ -416,6 +416,59 @@ export const kycDecisionSchema = z
     message: 'A reason is required to reject or request resubmission',
   });
 
+const slugSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, 'Lowercase letters, numbers and single hyphens only');
+
+export const createCategorySchema = z
+  .object({
+    slug: slugSchema,
+    name: z.string().trim().min(1).max(100),
+    description: z.string().trim().min(1).max(500),
+    icon: z.string().trim().min(1).max(50),
+    suggestedMinPaise: paiseSchema,
+    suggestedMaxPaise: paiseSchema,
+    isActive: z.boolean().default(true),
+  })
+  .refine((v) => v.suggestedMaxPaise >= v.suggestedMinPaise, {
+    path: ['suggestedMaxPaise'],
+    message: 'Must be at least the minimum',
+  });
+
+export const updateCategorySchema = z
+  .object({
+    name: z.string().trim().min(1).max(100).optional(),
+    description: z.string().trim().min(1).max(500).optional(),
+    icon: z.string().trim().min(1).max(50).optional(),
+    suggestedMinPaise: paiseSchema.optional(),
+    suggestedMaxPaise: paiseSchema.optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine((v) => v.suggestedMinPaise === undefined || v.suggestedMaxPaise === undefined || v.suggestedMaxPaise >= v.suggestedMinPaise, {
+    path: ['suggestedMaxPaise'],
+    message: 'Must be at least the minimum',
+  });
+
+export const createCitySchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  state: z.string().trim().min(1).max(100),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  radiusMeters: z.number().int().positive().max(100_000),
+  isActive: z.boolean().default(true),
+});
+
+export const updateCitySchema = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  state: z.string().trim().min(1).max(100).optional(),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+  radiusMeters: z.number().int().positive().max(100_000).optional(),
+  isActive: z.boolean().optional(),
+});
+
 // ─── Inferred types ──────────────────────────────────────────────────────
 
 export type RegisterInput = z.infer<typeof registerSchema>;
@@ -442,6 +495,10 @@ export type PayoutAccountInput = z.infer<typeof payoutAccountSchema>;
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 export type DeleteAccountInput = z.infer<typeof deleteAccountSchema>;
 export type CreatePaymentOrderInput = z.infer<typeof createPaymentOrderSchema>;
+export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
+export type UpdateCategoryInput = z.infer<typeof updateCategorySchema>;
+export type CreateCityInput = z.infer<typeof createCitySchema>;
+export type UpdateCityInput = z.infer<typeof updateCitySchema>;
 export type BlockerInput = z.infer<typeof blockerSchema>;
 export type SubmitTaskInput = z.infer<typeof submitTaskSchema>;
 export type RejectTaskInput = z.infer<typeof rejectTaskSchema>;

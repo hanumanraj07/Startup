@@ -6,6 +6,22 @@ Newest entries at the top. Every entry states the decision, the reasoning, and w
 
 ---
 
+## 2026-09-24 — Admin dashboard metrics, admin task detail, and category/city management built
+
+**Decided.** `GET /admin/metrics` — deliberately deferred on 2026-09-10 with the reasoning "a metrics dashboard is a new aggregation feature, not a trust/safety primitive... left as documented gaps rather than built with no consumer" — is now built, along with two features that were never even audited before: a per-task admin detail view (`GET/​page /admin/tasks/:id`), and admin CRUD for categories and cities (`/admin/categories`, `/admin/cities`), toggling the `isActive` flag that `categories.controller.ts`'s own comment always said should be an admin action rather than a manual database edit.
+
+**Why now.** The prior deferral's stated reason was "no consumer yet." There now is one — built at explicit user request after a full route sweep of the live app, not decided ambient to an unrelated task.
+
+**What each one is:**
+- Dashboard metrics are plain aggregates over existing columns, nothing new tracked. Definitions pinned down in `admin.service.ts`'s `getDashboardMetrics` comment where docs/15 doesn't specify one (active workers, completion rate, median time to match, acceptance rate).
+- Median time to match is computed in application code over a 200-row sample, not `percentile_cont` in Postgres, specifically to avoid raw SQL outside `geo.repository.ts` (ai/architecture-rules.md) for a screen that doesn't need it.
+- Task detail mirrors `DisputesService.getEvidenceBundle`'s shape (money, both parties, timeline, evidence) but isn't gated on a `Dispute` row existing — it's the same information oversight already trusted an admin with, just reachable for any task, not only a disputed one.
+- Category/city writes are audit-logged like every other admin write (docs/15's "no exceptions"). There is deliberately no delete — matching the existing pattern of deactivation (`isActive`) rather than destructive removal, since `Task.cityId`/`categoryId` are non-nullable foreign keys and deleting either would orphan historical tasks.
+
+**Considered and turned down.** A DELETE endpoint for categories/cities — rejected for the FK-orphaning reason above; `isActive: false` already achieves "stop offering this" without breaking history.
+
+---
+
 ## 2026-09-22 — Task location gate widened from Ahmedabad/Kolkata to all of India; worker supply is unaffected and stays where it is
 
 **Decided.** `TasksService.create`/`update` no longer reject a task location outside a seeded city's radius. They now only reject coordinates outside a generous India bounding box (`isWithinIndiaBounds`, `geo.repository.ts` — 6–38°N, 68–98°E, catching obviously-wrong input like `0,0` or a different country, not a precise border check). `GeoRepository.findContainingCity` (reject-if-outside) was replaced with `findNearestCity` (always attach the closest active city, for display only — "near Lucknow" — never as a gate). The seed data grew from two cities to 49, at least one per state/UT, purely so that label has something sensible to attach to. The frontend task wizard's copy and the state/city picker changed to match.

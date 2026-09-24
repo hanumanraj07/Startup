@@ -6,10 +6,12 @@ import { useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/utils';
 
 const TABS = [
+  { href: '/admin', label: 'Dashboard' },
   { href: '/admin/kyc', label: 'KYC queue' },
   { href: '/admin/disputes', label: 'Disputes' },
   { href: '/admin/users', label: 'Users' },
   { href: '/admin/tasks', label: 'Tasks' },
+  { href: '/admin/categories', label: 'Categories & cities' },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -32,7 +34,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <h1 className="text-[28px] font-bold tracking-tight text-ink-900">Admin</h1>
         <nav className="mt-4 flex gap-1 border-b border-line">
           {TABS.map((tab) => {
-            const active = pathname.startsWith(tab.href);
+            // '/admin' would startsWith-match every admin route, so the
+            // dashboard tab needs an exact match; the rest are subtrees.
+            const active = tab.href === '/admin' ? pathname === '/admin' : pathname.startsWith(tab.href);
             return (
               <Link
                 key={tab.href}

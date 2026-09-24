@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import type { TaskStatus } from '@onsite/types';
 import { formatPaise } from '@onsite/money';
 import { Card, CardContent } from '@/components/ui/card';
@@ -78,11 +79,11 @@ export default function AdminTasksPage() {
         <Card>
           <CardContent className="flex flex-col divide-y divide-line p-0">
             {tasks.map((t) => (
-              // Not linked to /tasks/:id: that endpoint is party-only
-              // (requester or assigned worker), and there is no separate
-              // admin task-detail endpoint — oversight here is list-only,
-              // by what the API actually exposes.
-              <div key={t.id} className="flex items-center justify-between gap-4 px-6 py-4">
+              <Link
+                key={t.id}
+                href={`/admin/tasks/${t.id}`}
+                className="flex items-center justify-between gap-4 px-6 py-4 transition-colors duration-micro ease-onsite hover:bg-paper-100"
+              >
                 <div className="min-w-0">
                   <p className="truncate font-medium text-ink-900">{t.title}</p>
                   <div className="mt-1 flex items-center gap-2">
@@ -93,7 +94,7 @@ export default function AdminTasksPage() {
                   </div>
                 </div>
                 <span className="tabular shrink-0 font-semibold text-ink-900">{formatPaise(t.budgetPaise)}</span>
-              </div>
+              </Link>
             ))}
           </CardContent>
         </Card>
