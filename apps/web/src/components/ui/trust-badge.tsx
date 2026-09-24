@@ -28,7 +28,7 @@ export function TrustBadge({ worker }: { worker: PublicWorker }) {
         <Stat label="Tasks completed" value={String(worker.tasksCompleted)} />
         <Stat
           label="Completion rate"
-          value={worker.completionRate !== null ? `${Math.round(worker.completionRate * 100)}%` : '—'}
+          value={worker.completionRate !== null ? `${Math.round(worker.completionRate)}%` : '—'}
         />
         <Stat
           label="Member since"

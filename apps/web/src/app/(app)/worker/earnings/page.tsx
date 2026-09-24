@@ -94,11 +94,11 @@ export default function EarningsPage() {
         <StatTile label="Tasks completed" value={String(stats.tasksCompleted)} />
         <StatTile
           label="Completion rate"
-          value={stats.completionRate !== null ? `${Math.round(stats.completionRate * 100)}%` : '—'}
+          value={stats.completionRate !== null ? `${Math.round(stats.completionRate)}%` : '—'}
         />
         <StatTile
           label="Response rate"
-          value={stats.responseRate !== null ? `${Math.round(stats.responseRate * 100)}%` : '—'}
+          value={stats.responseRate !== null ? `${Math.round(stats.responseRate)}%` : '—'}
         />
       </div>
 

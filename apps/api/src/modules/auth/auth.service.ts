@@ -170,7 +170,10 @@ export class AuthService {
       throw new UnauthenticatedError('Your session has expired. Please sign in again.');
     }
 
-    const user = await this.prisma.user.findUnique({ where: { id: stored.userId } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: stored.userId },
+      include: { workerProfile: { select: { id: true } } },
+    });
     if (!user || user.status !== 'ACTIVE') {
       throw new UnauthenticatedError('This account is not active.');
     }
@@ -251,7 +254,10 @@ export class AuthService {
   }
 
   private async issueSession(userId: string): Promise<AuthResult> {
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      include: { workerProfile: { select: { id: true } } },
+    });
     const env = loadEnv();
 
     const refresh = this.tokens.generateRefreshToken();
