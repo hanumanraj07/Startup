@@ -1,0 +1,159 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * Design tokens — warm, illustrated "journey" aesthetic: moss green + cream
+ * + orange accent. Light theme only, by design; dark mode was deliberately
+ * removed here (a prior phase of this project built and Lighthouse-audited
+ * a dark palette — see ai/memory.md — this is an intentional visual
+ * direction change, not an oversight).
+ *
+ * Every component in this codebase already reads color through these
+ * variable names rather than a literal hex value, so this file is the
+ * entire re-skin: nothing else needs to change for the palette itself to
+ * apply everywhere at once.
+ */
+:root {
+  /* Primary — moss/olive green. Headings, active states, links, route lines. */
+  --brand-50: #eef3e6;
+  --brand-100: #dce8c8;
+  --brand-500: #8fae68;
+  --brand-600: #5c7a3d;
+  --brand-700: #43592c;
+  /* The solid CTA fill is orange (--accent-solid below), not this — moss
+     green here is reserved for non-CTA solid uses: map pins, active-state
+     fills, anything that needs the brand color as a fill but isn't "the"
+     button on the screen. */
+  --brand-solid: #5c7a3d;
+
+  /* Accent — orange. The main call-to-action button and highlight moments. */
+  --accent-500: #f2884b;
+  --accent-600: #f2884b;
+  --accent-700: #d96f35;
+  --accent-solid: #f2884b;
+
+  /* Pastel tints — category-badge and illustration backgrounds. */
+  --tint-green: #dce8c8;
+  --tint-blue: #d6e9ea;
+  --tint-orange: #fbe0c7;
+  --tint-yellow: #f5eac2;
+
+  /* Text — warm dark olive, never pure black. Three tones, not five: this
+     palette is deliberately flatter than the previous one. */
+  --ink-900: #26291f;
+  --ink-700: #26291f;
+  --ink-500: #767a6b;
+  --ink-400: #a6a995;
+  --ink-300: #a6a995;
+
+  /* Backgrounds — cream, never stark white for the page itself. */
+  --paper-0: #ffffff;
+  --paper-0-light: #fffdf9;
+  --paper-50: #faf7f0;
+  --paper-100: #f2eee3;
+  --line: #e8e3d5;
+  --line-light: #f0ece0;
+
+  /* State language — consistent everywhere, no exceptions. */
+  --verified: #4c9a5b;
+  --progress: #e0a339;
+  --dispute: #e4572e;
+  /* No blue in this palette; anything purely informational reuses primary. */
+  --info: #5c7a3d;
+
+  /* No custom font family — system font, weight does all the work. */
+  --font-sans:
+    system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* Shadow color is always the dark text tone, never black — warm tint
+     instead of a cold gray one. rgb(38 41 31) is #26291F. */
+  --shadow-card:
+    0 1px 2px rgb(38 41 31 / 0.08), 0 1px 3px rgb(38 41 31 / 0.06);
+  --shadow-float:
+    0 4px 12px rgb(38 41 31 / 0.12), 0 2px 4px rgb(38 41 31 / 0.08);
+
+  /* ── Vibrant-tier tokens ─────────────────────────────────────────────
+     Every value below is derived algebraically from the five color vars
+     above (color-mix / linear-gradient), never a new hue. Reserved for the
+     marketing/auth/browsing surfaces — see docs/19 and ai/memory.md's
+     tiering decision. Money and evidence screens never use these. */
+  --brand-gradient: linear-gradient(135deg, var(--brand-500) 0%, var(--brand-700) 100%);
+  --accent-gradient: linear-gradient(135deg, var(--accent-500) 0%, var(--accent-700) 100%);
+  --hero-gradient: linear-gradient(180deg, var(--tint-orange) 0%, var(--paper-50) 55%, var(--paper-50) 100%);
+  --mesh-gradient:
+    radial-gradient(at 15% 15%, color-mix(in srgb, var(--brand-500) 20%, transparent) 0px, transparent 55%),
+    radial-gradient(at 85% 0%, color-mix(in srgb, var(--accent-500) 18%, transparent) 0px, transparent 55%),
+    radial-gradient(at 50% 100%, color-mix(in srgb, var(--brand-100) 45%, transparent) 0px, transparent 60%);
+
+  /* Glass chrome — fixed/short-lived surfaces only (bottom nav, modals),
+     never a scrolling list. See docs/20's performance budget. */
+  --glass-bg: color-mix(in srgb, var(--paper-0) 72%, transparent);
+  --glass-border: color-mix(in srgb, var(--line) 60%, transparent);
+
+  /* One shadow tier above --shadow-float, for hero cards/modals in the
+     vibrant tier. Glow is sparing: primary CTAs and active states only. */
+  --shadow-elevated: 0 12px 32px rgb(38 41 31 / 0.14), 0 4px 8px rgb(38 41 31 / 0.08);
+  --shadow-glow-brand:
+    0 0 0 1px color-mix(in srgb, var(--brand-500) 25%, transparent),
+    0 8px 24px color-mix(in srgb, var(--brand-500) 25%, transparent);
+  --shadow-glow-accent:
+    0 0 0 1px color-mix(in srgb, var(--accent-500) 25%, transparent),
+    0 8px 24px color-mix(in srgb, var(--accent-500) 28%, transparent);
+}
+
+* {
+  border-color: var(--line);
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  background: var(--paper-50);
+  color: var(--ink-900);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Money, distance, ratings, countdowns — anything compared in a list must not
+   jitter or misalign. Mandatory per docs/19-ui-design-system.md. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Vibrant-tier chrome utilities. Reserved for fixed/short-lived surfaces
+   (bottom nav, modals, hero panels) — never a scrolling list or a
+   money/evidence figure. backdrop-filter is real GPU cost; keep it off the
+   worker feed's card list, which is the perf-budgeted screen (docs/20). */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+}
+
+.mesh-bg {
+  background-image: var(--mesh-gradient);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Density modes: worker surfaces get larger tap targets and type, since a
+   worker is often one-handed, outdoors, in bright sun. */
+[data-surface='worker'] {
+  --tap-min: 48px;
+}
+
+[data-surface='app'] {
+  --tap-min: 40px;
+}

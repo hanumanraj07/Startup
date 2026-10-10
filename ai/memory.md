@@ -6,6 +6,23 @@ Newest entries at the top. Every entry states the decision, the reasoning, and w
 
 ---
 
+## 2026-10-10 — The frontend is being rebuilt as a standalone OWL 2 app (`apps/web-owl`, branch `owl-frontend`); `apps/web` stays live until the switch is approved
+
+**Decided.** Replace the Next.js frontend with a standalone OWL 2 app (`@odoo/owl` from npm, used without Odoo), Vite and TypeScript, living beside `apps/web` and talking to the existing API only. Backend, auth, payments, the state machine and every invariant are untouched. `apps/web` is not deleted and the Vercel project is not changed until the owner approves the cutover after a full parity checklist (27 routes) passes.
+
+**Why this form.** A request to "rebuild the UI in Odoo's frontend stack" assumed an Odoo module; this repo has none (no `__manifest__.py`, no Python models). Rewriting the whole product on Odoo was rejected as a re-platform that would discard the API, Razorpay, escrow ledger and matching. The chosen scope keeps only the frontend technology change.
+
+**Consequences accepted.**
+- OWL has no Radix equivalent: dialog, select, tabs, toast and switch are hand-built (native `<dialog>`, `<select>`, `role="switch"`). framer-motion becomes CSS transitions. react-hook-form becomes an OWL form helper over the shared zod schemas.
+- OWL is client-only, so the landing page loses server-rendered metadata; static meta tags go in `index.html`.
+- `apps/web` has no automated tests, so parity is verified screen by screen in a browser against the real API.
+
+**Dev wiring, because the API allows exactly one origin.** `main.ts` calls `enableCors({ origin: [env.WEB_URL] })` and the Socket.IO gateway rejects any handshake whose `Origin` is not `WEB_URL` (`realtime/cors-origin.ts`), so a second origin cannot talk to the API as-is. In dev the Vite proxy forwards `/api` and `/socket.io` and presents the API's own allowed origin, which needs no API change. Production, where the two apps would be on different origins, is a cutover-plan question: either the new app takes over the existing domain or the API needs a multi-origin allow-list. Not decided; do not change the API for it yet.
+
+**Found while verifying.** The shared packages ship CommonJS `dist`; Vite does not interop linked CJS packages in dev, so `vite.config.ts` and `tsconfig.json` alias `@onsite/*` to their `src` entries (the same thing Next's `transpilePackages` did). Also: OWL schedules renders with `requestAnimationFrame`, which a hidden tab pauses, so a headless or backgrounded browser shows an empty `#app` with no error. That is the environment, not a bug.
+
+---
+
 ## 2026-09-24 — A blocked "kill someone" task now leaves an audit trail; the block itself was also a real gap, found by a direct question rather than code review
 
 **Decided.** Two things, found in sequence:

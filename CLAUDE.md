@@ -37,10 +37,20 @@ Then read the specific `docs/` file governing the area you are changing. `docs/`
 
 Next.js App Router with TypeScript, Tailwind and shadcn/ui, installable as a PWA. NestJS REST API. PostgreSQL with PostGIS via Prisma. Redis with BullMQ. S3-compatible object storage with presigned direct uploads. Razorpay Route for escrow. Google Places for geocoding, MapLibre with OpenStreetMap for display. Socket.IO with the Redis adapter for realtime.
 
+### Frontend stack is moving to OWL (branch `owl-frontend`)
+
+The frontend is being rebuilt as a standalone **OWL 2** app (`@odoo/owl` from npm, used without Odoo) on Vite and TypeScript, in `apps/web-owl`. It talks to the existing API only. The backend, the invariants above and the centralized-concerns table are unchanged by this move.
+
+- `apps/web` (Next.js) stays the live frontend on Vercel until the switch is explicitly approved. Do not delete it, and do not change the Vercel project, as part of this work.
+- Port screens one at a time against the parity checklist; keep behaviour identical, including request shapes, the status arrays that mirror backend enums, and the wizard's gating logic.
+- Do not change API endpoints, auth, payments or the state machine to suit the new frontend. If the new frontend seems to need a backend change, raise it first.
+- In dev, `apps/web-owl` proxies `/api` and `/socket.io` to the API (see its `vite.config.ts`), because the API allows exactly one origin (`WEB_URL`).
+
 ## Repository layout
 
 ```
-apps/web          Next.js — marketing site, requester app, worker app, admin
+apps/web          Next.js — marketing site, requester app, worker app, admin (live; being replaced)
+apps/web-owl      OWL 2 + Vite — the replacement frontend, branch owl-frontend only
 apps/api          NestJS — REST API, background workers
 packages/types    Shared TypeScript types
 packages/validation  Shared Zod schemas
