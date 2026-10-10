@@ -6,6 +6,8 @@ import { PlaceholderView } from '@/views/PlaceholderView';
 import { ResetPasswordView } from '@/views/ResetPasswordView';
 import { SignInView } from '@/views/SignInView';
 import { SignUpView } from '@/views/SignUpView';
+import { TaskDetailView } from '@/views/TaskDetailView';
+import { TasksView } from '@/views/TasksView';
 import { VerifyEmailView } from '@/views/VerifyEmailView';
 
 function route(
@@ -36,9 +38,9 @@ export const routes: RouteDef[] = [
 
   route('dashboard', '/dashboard', 'Dashboard', 'app', 'user', DashboardView),
   route('feed', '/feed', 'Feed', 'app', 'user', FeedView),
-  route('tasks', '/tasks', 'My tasks', 'app', 'user'),
+  route('tasks', '/tasks', 'My tasks', 'app', 'user', TasksView),
   route('task-new', '/tasks/new', 'Post a task', 'app', 'user'),
-  route('task-detail', '/tasks/:id', 'Task', 'app', 'user'),
+  route('task-detail', '/tasks/:id', 'Task', 'app', 'user', TaskDetailView),
   route('payments', '/payments', 'Payments', 'app', 'user'),
   route('notifications', '/notifications', 'Notifications', 'app', 'user'),
   route('settings', '/settings', 'Settings', 'app', 'user'),

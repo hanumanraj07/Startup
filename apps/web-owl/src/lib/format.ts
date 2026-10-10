@@ -12,3 +12,18 @@ export function formatMemberSince(iso: string): string {
 export function radiusKm(meters: number): string {
   return (meters / 1000).toFixed(0);
 }
+
+/** "12 Oct"-style day and month, for due dates in lists. */
+export function formatDueDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
+
+/** Full local date and time, for timeline events and proof capture times. */
+export function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString('en-IN');
+}
+
+/** Hour and minute, for chat message timestamps. */
+export function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+}
