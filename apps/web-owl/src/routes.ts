@@ -2,6 +2,7 @@ import type { Guard, Layout, RouteDef } from '@/router/router';
 import { DashboardView } from '@/views/DashboardView';
 import { FeedView } from '@/views/FeedView';
 import { ForgotPasswordView } from '@/views/ForgotPasswordView';
+import { NewTaskView } from '@/views/NewTaskView';
 import { PlaceholderView } from '@/views/PlaceholderView';
 import { ResetPasswordView } from '@/views/ResetPasswordView';
 import { SignInView } from '@/views/SignInView';
@@ -39,7 +40,7 @@ export const routes: RouteDef[] = [
   route('dashboard', '/dashboard', 'Dashboard', 'app', 'user', DashboardView),
   route('feed', '/feed', 'Feed', 'app', 'user', FeedView),
   route('tasks', '/tasks', 'My tasks', 'app', 'user', TasksView),
-  route('task-new', '/tasks/new', 'Post a task', 'app', 'user'),
+  route('task-new', '/tasks/new', 'Post a task', 'app', 'user', NewTaskView),
   route('task-detail', '/tasks/:id', 'Task', 'app', 'user', TaskDetailView),
   route('payments', '/payments', 'Payments', 'app', 'user'),
   route('notifications', '/notifications', 'Notifications', 'app', 'user'),
