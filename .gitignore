@@ -67,3 +67,6 @@ tmp/
 *.key
 *-service-account.json
 vapid-keys.json
+
+# Local machine port overrides
+docker-compose.override.yml
