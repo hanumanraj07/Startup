@@ -1,16 +1,11 @@
 import type { Config } from 'tailwindcss';
 
 /**
- * Tailwind config, built directly from docs/19-ui-design-system.md.
- *
- * Colors are CSS custom properties (defined in globals.css) rather than
- * literal hex values, so light and dark mode are a single variable swap
- * rather than a `dark:` variant on every element. Both palettes are defined
- * explicitly on :root, never only inside a dark media query, per the design
- * doc's dark mode requirement.
+ * Tailwind config for the OWL frontend. Colors are CSS custom properties
+ * (defined in src/styles/globals.css) so the whole theme is one file. Token
+ * names match apps/web; radii are squarer to suit the Odoo-style look.
  */
 const config: Config = {
-  darkMode: ['class', '[data-theme="dark"]'],
   content: ['./index.html', './src/**/*.ts'],
   theme: {
     extend: {
@@ -59,23 +54,14 @@ const config: Config = {
         sans: ['var(--font-sans)'],
       },
       borderRadius: {
-        input: '8px',
-        card: '12px',
-        sheet: '16px',
-        xl: '24px',
+        input: '4px',
+        card: '6px',
+        sheet: '8px',
+        xl: '12px',
       },
       boxShadow: {
         card: 'var(--shadow-card)',
         float: 'var(--shadow-float)',
-        elevated: 'var(--shadow-elevated)',
-        'glow-brand': 'var(--shadow-glow-brand)',
-        'glow-accent': 'var(--shadow-glow-accent)',
-      },
-      backgroundImage: {
-        'brand-gradient': 'var(--brand-gradient)',
-        'accent-gradient': 'var(--accent-gradient)',
-        'hero-gradient': 'var(--hero-gradient)',
-        'mesh-gradient': 'var(--mesh-gradient)',
       },
       transitionTimingFunction: {
         onsite: 'cubic-bezier(0.2, 0, 0, 1)',

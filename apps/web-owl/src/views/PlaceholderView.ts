@@ -1,27 +1,26 @@
 import { Component, useState, xml } from '@odoo/owl';
+import { Page, type Crumb } from '@/components/Page';
 import { routeByName, routerState } from '@/router/router';
-import { card, CARD_CONTENT, CARD_DESCRIPTION, CARD_HEADER, CARD_TITLE } from '@/ui/classes';
+import { card } from '@/ui/classes';
 
 /** Stand-in for a screen that has not been ported from apps/web yet. */
 export class PlaceholderView extends Component {
   static override template = xml`
-    <div t-att-class="cardClass">
-      <div class="${CARD_HEADER}">
-        <h1 class="${CARD_TITLE}" t-out="title"/>
-        <p class="${CARD_DESCRIPTION}">Not ported from apps/web yet.</p>
+    <Page breadcrumbs="breadcrumbs">
+      <div t-att-class="cardClass">
+        <p class="text-sm text-ink-500">Not ported from apps/web yet.</p>
+        <p class="mt-3 text-sm text-ink-500">Route: <code t-out="router.path"/></p>
+        <p t-if="hasParams" class="text-sm text-ink-500">Params: <code t-out="paramsText"/></p>
       </div>
-      <div class="${CARD_CONTENT} text-sm text-ink-500">
-        <p>Route: <code t-out="router.path"/></p>
-        <p t-if="hasParams">Params: <code t-out="paramsText"/></p>
-      </div>
-    </div>`;
+    </Page>`;
+  static components = { Page };
   static override props = {};
 
   router = useState(routerState);
-  cardClass = card();
+  cardClass = card('p-6');
 
-  get title(): string {
-    return routeByName(this.router.routeName)?.title ?? '';
+  get breadcrumbs(): Crumb[] {
+    return [{ label: routeByName(this.router.routeName)?.title ?? '' }];
   }
 
   get hasParams(): boolean {

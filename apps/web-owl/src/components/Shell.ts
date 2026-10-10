@@ -2,7 +2,8 @@ import { Component, useRef, useState, xml } from '@odoo/owl';
 import { navigate, routerState } from '@/router/router';
 import { logout } from '@/services/session';
 import { store } from '@/store/store';
-import { btn } from '@/ui/classes';
+import { btn, MENU_ITEM } from '@/ui/classes';
+import { Dropdown } from './Dropdown';
 import { Link } from './Link';
 
 interface NavItem {
@@ -11,32 +12,55 @@ interface NavItem {
 }
 
 /**
- * The signed-in app chrome (apps/web's `(app)/layout.tsx`). The notification
- * bell and mobile bottom nav are ported with their screens, not here.
+ * The signed-in app chrome, styled after the Odoo web client: a purple
+ * navbar with an apps menu (which also serves as the phone navigation), the
+ * current section links, and a user menu. Each screen supplies its own
+ * control panel via <Page>. The notification bell is ported with its screen.
  */
 export class Shell extends Component {
   static override template = xml`
     <div data-surface="app" class="min-h-screen bg-paper-50">
-      <header class="border-b border-line bg-paper-0">
-        <div class="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
-          <div class="flex items-center gap-6">
-            <Link to="'/dashboard'" class="'text-lg font-bold tracking-tight text-ink-900'">OnSite</Link>
-            <nav class="hidden items-center gap-4 sm:flex">
-              <Link t-foreach="navItems" t-as="item" t-key="item.href" to="item.href" class="navClass(item.href)">
-                <t t-out="item.label"/>
-              </Link>
-            </nav>
-          </div>
-          <div class="flex items-center gap-4">
-            <span class="text-sm text-ink-500" t-out="displayName"/>
-            <button type="button" t-att-class="signOutClass" t-on-click="openDialog">Sign out</button>
+      <header class="bg-brand-solid text-white shadow-card">
+        <div class="mx-auto flex h-[var(--navbar-height)] max-w-none items-center gap-1 px-2 sm:px-3">
+          <Dropdown toggleClass="navButtonClass" label="'Apps menu'">
+            <t t-set-slot="toggle">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <circle cx="3" cy="3" r="1.6"/><circle cx="8" cy="3" r="1.6"/><circle cx="13" cy="3" r="1.6"/>
+                <circle cx="3" cy="8" r="1.6"/><circle cx="8" cy="8" r="1.6"/><circle cx="13" cy="8" r="1.6"/>
+                <circle cx="3" cy="13" r="1.6"/><circle cx="8" cy="13" r="1.6"/><circle cx="13" cy="13" r="1.6"/>
+              </svg>
+            </t>
+            <Link t-foreach="navItems" t-as="item" t-key="item.href" to="item.href" class="menuItemClass">
+              <t t-out="item.label"/>
+            </Link>
+          </Dropdown>
+
+          <Link to="'/dashboard'" class="'px-2 text-[17px] font-semibold tracking-tight text-white'">OnSite</Link>
+
+          <nav class="hidden items-center gap-0.5 sm:flex" aria-label="Main">
+            <Link t-foreach="navItems" t-as="item" t-key="item.href" to="item.href" class="navLinkClass(item.href)">
+              <t t-out="item.label"/>
+            </Link>
+          </nav>
+
+          <div class="ml-auto flex items-center">
+            <Dropdown toggleClass="navButtonClass" label="'User menu'" align="'right'">
+              <t t-set-slot="toggle">
+                <span class="flex h-6 w-6 items-center justify-center rounded-full bg-white/20 text-xs font-semibold" t-out="initial"/>
+                <span class="hidden text-sm sm:inline" t-out="displayName"/>
+              </t>
+              <Link to="'/settings'" class="menuItemClass">Settings</Link>
+              <Link to="'/kyc'" class="menuItemClass">Identity verification</Link>
+              <button type="button" role="menuitem" t-att-class="menuItemClass" t-on-click="openDialog">Sign out</button>
+            </Dropdown>
           </div>
         </div>
       </header>
-      <main class="mx-auto max-w-6xl px-4 py-8 pb-24 sm:pb-8"><t t-slot="default"/></main>
 
-      <dialog t-ref="dialog" class="w-full max-w-md rounded-card border border-line bg-paper-0 p-6 shadow-elevated backdrop:bg-ink-900/40">
-        <h2 class="text-[19px] font-semibold text-ink-900">Sign out?</h2>
+      <main><t t-slot="default"/></main>
+
+      <dialog t-ref="dialog" class="w-full max-w-md rounded-card border border-line bg-paper-0 p-6 shadow-float backdrop:bg-ink-900/40">
+        <h2 class="text-lg font-medium text-ink-900">Sign out?</h2>
         <p class="mt-1 text-sm text-ink-500">You’ll need to sign in again to access your account.</p>
         <div class="mt-6 flex justify-end gap-3">
           <button type="button" t-att-class="cancelClass" t-on-click="closeDialog">Cancel</button>
@@ -44,19 +68,26 @@ export class Shell extends Component {
         </div>
       </dialog>
     </div>`;
-  static components = { Link };
+  static components = { Link, Dropdown };
   static override props = { slots: { type: Object, optional: true } };
 
   store = useState(store);
   router = useState(routerState);
   dialog = useRef('dialog');
 
-  signOutClass = btn('ghost', 'sm');
+  navButtonClass =
+    'flex min-h-[32px] items-center gap-2 rounded-input px-2.5 text-white/90 transition-colors duration-micro ease-onsite ' +
+    'hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60';
+  menuItemClass = MENU_ITEM;
   cancelClass = btn('secondary');
   confirmClass = btn('destructive');
 
   get displayName(): string {
     return this.store.user?.displayName ?? '';
+  }
+
+  get initial(): string {
+    return this.displayName.trim().charAt(0).toUpperCase();
   }
 
   get navItems(): NavItem[] {
@@ -74,12 +105,11 @@ export class Shell extends Component {
     return items;
   }
 
-  navClass(href: string): string {
+  navLinkClass(href: string): string {
     const path = this.router.path;
     const active = path === href || path.startsWith(`${href}/`);
-    return `text-sm font-medium transition-colors duration-micro ease-onsite ${
-      active ? 'text-brand-600' : 'text-ink-500 hover:text-ink-900'
-    }`;
+    const base = 'rounded-input px-3 py-1.5 text-sm transition-colors duration-micro ease-onsite hover:bg-white/10 hover:text-white';
+    return active ? `${base} bg-white/15 font-medium text-white` : `${base} text-white/80`;
   }
 
   openDialog() {

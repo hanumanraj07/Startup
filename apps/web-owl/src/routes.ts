@@ -1,6 +1,10 @@
 import type { Guard, Layout, RouteDef } from '@/router/router';
+import { ForgotPasswordView } from '@/views/ForgotPasswordView';
 import { PlaceholderView } from '@/views/PlaceholderView';
+import { ResetPasswordView } from '@/views/ResetPasswordView';
 import { SignInView } from '@/views/SignInView';
+import { SignUpView } from '@/views/SignUpView';
+import { VerifyEmailView } from '@/views/VerifyEmailView';
 
 function route(
   name: string,
@@ -23,10 +27,10 @@ export const routes: RouteDef[] = [
   route('offline', '/offline', 'Offline', 'marketing', 'public'),
 
   route('sign-in', '/sign-in', 'Sign in', 'auth', 'public', SignInView),
-  route('sign-up', '/sign-up', 'Create account', 'auth', 'public'),
-  route('forgot-password', '/forgot-password', 'Forgot password', 'auth', 'public'),
-  route('reset-password', '/reset-password', 'Reset password', 'auth', 'public'),
-  route('verify-email', '/verify-email', 'Verify email', 'auth', 'public'),
+  route('sign-up', '/sign-up', 'Create account', 'auth', 'public', SignUpView),
+  route('forgot-password', '/forgot-password', 'Forgot password', 'auth', 'public', ForgotPasswordView),
+  route('reset-password', '/reset-password', 'Reset password', 'auth', 'public', ResetPasswordView),
+  route('verify-email', '/verify-email', 'Verify email', 'auth', 'public', VerifyEmailView),
 
   route('dashboard', '/dashboard', 'Dashboard', 'app', 'user'),
   route('feed', '/feed', 'Feed', 'app', 'user'),
