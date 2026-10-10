@@ -17,7 +17,6 @@ import { NewTaskView } from '@/views/NewTaskView';
 import { NotificationsView } from '@/views/NotificationsView';
 import { OfflineView } from '@/views/OfflineView';
 import { PaymentsView } from '@/views/PaymentsView';
-import { PlaceholderView } from '@/views/PlaceholderView';
 import { ProfileView } from '@/views/ProfileView';
 import { ResetPasswordView } from '@/views/ResetPasswordView';
 import { SettingsView } from '@/views/SettingsView';
@@ -34,7 +33,7 @@ function route(
   title: string,
   layout: Layout,
   guard: Guard,
-  component: RouteDef['component'] = PlaceholderView,
+  component: RouteDef['component'],
 ): RouteDef {
   return { name, path, title, layout, guard, component };
 }
@@ -42,7 +41,7 @@ function route(
 /**
  * Every route in apps/web, one entry each (27). First match wins, so fixed
  * paths (/tasks/new) are listed before their parameterised siblings
- * (/tasks/:id). Replace `PlaceholderView` as each screen is ported.
+ * (/tasks/:id).
  */
 export const routes: RouteDef[] = [
   route('landing', '/', 'OnSite', 'marketing', 'public', LandingView),

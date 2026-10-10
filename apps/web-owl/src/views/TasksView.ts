@@ -53,22 +53,22 @@ export class TasksView extends Component {
           <table class="w-full text-left text-sm">
             <thead class="border-b border-line bg-paper-100 text-xs uppercase tracking-wide text-ink-500">
               <tr>
-                <th scope="col" class="px-4 py-2.5 font-medium">Task</th>
-                <th scope="col" class="hidden px-4 py-2.5 font-medium sm:table-cell">Due</th>
-                <th scope="col" class="px-4 py-2.5 font-medium">Status</th>
-                <th scope="col" class="px-4 py-2.5 text-right font-medium">Budget</th>
+                <th scope="col" class="px-3 py-2.5 sm:px-4 font-medium">Task</th>
+                <th scope="col" class="hidden px-3 py-2.5 sm:px-4 font-medium sm:table-cell">Due</th>
+                <th scope="col" class="px-3 py-2.5 sm:px-4 font-medium">Status</th>
+                <th scope="col" class="px-3 py-2.5 sm:px-4 text-right font-medium">Budget</th>
               </tr>
             </thead>
             <tbody>
               <tr t-foreach="state.tasks" t-as="task" t-key="task.id"
                 class="cursor-pointer border-b border-line transition-colors duration-micro ease-onsite last:border-b-0 hover:bg-paper-100"
                 t-on-click="(ev) => open(ev, task.id)">
-                <td class="px-4 py-3">
+                <td class="px-3 py-3 sm:px-4">
                   <Link to="'/tasks/' + task.id" class="linkClass"><t t-out="task.title"/></Link>
                 </td>
-                <td class="hidden px-4 py-3 text-ink-500 sm:table-cell"><t t-out="due(task)"/></td>
-                <td class="px-4 py-3"><StatusPill status="task.status"/></td>
-                <td class="tabular px-4 py-3 text-right text-ink-700"><t t-out="budget(task)"/></td>
+                <td class="hidden px-3 py-3 sm:px-4 text-ink-500 sm:table-cell"><t t-out="due(task)"/></td>
+                <td class="px-3 py-3 sm:px-4"><StatusPill status="task.status"/></td>
+                <td class="tabular px-3 py-3 sm:px-4 text-right text-ink-700"><t t-out="budget(task)"/></td>
               </tr>
             </tbody>
           </table>
@@ -87,7 +87,7 @@ export class TasksView extends Component {
 
   tabs = TABS;
   postClass = btn('primary', 'sm');
-  cardClass = card('overflow-hidden');
+  cardClass = card('overflow-x-auto');
   linkClass = `font-medium ${LINK}`;
 
   private disposed = false;
