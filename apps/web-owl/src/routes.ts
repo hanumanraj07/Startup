@@ -1,4 +1,6 @@
 import type { Guard, Layout, RouteDef } from '@/router/router';
+import { DashboardView } from '@/views/DashboardView';
+import { FeedView } from '@/views/FeedView';
 import { ForgotPasswordView } from '@/views/ForgotPasswordView';
 import { PlaceholderView } from '@/views/PlaceholderView';
 import { ResetPasswordView } from '@/views/ResetPasswordView';
@@ -32,8 +34,8 @@ export const routes: RouteDef[] = [
   route('reset-password', '/reset-password', 'Reset password', 'auth', 'public', ResetPasswordView),
   route('verify-email', '/verify-email', 'Verify email', 'auth', 'public', VerifyEmailView),
 
-  route('dashboard', '/dashboard', 'Dashboard', 'app', 'user'),
-  route('feed', '/feed', 'Feed', 'app', 'user'),
+  route('dashboard', '/dashboard', 'Dashboard', 'app', 'user', DashboardView),
+  route('feed', '/feed', 'Feed', 'app', 'user', FeedView),
   route('tasks', '/tasks', 'My tasks', 'app', 'user'),
   route('task-new', '/tasks/new', 'Post a task', 'app', 'user'),
   route('task-detail', '/tasks/:id', 'Task', 'app', 'user'),
