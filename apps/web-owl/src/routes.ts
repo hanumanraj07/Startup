@@ -12,8 +12,10 @@ import { EarningsView } from '@/views/EarningsView';
 import { FeedView } from '@/views/FeedView';
 import { ForgotPasswordView } from '@/views/ForgotPasswordView';
 import { KycView } from '@/views/KycView';
+import { LandingView } from '@/views/LandingView';
 import { NewTaskView } from '@/views/NewTaskView';
 import { NotificationsView } from '@/views/NotificationsView';
+import { OfflineView } from '@/views/OfflineView';
 import { PaymentsView } from '@/views/PaymentsView';
 import { PlaceholderView } from '@/views/PlaceholderView';
 import { ProfileView } from '@/views/ProfileView';
@@ -43,8 +45,8 @@ function route(
  * (/tasks/:id). Replace `PlaceholderView` as each screen is ported.
  */
 export const routes: RouteDef[] = [
-  route('landing', '/', 'OnSite', 'marketing', 'public'),
-  route('offline', '/offline', 'Offline', 'marketing', 'public'),
+  route('landing', '/', 'OnSite', 'marketing', 'public', LandingView),
+  route('offline', '/offline', 'Offline', 'marketing', 'public', OfflineView),
 
   route('sign-in', '/sign-in', 'Sign in', 'auth', 'public', SignInView),
   route('sign-up', '/sign-up', 'Create account', 'auth', 'public', SignUpView),

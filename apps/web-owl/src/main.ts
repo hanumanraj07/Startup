@@ -2,6 +2,7 @@ import { mount } from '@odoo/owl';
 import { App } from '@/components/App';
 import { initRouter } from '@/router/router';
 import { routes } from '@/routes';
+import { registerServiceWorker } from '@/services/pwa';
 import { bootstrapSession } from '@/services/session';
 import '@/styles/globals.css';
 
@@ -17,3 +18,4 @@ mount(App, root, { dev: import.meta.env.DEV }).catch((error: unknown) => {
   root.textContent = 'Something went wrong loading OnSite. Please reload.';
 });
 void bootstrapSession();
+registerServiceWorker();

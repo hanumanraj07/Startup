@@ -1,5 +1,5 @@
 import { reactive, type Component } from '@odoo/owl';
-import { compilePath, matchPath, parseQuery, type CompiledPath } from './match';
+import { compilePath, matchPath, pageTitle, parseQuery, type CompiledPath } from './match';
 
 export type Layout = 'marketing' | 'auth' | 'app';
 /** public: anyone. user: signed in. admin: signed in with platformRole ADMIN. */
@@ -61,7 +61,7 @@ function syncFromLocation() {
   routerState.query = parseQuery(search);
   routerState.params = matched?.params ?? {};
   routerState.routeName = matched?.def.name ?? null;
-  document.title = matched ? `${matched.def.title} · OnSite` : 'Not found · OnSite';
+  document.title = pageTitle(matched?.def.title ?? null);
 }
 
 export function initRouter(routes: RouteDef[]) {

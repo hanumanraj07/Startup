@@ -27,6 +27,13 @@ export default tseslint.config(
     rules: customRules,
   },
   {
+    // Service workers run in a worker scope (`self`, `caches`), not Node.
+    files: ['**/public/sw.js'],
+    languageOptions: {
+      globals: { ...globals.serviceworker },
+    },
+  },
+  {
     files: ['**/*.test.ts', '**/*.test.tsx', '**/vitest.config.ts', '**/*.config.ts', '**/*.config.mjs'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',

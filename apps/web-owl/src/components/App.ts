@@ -3,6 +3,7 @@ import { navigate, routeByName, routerState, type Layout, type RouteDef } from '
 import { store } from '@/store/store';
 import { NoAccessView, NotFoundView } from '@/views/NotFoundView';
 import { AuthLayout } from './AuthLayout';
+import { InstallBanner } from './InstallBanner';
 import { Shell } from './Shell';
 import { Spinner } from './Spinner';
 import { Toaster } from './Toaster';
@@ -15,6 +16,7 @@ import { Toaster } from './Toaster';
 export class App extends Component {
   static override template = xml`
     <div>
+      <InstallBanner/>
       <t t-if="showSpinner">
         <div class="flex min-h-screen items-center justify-center bg-paper-50"><Spinner/></div>
       </t>
@@ -29,7 +31,7 @@ export class App extends Component {
       </t>
       <Toaster/>
     </div>`;
-  static components = { Shell, AuthLayout, Spinner, Toaster };
+  static components = { AuthLayout, InstallBanner, Shell, Spinner, Toaster };
   static override props = {};
 
   store = useState(store);

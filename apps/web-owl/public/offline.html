@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#714b67" />
+    <title>You’re offline · OnSite</title>
+    <!--
+      Served by the service worker (sw.js) when a navigation fails with no
+      network. Deliberately self-contained: no scripts, no external styles, no
+      data, no auth check. It must render with only what was cached at install.
+    -->
+    <style>
+      html, body { height: 100%; margin: 0; }
+      body {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 16px; padding: 0 24px; text-align: center; background: #f9fafb; color: #111827;
+        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      }
+      svg { width: 40px; height: 40px; color: #9ca3af; }
+      h1 { margin: 0; font-size: 18px; font-weight: 500; }
+      p { margin: 4px 0 0; max-width: 20rem; font-size: 14px; color: #6b7280; }
+    </style>
+  </head>
+  <body>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M12 20h.01" /><path d="M8.5 16.429a5 5 0 0 1 7 0" /><path d="M5 12.859a10 10 0 0 1 5.17-2.69" />
+      <path d="M19 12.859a10 10 0 0 0-2.007-1.523" /><path d="M2 8.82a15 15 0 0 1 4.177-2.643" />
+      <path d="M22 8.82a15 15 0 0 0-11.288-3.764" /><path d="m2 2 20 20" />
+    </svg>
+    <div>
+      <h1>You’re offline</h1>
+      <p>OnSite needs a connection for live task data. Reconnect and reload to continue.</p>
+    </div>
+  </body>
+</html>

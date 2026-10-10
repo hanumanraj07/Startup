@@ -1,4 +1,5 @@
 import {
+  ArrowRight,
   Ban,
   Bell,
   Camera,
@@ -8,6 +9,7 @@ import {
   CircleDashed,
   CircleX,
   Clock,
+  Download,
   FileCheck2,
   FileText,
   Flag,
@@ -33,6 +35,7 @@ import {
   TriangleAlert,
   Video,
   Wallet,
+  WifiOff,
   X,
   type IconNode,
   type IconNodeChild,
@@ -46,6 +49,7 @@ import {
  */
 export const ICONS: Record<string, IconNode> = {
   'alert-triangle': TriangleAlert,
+  'arrow-right': ArrowRight,
   ban: Ban,
   bell: Bell,
   camera: Camera,
@@ -55,6 +59,7 @@ export const ICONS: Record<string, IconNode> = {
   'circle-dashed': CircleDashed,
   'circle-x': CircleX,
   clock: Clock,
+  download: Download,
   'file-check': FileCheck2,
   'file-text': FileText,
   flag: Flag,
@@ -79,6 +84,7 @@ export const ICONS: Record<string, IconNode> = {
   upload: Upload,
   video: Video,
   wallet: Wallet,
+  'wifi-off': WifiOff,
   x: X,
 };
 
