@@ -1,4 +1,12 @@
 import type { Guard, Layout, RouteDef } from '@/router/router';
+import { AdminCategoriesView } from '@/views/admin/AdminCategoriesView';
+import { AdminDashboardView } from '@/views/admin/AdminDashboardView';
+import { AdminDisputeDetailView } from '@/views/admin/AdminDisputeDetailView';
+import { AdminDisputesView } from '@/views/admin/AdminDisputesView';
+import { AdminKycView } from '@/views/admin/AdminKycView';
+import { AdminTaskDetailView } from '@/views/admin/AdminTaskDetailView';
+import { AdminTasksView } from '@/views/admin/AdminTasksView';
+import { AdminUsersView } from '@/views/admin/AdminUsersView';
 import { DashboardView } from '@/views/DashboardView';
 import { EarningsView } from '@/views/EarningsView';
 import { FeedView } from '@/views/FeedView';
@@ -57,12 +65,12 @@ export const routes: RouteDef[] = [
   route('worker-onboarding', '/worker/onboarding', 'Become a worker', 'app', 'user', WorkerOnboardingView),
   route('worker-earnings', '/worker/earnings', 'Earnings', 'app', 'user', EarningsView),
 
-  route('admin', '/admin', 'Admin', 'app', 'admin'),
-  route('admin-kyc', '/admin/kyc', 'KYC queue', 'app', 'admin'),
-  route('admin-disputes', '/admin/disputes', 'Disputes', 'app', 'admin'),
-  route('admin-dispute-detail', '/admin/disputes/:id', 'Dispute', 'app', 'admin'),
-  route('admin-users', '/admin/users', 'Users', 'app', 'admin'),
-  route('admin-tasks', '/admin/tasks', 'Tasks', 'app', 'admin'),
-  route('admin-task-detail', '/admin/tasks/:id', 'Task', 'app', 'admin'),
-  route('admin-categories', '/admin/categories', 'Categories & cities', 'app', 'admin'),
+  route('admin', '/admin', 'Admin', 'app', 'admin', AdminDashboardView),
+  route('admin-kyc', '/admin/kyc', 'KYC queue', 'app', 'admin', AdminKycView),
+  route('admin-disputes', '/admin/disputes', 'Disputes', 'app', 'admin', AdminDisputesView),
+  route('admin-dispute-detail', '/admin/disputes/:id', 'Dispute', 'app', 'admin', AdminDisputeDetailView),
+  route('admin-users', '/admin/users', 'Users', 'app', 'admin', AdminUsersView),
+  route('admin-tasks', '/admin/tasks', 'Tasks', 'app', 'admin', AdminTasksView),
+  route('admin-task-detail', '/admin/tasks/:id', 'Task', 'app', 'admin', AdminTaskDetailView),
+  route('admin-categories', '/admin/categories', 'Categories & cities', 'app', 'admin', AdminCategoriesView),
 ];
