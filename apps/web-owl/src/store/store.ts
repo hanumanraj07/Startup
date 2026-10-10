@@ -15,6 +15,8 @@ export interface AppStore {
   /** True until the initial silent-refresh-from-cookie attempt finishes. */
   isLoading: boolean;
   toasts: Toast[];
+  /** Unread notification count for the header bell. */
+  unreadNotifications: number;
 }
 
 /**
@@ -26,6 +28,7 @@ export const store = reactive<AppStore>({
   user: null,
   isLoading: true,
   toasts: [],
+  unreadNotifications: 0,
 });
 
 let nextToastId = 1;

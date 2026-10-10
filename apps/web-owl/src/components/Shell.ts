@@ -5,6 +5,7 @@ import { store } from '@/store/store';
 import { btn, MENU_ITEM } from '@/ui/classes';
 import { Dropdown } from './Dropdown';
 import { Link } from './Link';
+import { NotificationBell } from './NotificationBell';
 
 interface NavItem {
   href: string;
@@ -15,7 +16,7 @@ interface NavItem {
  * The signed-in app chrome, styled after the Odoo web client: a purple
  * navbar with an apps menu (which also serves as the phone navigation), the
  * current section links, and a user menu. Each screen supplies its own
- * control panel via <Page>. The notification bell is ported with its screen.
+ * control panel via <Page>.
  */
 export class Shell extends Component {
   static override template = xml`
@@ -43,7 +44,8 @@ export class Shell extends Component {
             </Link>
           </nav>
 
-          <div class="ml-auto flex items-center">
+          <div class="ml-auto flex items-center gap-1">
+            <NotificationBell/>
             <Dropdown toggleClass="navButtonClass" label="'User menu'" align="'right'">
               <t t-set-slot="toggle">
                 <span class="flex h-6 w-6 items-center justify-center rounded-full bg-white/20 text-xs font-semibold" t-out="initial"/>
@@ -68,7 +70,7 @@ export class Shell extends Component {
         </div>
       </dialog>
     </div>`;
-  static components = { Link, Dropdown };
+  static components = { Dropdown, Link, NotificationBell };
   static override props = { slots: { type: Object, optional: true } };
 
   store = useState(store);

@@ -60,4 +60,5 @@ export async function logout(): Promise<void> {
   await api.post('/auth/logout').catch(() => undefined);
   setAccessToken(null);
   store.user = null;
+  store.unreadNotifications = 0;
 }

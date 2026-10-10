@@ -1,15 +1,22 @@
 import type { Guard, Layout, RouteDef } from '@/router/router';
 import { DashboardView } from '@/views/DashboardView';
+import { EarningsView } from '@/views/EarningsView';
 import { FeedView } from '@/views/FeedView';
 import { ForgotPasswordView } from '@/views/ForgotPasswordView';
+import { KycView } from '@/views/KycView';
 import { NewTaskView } from '@/views/NewTaskView';
+import { NotificationsView } from '@/views/NotificationsView';
+import { PaymentsView } from '@/views/PaymentsView';
 import { PlaceholderView } from '@/views/PlaceholderView';
+import { ProfileView } from '@/views/ProfileView';
 import { ResetPasswordView } from '@/views/ResetPasswordView';
+import { SettingsView } from '@/views/SettingsView';
 import { SignInView } from '@/views/SignInView';
 import { SignUpView } from '@/views/SignUpView';
 import { TaskDetailView } from '@/views/TaskDetailView';
 import { TasksView } from '@/views/TasksView';
 import { VerifyEmailView } from '@/views/VerifyEmailView';
+import { WorkerOnboardingView } from '@/views/WorkerOnboardingView';
 
 function route(
   name: string,
@@ -42,13 +49,13 @@ export const routes: RouteDef[] = [
   route('tasks', '/tasks', 'My tasks', 'app', 'user', TasksView),
   route('task-new', '/tasks/new', 'Post a task', 'app', 'user', NewTaskView),
   route('task-detail', '/tasks/:id', 'Task', 'app', 'user', TaskDetailView),
-  route('payments', '/payments', 'Payments', 'app', 'user'),
-  route('notifications', '/notifications', 'Notifications', 'app', 'user'),
-  route('settings', '/settings', 'Settings', 'app', 'user'),
-  route('kyc', '/kyc', 'Identity verification', 'app', 'user'),
-  route('profile', '/profile/:id', 'Profile', 'app', 'user'),
-  route('worker-onboarding', '/worker/onboarding', 'Become a worker', 'app', 'user'),
-  route('worker-earnings', '/worker/earnings', 'Earnings', 'app', 'user'),
+  route('payments', '/payments', 'Payments', 'app', 'user', PaymentsView),
+  route('notifications', '/notifications', 'Notifications', 'app', 'user', NotificationsView),
+  route('settings', '/settings', 'Settings', 'app', 'user', SettingsView),
+  route('kyc', '/kyc', 'Identity verification', 'app', 'user', KycView),
+  route('profile', '/profile/:id', 'Profile', 'app', 'user', ProfileView),
+  route('worker-onboarding', '/worker/onboarding', 'Become a worker', 'app', 'user', WorkerOnboardingView),
+  route('worker-earnings', '/worker/earnings', 'Earnings', 'app', 'user', EarningsView),
 
   route('admin', '/admin', 'Admin', 'app', 'admin'),
   route('admin-kyc', '/admin/kyc', 'KYC queue', 'app', 'admin'),
