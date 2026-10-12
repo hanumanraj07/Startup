@@ -41,7 +41,7 @@ Next.js App Router with TypeScript, Tailwind and shadcn/ui, installable as a PWA
 
 The frontend is being rebuilt as a standalone **OWL 2** app (`@odoo/owl` from npm, used without Odoo) on Vite and TypeScript, in `apps/web-owl`. It talks to the existing API only. The backend, the invariants above and the centralized-concerns table are unchanged by this move.
 
-- `apps/web` (Next.js) stays the live frontend on Vercel until the switch is explicitly approved. Do not delete it, and do not change the Vercel project, as part of this work.
+- **Cut over on 2026-10-12.** `apps/web-owl` is now what `onsite-orcin.vercel.app` serves: the Vercel project `onsite` builds `apps/web-owl` from branch `owl-frontend` (its Production Branch), so a push to `owl-frontend` deploys to production. `apps/web` (Next.js) is no longer deployed but is kept in the repo, undeleted, as the rollback reference; do not delete it without explicit approval. Rollback is Instant Rollback to the last Next.js deployment in the Vercel dashboard.
 - Port screens one at a time against the parity checklist; keep behaviour identical, including request shapes, the status arrays that mirror backend enums, and the wizard's gating logic.
 - Do not change API endpoints, auth, payments or the state machine to suit the new frontend. If the new frontend seems to need a backend change, raise it first.
 - In dev, `apps/web-owl` proxies `/api` and `/socket.io` to the API (see its `vite.config.ts`), because the API allows exactly one origin (`WEB_URL`).
@@ -49,8 +49,8 @@ The frontend is being rebuilt as a standalone **OWL 2** app (`@odoo/owl` from np
 ## Repository layout
 
 ```
-apps/web          Next.js — marketing site, requester app, worker app, admin (live; being replaced)
-apps/web-owl      OWL 2 + Vite — the replacement frontend, branch owl-frontend only
+apps/web          Next.js — the previous frontend, no longer deployed (kept as rollback reference)
+apps/web-owl      OWL 2 + Vite — the live frontend (deployed from branch owl-frontend)
 apps/api          NestJS — REST API, background workers
 packages/types    Shared TypeScript types
 packages/validation  Shared Zod schemas
