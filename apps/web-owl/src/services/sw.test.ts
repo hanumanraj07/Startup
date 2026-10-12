@@ -135,6 +135,12 @@ describe('fetch', () => {
     expect((await sw.dispatch('fetch', { request: req('/assets/app.js', { method: 'POST' }) })).intercepted).toBe(false);
   });
 
+  it('leaves the build-generated licence files to the network', async () => {
+    const sw = load(online);
+    expect((await sw.dispatch('fetch', { request: req('/licenses.json') })).intercepted).toBe(false);
+    expect((await sw.dispatch('fetch', { request: req('/licenses/odoo__owl.txt') })).intercepted).toBe(false);
+  });
+
   it('serves a navigation from the network when online', async () => {
     const sw = load(online);
     await sw.dispatch('install');

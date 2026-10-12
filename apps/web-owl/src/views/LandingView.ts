@@ -118,6 +118,7 @@ export class LandingView extends Component {
 
         <footer class="mt-20 border-t border-line pt-8 text-sm text-ink-400 sm:mt-28">
           <p>© 2026 OnSite. Available across India.</p>
+          <p class="mt-2"><Link to="'/licenses'" class="'hover:text-ink-900 hover:underline'">Open-source licences</Link></p>
         </footer>
       </main>
     </div>`;

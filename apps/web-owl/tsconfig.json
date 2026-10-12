@@ -21,6 +21,6 @@
       "@onsite/utils": ["../../packages/utils/src/index.ts"]
     }
   },
-  "include": ["src/**/*.ts", "vite.config.ts", "tailwind.config.ts"],
+  "include": ["src/**/*.ts", "vite-plugins/**/*.ts", "vite.config.ts", "tailwind.config.ts"],
   "exclude": ["node_modules", "dist"]
 }

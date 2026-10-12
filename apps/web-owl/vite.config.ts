@@ -1,5 +1,6 @@
 import { fileURLToPath, URL } from 'node:url';
 import { defineConfig } from 'vitest/config';
+import { thirdPartyLicenses } from './vite-plugins/licenses';
 
 const fromRoot = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -14,6 +15,7 @@ const API_TARGET = process.env.VITE_DEV_API_TARGET ?? 'http://localhost:4000';
 const API_ALLOWED_ORIGIN = process.env.VITE_DEV_API_ORIGIN ?? 'http://localhost:3000';
 
 export default defineConfig({
+  plugins: [thirdPartyLicenses()],
   resolve: {
     alias: {
       '@': fromRoot('./src'),
@@ -36,9 +38,22 @@ export default defineConfig({
   build: {
     target: 'es2022',
     sourcemap: true,
+    rollupOptions: {
+      output: {
+        // OWL is LGPL-3.0: ship it as its own file so it stays a separable,
+        // replaceable library rather than being merged into our code, and
+        // keep OWL's real export names on that boundary so a different OWL
+        // build can be dropped in without matching minifier-generated names.
+        minifyInternalExports: false,
+        manualChunks(id) {
+          if (id.replace(/\\/g, '/').includes('/node_modules/@odoo/owl/')) return 'owl';
+          return undefined;
+        },
+      },
+    },
   },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'vite-plugins/**/*.test.ts'],
   },
 });

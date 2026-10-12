@@ -13,6 +13,7 @@ import { FeedView } from '@/views/FeedView';
 import { ForgotPasswordView } from '@/views/ForgotPasswordView';
 import { KycView } from '@/views/KycView';
 import { LandingView } from '@/views/LandingView';
+import { LicensesView } from '@/views/LicensesView';
 import { NewTaskView } from '@/views/NewTaskView';
 import { NotificationsView } from '@/views/NotificationsView';
 import { OfflineView } from '@/views/OfflineView';
@@ -39,13 +40,14 @@ function route(
 }
 
 /**
- * Every route in apps/web, one entry each (27). First match wins, so fixed
+ * Every route in apps/web, one entry each (27), plus /licenses. First match wins, so fixed
  * paths (/tasks/new) are listed before their parameterised siblings
  * (/tasks/:id).
  */
 export const routes: RouteDef[] = [
   route('landing', '/', 'OnSite', 'marketing', 'public', LandingView),
   route('offline', '/offline', 'Offline', 'marketing', 'public', OfflineView),
+  route('licenses', '/licenses', 'Open-source licences', 'marketing', 'public', LicensesView),
 
   route('sign-in', '/sign-in', 'Sign in', 'auth', 'public', SignInView),
   route('sign-up', '/sign-up', 'Create account', 'auth', 'public', SignUpView),
