@@ -27,7 +27,7 @@ const STATUS_TONE: Record<PaymentStatus, string> = {
   PARTIALLY_REFUNDED: 'bg-paper-100 text-ink-500',
   FAILED: 'bg-dispute/10 text-dispute',
 };
-const BAR = 'animate-pulse rounded bg-paper-100';
+const BAR = 'skeleton rounded-md';
 
 /** Every task the user has funded and where the money stands. A calm money screen: no motion beyond hover. */
 export class PaymentsView extends Component {

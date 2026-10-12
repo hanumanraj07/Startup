@@ -15,7 +15,7 @@ interface DisputeQueueItem {
   ageHours: number;
 }
 
-const BAR = 'animate-pulse rounded bg-paper-100';
+const BAR = 'skeleton rounded-md';
 
 /** Open disputes, oldest pressure first. Anything past 48 hours is shown in the dispute colour. */
 export class AdminDisputesView extends Component {

@@ -28,7 +28,7 @@ const RESOLUTIONS: { value: Resolution; label: string }[] = [
 ];
 /** The reasoning becomes part of the audit record, so a one-word note is not enough. */
 const MIN_NOTES = 20;
-const BAR = 'animate-pulse rounded bg-paper-100';
+const BAR = 'skeleton rounded-md';
 
 /**
  * Resolving a dispute: everything both sides produced, then one decision with

@@ -40,7 +40,7 @@ const RISK_TONE: Record<RiskLevel, string> = {
   MEDIUM: 'bg-progress/10 text-progress',
   HIGH: 'bg-dispute/10 text-dispute',
 };
-const BAR = 'animate-pulse rounded bg-paper-100';
+const BAR = 'skeleton rounded-md';
 
 /** One task as an admin sees it: risk flags, both parties, the money, the evidence and the full timeline. */
 export class AdminTaskDetailView extends Component {

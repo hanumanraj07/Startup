@@ -11,7 +11,7 @@ interface ThirdPartyLicense {
   file: string | null;
 }
 
-const BAR = 'animate-pulse rounded bg-paper-100';
+const BAR = 'skeleton rounded-md';
 
 /**
  * The third-party software shipped to the browser and its licences. The list
@@ -23,7 +23,7 @@ export class LicensesView extends Component {
   static override template = xml`
     <div class="min-h-screen bg-paper-50">
       <header class="mx-auto max-w-3xl px-6 pt-10">
-        <Link to="'/'" class="'text-lg font-semibold tracking-tight text-brand-700'">OnSite</Link>
+        <Link to="'/'" class="'text-lg font-extrabold tracking-tight text-ink-900'">OnSite</Link>
       </header>
       <main class="mx-auto max-w-3xl px-6 pb-10">
         <h1 class="mt-8 text-2xl font-semibold tracking-tight text-ink-900">Open-source licences</h1>

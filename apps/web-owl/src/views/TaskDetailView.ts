@@ -23,7 +23,7 @@ import { ReportIssueDialog } from './task/ReportIssueDialog';
 import { RequesterActions } from './task/RequesterActions';
 import { WorkerActions } from './task/WorkerActions';
 
-const BAR = 'animate-pulse rounded bg-paper-100';
+const BAR = 'skeleton rounded-md';
 
 /**
  * A task as an Odoo-style form: a white "sheet" (title, status, location,
@@ -33,7 +33,7 @@ const BAR = 'animate-pulse rounded bg-paper-100';
  */
 export class TaskDetailView extends Component {
   static override template = xml`
-    <Page breadcrumbs="breadcrumbs">
+    <Page breadcrumbs="breadcrumbs" heading="false">
       <p t-if="state.error" role="alert" class="text-sm text-dispute" t-out="state.error"/>
 
       <div t-elif="!state.task" class="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_360px]" aria-hidden="true">

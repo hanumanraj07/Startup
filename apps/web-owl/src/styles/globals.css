@@ -3,60 +3,68 @@
 @tailwind utilities;
 
 /**
- * Design tokens for the OWL frontend, styled after the Odoo web client:
- * purple primary (buttons, navbar), teal secondary (links, informational),
- * a light gray page and white bordered "sheets". Token NAMES are unchanged
- * from apps/web so class names port 1:1; only the values differ.
- * Light theme only.
+ * Design tokens. The look follows Indian quick-commerce and ride apps
+ * (Rapido, Blinkit): a bright yellow primary that is always paired with
+ * black text, near-black ink, a fresh green for money and success, white
+ * cards on a soft gray page, and generous rounded corners. Token NAMES are
+ * unchanged from apps/web so class names port 1:1; only the values differ.
+ *
+ * Yellow is a FILL colour, never a text colour on white: use brand-solid,
+ * brand-50 or brand-100 as backgrounds, and brand-700 when text must read as
+ * "brand". Light theme only.
  */
 :root {
-  /* Primary — Odoo purple. Navbar, primary buttons, active states. */
-  --brand-50: #f6f0f4;
-  --brand-100: #e8d9e4;
-  --brand-500: #8f6a85;
-  --brand-600: #714b67;
-  --brand-700: #5a3c52;
-  --brand-solid: #714b67;
+  /* Primary — yellow. Primary buttons, active tabs, highlights. */
+  --brand-50: #fff9e0;
+  --brand-100: #ffefa6;
+  --brand-500: #ffd84a;
+  --brand-600: #f5b800;
+  --brand-700: #8a6200;
+  --brand-solid: #ffcb05;
 
-  /* Secondary — Odoo teal. Links, breadcrumbs, informational accents. */
-  --accent-500: #017e84;
-  --accent-600: #017e84;
-  --accent-700: #01666b;
-  --accent-solid: #017e84;
+  /* Secondary — fresh green. Links, money, success accents. */
+  --accent-500: #1ba33a;
+  --accent-600: #0c831f;
+  --accent-700: #096818;
+  --accent-solid: #0c831f;
 
   /* Soft tints for badges and status backgrounds. */
-  --tint-green: #d4edda;
-  --tint-blue: #d1ecf1;
-  --tint-orange: #fff3cd;
-  --tint-yellow: #fff3cd;
+  --tint-green: #e5f5e8;
+  --tint-blue: #e8f0fe;
+  --tint-orange: #ffeedd;
+  --tint-yellow: #fff6cc;
+  --tint-pink: #fde8f0;
+  --tint-purple: #efe8fd;
 
-  /* Text — Bootstrap-style neutral grays, as Odoo uses. */
-  --ink-900: #212529;
-  --ink-700: #343a40;
-  --ink-500: #6c757d;
-  --ink-400: #adb5bd;
-  --ink-300: #ced4da;
+  /* Text — near-black, as on Rapido. */
+  --ink-900: #141414;
+  --ink-700: #2e2e2e;
+  --ink-500: #62646a;
+  --ink-400: #8e9096;
+  --ink-300: #c9cbcf;
 
-  /* Surfaces — light gray page, white sheets. */
+  /* Surfaces — soft gray page, white cards. */
   --paper-0: #ffffff;
   --paper-0-light: #ffffff;
-  --paper-50: #f9fafb;
-  --paper-100: #f1f3f5;
-  --line: #dee2e6;
-  --line-light: #e9ecef;
+  --paper-50: #f5f6f8;
+  --paper-100: #eceef1;
+  --line: #e3e5e8;
+  --line-light: #eef0f2;
 
-  /* State language — consistent everywhere, no exceptions. */
-  --verified: #28a745;
-  --progress: #e0a800;
-  --dispute: #dc3545;
-  --info: #017e84;
+  /* State language — consistent everywhere, no exceptions. Progress is
+     amber-orange so it never reads as the yellow brand. */
+  --verified: #0c831f;
+  --progress: #c25e00;
+  --dispute: #d92d20;
+  --info: #2563eb;
 
-  --font-sans: Roboto, 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-sans: 'Plus Jakarta Sans Variable', 'Segoe UI', system-ui, -apple-system, sans-serif;
 
-  --shadow-card: 0 1px 2px rgb(33 37 41 / 0.08);
-  --shadow-float: 0 4px 12px rgb(33 37 41 / 0.15);
+  --shadow-card: 0 1px 2px rgb(20 20 20 / 0.04), 0 2px 8px rgb(20 20 20 / 0.04);
+  --shadow-float: 0 12px 32px rgb(20 20 20 / 0.12);
 
-  --navbar-height: 46px;
+  --navbar-height: 60px;
+  --tabbar-height: 64px;
 }
 
 * {
@@ -73,6 +81,7 @@ body {
   font-family: var(--font-sans);
   font-size: 15px;
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Money, distance, ratings, countdowns — anything compared in a list must not
@@ -81,13 +90,116 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Motion vocabulary. One easing curve (the `onsite` ease) and three
+   one-shot or ambient animations; nothing loops on money or evidence
+   screens. */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Applied to each screen's root by the router outlet, so every navigation
+   fades in instead of snapping. */
+.page-enter {
+  animation: page-in 320ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@keyframes pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  70% {
+    transform: scale(1.12);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* A one-shot springy pop for "just selected" marks. */
+.pop-in {
+  animation: pop-in 260ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+.animate-float {
+  animation: float 5s ease-in-out infinite;
+}
+
+/* Scroll reveal: elements start hidden and slide up once the `reveal`
+   directive (ui/reveal.ts) marks them visible. Without JavaScript or with
+   reduced motion they are simply shown. */
+.reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition:
+    opacity 600ms cubic-bezier(0.2, 0, 0, 1),
+    transform 600ms cubic-bezier(0.2, 0, 0, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+/* Skeleton placeholder: a soft moving sheen rather than a blink. */
+.skeleton {
+  background: linear-gradient(90deg, var(--paper-100) 25%, var(--paper-50) 50%, var(--paper-100) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+/* Room for the phone tab bar and the home indicator under it. */
+.pb-tabbar {
+  padding-bottom: calc(var(--tabbar-height) + env(safe-area-inset-bottom) + 16px);
+}
+
+@media (min-width: 640px) {
+  .pb-tabbar {
+    padding-bottom: 2rem;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  .reveal {
+    opacity: 1;
+    transform: none;
   }
 }
 
@@ -98,5 +210,5 @@ body {
 }
 
 [data-surface='app'] {
-  --tap-min: 40px;
+  --tap-min: 44px;
 }

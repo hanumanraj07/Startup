@@ -8,32 +8,53 @@ export interface Crumb {
 }
 
 /**
- * Odoo-style "control panel" (breadcrumbs on the left, actions on the right)
- * above a content area. Every screen renders inside one. The `actions` slot
- * holds the buttons; the default slot is the view body.
+ * The page header every screen renders inside: small breadcrumbs back to the
+ * parent screens, the current page as a large title, and actions on the
+ * right. The `actions` slot holds the buttons; the default slot is the view
+ * body. A screen with its own <h1> passes `heading="false"` so the title is
+ * not repeated.
  */
 export class Page extends Component {
   static override template = xml`
-    <div>
-      <div class="border-b border-line bg-paper-0">
-        <div class="mx-auto flex min-h-[52px] max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-2">
-          <nav aria-label="Breadcrumb">
-            <ol class="flex flex-wrap items-center gap-1.5 text-[17px]">
-              <li t-foreach="props.breadcrumbs" t-as="crumb" t-key="crumb_index" class="flex items-center gap-1.5">
-                <span t-if="crumb_index !== 0" class="text-ink-400" aria-hidden="true">/</span>
-                <Link t-if="crumb.to" to="crumb.to" class="'text-accent-600 hover:underline'"><t t-out="crumb.label"/></Link>
-                <span t-else="" class="font-medium text-ink-900" aria-current="page" t-out="crumb.label"/>
+    <div class="page-enter">
+      <div class="mx-auto flex max-w-6xl flex-wrap items-end justify-between gap-3 px-4 pt-5 sm:pt-7">
+        <div t-if="parents.length or showHeading" class="min-w-0">
+          <nav t-if="parents.length" aria-label="Breadcrumb">
+            <ol class="flex flex-wrap items-center gap-1 text-sm">
+              <li t-foreach="parents" t-as="crumb" t-key="crumb_index" class="flex items-center gap-1">
+                <Link to="crumb.to" class="'font-medium text-ink-500 hover:text-ink-900'"><t t-out="crumb.label"/></Link>
+                <span class="text-ink-300" aria-hidden="true">›</span>
               </li>
+              <li t-if="!showHeading"><span class="font-medium text-ink-900" aria-current="page" t-out="current"/></li>
             </ol>
           </nav>
-          <div class="flex items-center gap-2"><t t-slot="actions"/></div>
+          <h1 t-if="showHeading" class="mt-0.5 truncate text-2xl font-bold tracking-tight text-ink-900 sm:text-[28px]" t-out="current"/>
         </div>
+        <div class="flex items-center gap-2"><t t-slot="actions"/></div>
       </div>
-      <div class="mx-auto max-w-6xl px-4 py-4"><t t-slot="default"/></div>
+      <div class="mx-auto max-w-6xl px-4 pb-tabbar pt-4 sm:pt-5"><t t-slot="default"/></div>
     </div>`;
   static components = { Link };
   static override props = {
     breadcrumbs: Array,
+    /** False when the screen renders its own <h1>. Defaults to true. */
+    heading: { type: Boolean, optional: true },
     slots: { type: Object, optional: true },
   };
+
+  get crumbs(): Crumb[] {
+    return this.props.breadcrumbs as Crumb[];
+  }
+
+  get parents(): Crumb[] {
+    return this.crumbs.filter((crumb) => crumb.to);
+  }
+
+  get current(): string {
+    return this.crumbs.at(-1)?.label ?? '';
+  }
+
+  get showHeading(): boolean {
+    return this.props.heading !== false;
+  }
 }

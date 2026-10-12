@@ -11,12 +11,12 @@ function isWorkerProfile(profile: PublicUser | PublicWorker): profile is PublicW
   return 'ratingAvg' in profile;
 }
 
-const BAR = 'animate-pulse rounded bg-paper-100';
+const BAR = 'skeleton rounded-md';
 
 /** Another user's public profile: only what the API exposes publicly, never contact details. */
 export class ProfileView extends Component {
   static override template = xml`
-    <Page breadcrumbs="[{ label: 'Profile' }]">
+    <Page breadcrumbs="[{ label: 'Profile' }]" heading="false">
       <div class="mx-auto flex max-w-xl flex-col gap-4">
         <p t-if="state.error" role="alert" class="text-sm text-dispute" t-out="state.error"/>
 
@@ -28,7 +28,7 @@ export class ProfileView extends Component {
         <t t-else="">
           <div class="flex items-center gap-4 p-2">
             <img t-if="profile.avatarUrl" t-att-src="profile.avatarUrl" alt="" class="h-16 w-16 rounded-full object-cover"/>
-            <div t-else="" class="flex h-16 w-16 items-center justify-center rounded-full bg-brand-50 text-xl font-semibold text-brand-700" t-out="initial"/>
+            <div t-else="" class="flex h-16 w-16 items-center justify-center rounded-full bg-brand-solid text-xl font-bold text-ink-900" t-out="initial"/>
             <div>
               <h1 class="text-2xl font-semibold tracking-tight text-ink-900" t-out="profile.displayName"/>
               <p t-if="profile.homeCity" class="text-sm text-ink-500" t-out="profile.homeCity"/>

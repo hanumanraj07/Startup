@@ -6,6 +6,21 @@ Newest entries at the top. Every entry states the decision, the reasoning, and w
 
 ---
 
+## 2026-10-12 — OWL frontend restyled from the Odoo look to a Rapido/Blinkit-style consumer look
+
+**Decided.** At the owner's request (Swiggy/Rapido feel; match Rapido's and Blinkit's colours; drop the purple), `apps/web-owl` now uses: a bright yellow primary (`#ffcb05`) always paired with near-black text, a green secondary (`#0c831f`) for links, money and success, white rounded cards (12/16/20px radii) on a soft gray page, and Plus Jakarta Sans, self-hosted from `@fontsource-variable` (OFL, listed on /licenses). This replaces the Odoo-style direction recorded under 2026-10-10. Token names are unchanged, so the change is mostly in `globals.css`, `tailwind.config.ts` and `ui/classes.ts`.
+
+- **Yellow is a fill, never text on white** (it fails contrast). Text that must read as brand uses `brand-700`. Buttons on yellow surfaces use the `dark` variant.
+- **Progress is amber-orange (`#c25e00`)**, not yellow, so an in-progress status never reads as the brand colour.
+- **Navigation:** a white sticky header with section pills on desktop; on phones a bottom tab bar (Home, My tasks, a raised Post button, then Feed/Earnings for workers or Payments/Account otherwise), hidden inside the post-a-task flow, whose Back/Continue bar sticks to the bottom instead. The Odoo apps-grid menu is gone.
+- **Motion:** one-shot page fade-in, scroll reveal on the landing page (`hooks/use-reveal.ts`), a pop for selected marks, shimmer skeletons. All honour `prefers-reduced-motion`. The landing headline is deliberately not animated, so it paints immediately.
+- **Calm tier still holds:** money breakdowns, evidence, chat, KYC and dispute screens get the new colours but no decoration or extra motion.
+- **Fixed in passing:** Tailwind opacity modifiers on token colours (`bg-dispute/10`, used by risk and payout badges) had silently generated nothing; tokens now use `color-mix()` only when a modifier is present, so older browsers keep every solid colour.
+
+**Rejected.** Copying Rapido's or Blinkit's logos, illustrations or wordmarks: only the colour family and layout conventions are borrowed. A Google Fonts link: self-hosting avoids a third-party request on every page view.
+
+---
+
 ## 2026-10-10 — The frontend is being rebuilt as a standalone OWL 2 app (`apps/web-owl`, branch `owl-frontend`); `apps/web` stays live until the switch is approved
 
 **Decided.** Replace the Next.js frontend with a standalone OWL 2 app (`@odoo/owl` from npm, used without Odoo), Vite and TypeScript, living beside `apps/web` and talking to the existing API only. Backend, auth, payments, the state machine and every invariant are untouched. `apps/web` is not deleted and the Vercel project is not changed until the owner approves the cutover after a full parity checklist (27 routes) passes.

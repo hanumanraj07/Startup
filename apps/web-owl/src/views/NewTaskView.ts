@@ -95,7 +95,8 @@ export class NewTaskView extends Component {
           </div>
         </div>
 
-        <div class="flex justify-between">
+        <!-- On phones the Back/Continue bar floats at the bottom, within thumb reach (the tab bar is hidden here). -->
+        <div class="sticky bottom-[calc(env(safe-area-inset-bottom)+8px)] z-20 flex justify-between gap-3 rounded-sheet border border-line-light bg-white/95 p-2 shadow-float backdrop-blur md:static md:border-0 md:bg-transparent md:p-0 md:shadow-none md:backdrop-blur-none">
           <button type="button" t-att-class="backClass" t-att-disabled="state.step === 0 or state.submitting" t-on-click="back">Back</button>
           <button t-if="showContinue" type="button" t-att-class="continueClass" t-att-disabled="!advanceable" t-on-click="next">Continue</button>
         </div>
@@ -129,7 +130,7 @@ export class NewTaskView extends Component {
   steps: string[] = [...STEPS];
   cardClass = card('overflow-visible');
   backClass = btn('ghost');
-  continueClass = btn('primary');
+  continueClass = btn('primary', 'default', 'flex-1 md:flex-none md:px-8');
 
   private disposed = false;
 

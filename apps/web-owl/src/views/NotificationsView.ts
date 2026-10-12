@@ -6,7 +6,7 @@ import { countUnread, type NotificationItem } from '@/services/notifications';
 import { store, toast } from '@/store/store';
 import { btn, card } from '@/ui/classes';
 
-const BAR = 'animate-pulse rounded bg-paper-100';
+const BAR = 'skeleton rounded-md';
 
 /** The notification list. Unread items get a brand-coloured left edge; "Mark all read" clears them in one call. */
 export class NotificationsView extends Component {
@@ -63,7 +63,7 @@ export class NotificationsView extends Component {
   }
 
   itemClass(n: NotificationItem): string {
-    return card(`flex flex-col gap-1 px-4 py-4 ${n.readAt ? '' : 'border-l-4 border-l-brand-600'}`);
+    return card(`flex flex-col gap-1 px-4 py-4 ${n.readAt ? '' : 'border-l-4 border-l-brand-solid'}`);
   }
 
   when(n: NotificationItem): string {

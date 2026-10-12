@@ -12,7 +12,7 @@ export class InstallBanner extends Component {
   static override template = xml`
     <div t-if="state.event and !state.dismissed" class="flex items-center justify-between gap-3 border-b border-line bg-paper-100 px-4 py-2.5 text-sm">
       <span class="flex items-center gap-2 text-ink-900">
-        <Icon name="'download'" size="16" class="'text-brand-600'"/>
+        <Icon name="'download'" size="16" class="'text-brand-700'"/>
         Install OnSite for quicker access and offline support.
       </span>
       <div class="flex items-center gap-2">

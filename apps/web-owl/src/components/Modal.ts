@@ -10,7 +10,7 @@ export class Modal extends Component {
   static override template = xml`
     <dialog
       t-ref="dialog"
-      class="w-full max-w-md rounded-card border border-line bg-paper-0 p-0 shadow-float backdrop:bg-ink-900/40"
+      class="w-full max-w-md rounded-card border border-line bg-paper-0 p-0 shadow-float backdrop:bg-black/40"
       t-on-click="onBackdropClick"
     >
       <div class="p-6">

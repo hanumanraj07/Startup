@@ -8,8 +8,8 @@ export class NotificationsCard extends Component {
   static override template = xml`
     <div t-if="state.supported" t-att-class="cardClass">
       <div class="flex items-center justify-between gap-3">
-        <span class="flex items-center gap-2 text-sm text-ink-700">
-          <Icon name="'bell'" size="16" class="'text-ink-400'"/>
+        <span class="flex min-w-0 flex-1 items-center gap-3 text-sm text-ink-700">
+          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-tint-yellow text-brand-700"><Icon name="'bell'" size="18"/></span>
           <t t-if="state.subscribed">Push notifications are on for this device.</t>
           <t t-else="">Get notified when something needs your attention.</t>
         </span>
@@ -30,7 +30,7 @@ export class NotificationsCard extends Component {
   });
 
   cardClass = card('p-4');
-  buttonClass = btn('secondary', 'sm');
+  buttonClass = btn('secondary', 'sm', 'shrink-0');
 
   override setup() {
     onMounted(() => {

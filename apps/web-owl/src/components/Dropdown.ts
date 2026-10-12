@@ -44,7 +44,7 @@ export class Dropdown extends Component {
 
   get menuClass(): string {
     const side = this.props.align === 'right' ? 'right-0' : 'left-0';
-    return `absolute ${side} top-full z-40 mt-1 min-w-[220px] rounded-card border border-line bg-paper-0 py-1 shadow-float`;
+    return `absolute ${side} top-full z-40 mt-2 min-w-[220px] rounded-card border border-line-light bg-paper-0 p-1.5 shadow-float`;
   }
 
   toggle() {

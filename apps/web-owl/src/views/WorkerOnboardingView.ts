@@ -64,7 +64,7 @@ export class WorkerOnboardingView extends Component {
                 t-on-click="() => toggleCategory(c)">
                 <Icon name="c.icon" size="16"/>
                 <span t-out="c.name"/>
-                <span t-if="isSelected(c)" class="ml-auto flex h-4 w-4 items-center justify-center rounded-full bg-brand-600 text-white">
+                <span t-if="isSelected(c)" class="ml-auto flex h-4 w-4 items-center justify-center rounded-full bg-ink-900 text-brand-solid">
                   <Icon name="'check'" size="10"/>
                 </span>
               </button>
@@ -127,11 +127,11 @@ export class WorkerOnboardingView extends Component {
 
   categoryClass(c: CategoryView): string {
     const tone = this.isSelected(c)
-      ? 'border-brand-600 bg-brand-50 text-brand-700'
+      ? 'border-ink-900 bg-brand-50 text-ink-900'
       : 'border-line bg-paper-0 text-ink-700 hover:bg-paper-100';
     return (
       'relative flex items-center gap-2 rounded-input border p-3 text-left text-sm transition-colors duration-micro ease-onsite ' +
-      `focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${tone}`
+      `focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink-900 ${tone}`
     );
   }
 

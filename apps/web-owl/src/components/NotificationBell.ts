@@ -10,9 +10,9 @@ const POLL_MS = 30_000;
 export class NotificationBell extends Component {
   static override template = xml`
     <Link to="'/notifications'" class="linkClass" ariaLabel="label">
-      <Icon name="'bell'" size="18"/>
+      <Icon name="'bell'" size="20"/>
       <span t-if="store.unreadNotifications > 0"
-        class="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-dispute px-1 text-[10px] font-semibold text-white"
+        class="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-dispute px-1 text-[10px] font-semibold text-white"
         t-out="badge"/>
     </Link>`;
   static components = { Icon, Link };
@@ -20,8 +20,8 @@ export class NotificationBell extends Component {
 
   store = useState(store);
   linkClass =
-    'relative flex min-h-[32px] min-w-[32px] items-center justify-center rounded-input text-white/90 ' +
-    'transition-colors duration-micro ease-onsite hover:bg-white/10 hover:text-white';
+    'relative flex h-10 w-10 items-center justify-center rounded-full text-ink-700 ' +
+    'transition-colors duration-micro ease-onsite hover:bg-paper-100 hover:text-ink-900';
 
   private timer: ReturnType<typeof setInterval> | null = null;
 

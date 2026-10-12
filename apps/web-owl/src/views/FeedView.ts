@@ -3,7 +3,6 @@ import { EmptyState } from '@/components/EmptyState';
 import { Icon } from '@/components/Icon';
 import { Link } from '@/components/Link';
 import { Page } from '@/components/Page';
-import { Spinner } from '@/components/Spinner';
 import { Switch } from '@/components/Switch';
 import { TaskCard, TaskCardSkeleton } from '@/components/TaskCard';
 import type { CategoryView, FeedTask, RawFeedItem, WorkerProfile } from '@/lib/api-types';
@@ -34,15 +33,19 @@ export class FeedView extends Component {
       </t>
 
       <p t-if="state.error" role="alert" class="text-sm text-dispute" t-out="state.error"/>
-      <div t-elif="!state.profile" class="flex items-center gap-2 text-sm text-ink-500">
-        <Spinner/> Loading…
+      <div t-elif="!state.profile" class="flex flex-col gap-4" aria-busy="true">
+        <div class="skeleton h-4 w-44 rounded-md"/>
+        <div class="grid gap-3 md:grid-cols-2">
+          <TaskCardSkeleton/>
+          <TaskCardSkeleton/>
+        </div>
       </div>
       <div t-else="" class="flex flex-col gap-4">
         <p class="text-sm text-ink-500">
           Within <t t-out="radius"/> km of <t t-out="state.profile.baseCity"/>
         </p>
 
-        <div t-if="needsVerification" class="flex items-start gap-2 rounded-card border border-progress bg-tint-yellow p-3 text-sm text-ink-700" role="status">
+        <div t-if="needsVerification" class="flex items-start gap-2 rounded-card border border-progress bg-tint-orange p-3 text-sm text-ink-700" role="status">
           <Icon name="'shield-alert'" size="16" class="'mt-0.5 shrink-0 text-progress'"/>
           <span>
             Verify your email to accept tasks — every task requires at least verification level 1, so
@@ -68,7 +71,7 @@ export class FeedView extends Component {
         </div>
       </div>
     </Page>`;
-  static components = { EmptyState, Icon, Link, Page, Spinner, Switch, TaskCard, TaskCardSkeleton };
+  static components = { EmptyState, Icon, Link, Page, Switch, TaskCard, TaskCardSkeleton };
   static override props = {};
 
   store = useState(store);

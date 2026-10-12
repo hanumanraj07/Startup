@@ -49,6 +49,6 @@ export class AdminPage extends Component {
     // '/admin' would prefix-match every admin route, so the dashboard tab is exact; the rest are subtrees.
     const active = href === '/admin' ? path === '/admin' : path === href || path.startsWith(`${href}/`);
     const base = 'whitespace-nowrap border-b-2 px-3 pb-2.5 pt-1 text-sm font-medium transition-colors duration-micro ease-onsite';
-    return active ? `${base} border-brand-600 text-brand-600` : `${base} border-transparent text-ink-500 hover:text-ink-900`;
+    return active ? `${base} border-ink-900 font-semibold text-ink-900` : `${base} border-transparent text-ink-500 hover:text-ink-900`;
   }
 }

@@ -40,7 +40,7 @@ const STATUS_TONE: Record<PayoutStatus, string> = {
   FAILED: 'bg-dispute/10 text-dispute',
   REVERSED: 'bg-dispute/10 text-dispute',
 };
-const BAR = 'animate-pulse rounded bg-paper-100';
+const BAR = 'skeleton rounded-md';
 
 /** A worker's stats and payout history. Every component shown separately, never one opaque score. */
 export class EarningsView extends Component {

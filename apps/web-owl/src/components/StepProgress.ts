@@ -34,7 +34,7 @@ export class StepProgress extends Component {
     const tone = this.isDone(i)
       ? 'bg-verified text-white'
       : this.isActive(i)
-        ? 'bg-brand-solid text-white'
+        ? 'bg-brand-solid text-ink-900'
         : 'bg-paper-100 text-ink-400';
     return `flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-colors duration-base ease-onsite ${tone}`;
   }

@@ -12,9 +12,9 @@ export class TaskCardPreview extends Component {
     <div t-att-class="cardClass">
       <div class="flex items-start justify-between gap-3">
         <div>
-          <p class="text-xs font-medium uppercase tracking-wide text-ink-400">Product inspection</p>
+          <p class="text-xs font-semibold uppercase tracking-wide text-ink-400">Product inspection</p>
           <!-- Not a real heading: a static mockup of a feed card, not a named section of the page. -->
-          <p class="mt-1 text-lg font-medium text-ink-900">Inspect MacBook Air M4 at XYZ Computer Store</p>
+          <p class="mt-1 text-lg font-bold leading-snug text-ink-900">Inspect MacBook Air M4 at XYZ Computer Store</p>
         </div>
         <StatusPill status="'PUBLISHED'"/>
       </div>
@@ -31,6 +31,6 @@ export class TaskCardPreview extends Component {
   static components = { StatusPill };
   static override props = {};
 
-  cardClass = card('w-full max-w-sm p-5');
+  cardClass = card('w-full p-5');
   buttonClass = btn('primary', 'default', 'mt-5 w-full');
 }

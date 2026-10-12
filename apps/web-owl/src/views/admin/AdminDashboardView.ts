@@ -33,7 +33,7 @@ interface Stat {
   emphasize?: boolean;
 }
 
-const BAR = 'animate-pulse rounded bg-paper-100';
+const BAR = 'skeleton rounded-md';
 const percent = (v: number | null) => (v !== null ? `${v}%` : '—');
 
 /** Platform health at a glance. Every figure is computed by the API; this only lays them out. */

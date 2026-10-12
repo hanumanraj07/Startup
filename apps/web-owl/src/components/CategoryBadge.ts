@@ -7,22 +7,22 @@ interface CategoryMeta {
   glyph: string;
 }
 
-/** One tint per launch category, cycling the soft tints; unknown (future) categories get a neutral default. */
+/** One tint per launch category, each with a dark glyph colour that reads on it; unknown (future) categories get a neutral default. */
 const CATEGORY_META: Record<string, CategoryMeta> = {
-  'product-inspection': { icon: 'package-search', tint: 'var(--tint-orange)', glyph: 'var(--accent-700)' },
-  'shop-verification': { icon: 'store', tint: 'var(--tint-blue)', glyph: 'var(--brand-600)' },
-  'property-inspection': { icon: 'home', tint: 'var(--tint-green)', glyph: 'var(--brand-600)' },
+  'product-inspection': { icon: 'package-search', tint: 'var(--tint-orange)', glyph: '#a64b00' },
+  'shop-verification': { icon: 'store', tint: 'var(--tint-blue)', glyph: '#1d4ed8' },
+  'property-inspection': { icon: 'home', tint: 'var(--tint-green)', glyph: 'var(--accent-700)' },
   'document-collection': { icon: 'file-text', tint: 'var(--tint-yellow)', glyph: 'var(--brand-700)' },
-  'local-photography': { icon: 'camera', tint: 'var(--tint-blue)', glyph: 'var(--brand-600)' },
-  'local-research': { icon: 'search', tint: 'var(--tint-orange)', glyph: 'var(--accent-700)' },
+  'local-photography': { icon: 'camera', tint: 'var(--tint-pink)', glyph: '#b4235f' },
+  'local-research': { icon: 'search', tint: 'var(--tint-purple)', glyph: '#6230c9' },
 };
 
-const FALLBACK: CategoryMeta = { icon: 'package', tint: 'var(--tint-blue)', glyph: 'var(--brand-600)' };
+const FALLBACK: CategoryMeta = { icon: 'package', tint: 'var(--paper-100)', glyph: 'var(--ink-700)' };
 
-/** A soft-tinted circle with the category's glyph — the category's visual identity across the app. */
+/** A soft-tinted rounded tile with the category's glyph — the category's visual identity across the app. */
 export class CategoryBadge extends Component {
   static override template = xml`
-    <span class="inline-flex shrink-0 items-center justify-center rounded-full" t-att-style="style" aria-hidden="true">
+    <span class="inline-flex shrink-0 items-center justify-center rounded-[30%]" t-att-style="style" aria-hidden="true">
       <Icon name="meta.icon" size="glyphSize"/>
     </span>`;
   static components = { Icon };

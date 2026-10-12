@@ -4,6 +4,7 @@ import { initRouter } from '@/router/router';
 import { routes } from '@/routes';
 import { registerServiceWorker } from '@/services/pwa';
 import { bootstrapSession } from '@/services/session';
+import '@fontsource-variable/plus-jakarta-sans';
 import '@/styles/globals.css';
 
 initRouter(routes);

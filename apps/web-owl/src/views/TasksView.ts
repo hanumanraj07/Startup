@@ -1,6 +1,8 @@
 import { Component, onMounted, onWillUnmount, useState, xml } from '@odoo/owl';
 import { formatPaise } from '@onsite/money';
+import { CategoryBadge } from '@/components/CategoryBadge';
 import { EmptyState } from '@/components/EmptyState';
+import { Icon } from '@/components/Icon';
 import { Link } from '@/components/Link';
 import { Page } from '@/components/Page';
 import { StatusPill } from '@/components/StatusPill';
@@ -10,7 +12,7 @@ import { formatDueDate } from '@/lib/format';
 import { navigate } from '@/router/router';
 import { api } from '@/services/api';
 import { store } from '@/store/store';
-import { btn, card, LINK } from '@/ui/classes';
+import { btn, card, tappableCard } from '@/ui/classes';
 
 type Perspective = 'requester' | 'worker';
 
@@ -19,7 +21,7 @@ const TABS: TabItem[] = [
   { value: 'requester', label: 'Posted by me' },
   { value: 'worker', label: 'I’m working on' },
 ];
-const BAR = 'animate-pulse rounded bg-paper-100';
+const BAR = 'skeleton rounded-md';
 
 /**
  * Everything the user has posted or accepted. Polls lightly while visible: a
@@ -42,40 +44,30 @@ export class TasksView extends Component {
 
         <p t-if="state.error" role="alert" class="text-sm text-dispute" t-out="state.error"/>
 
-        <div t-if="!state.tasks" t-att-class="cardClass" aria-hidden="true">
-          <div t-foreach="[0, 1, 2]" t-as="i" t-key="i" class="flex items-center justify-between gap-4 border-b border-line px-4 py-4 last:border-b-0">
-            <div class="flex flex-col gap-2"><div class="h-4 w-40 ${BAR}"/><div class="h-3 w-24 ${BAR}"/></div>
-            <div class="flex flex-col items-end gap-2"><div class="h-5 w-20 ${BAR}"/><div class="h-3 w-14 ${BAR}"/></div>
+        <div t-if="!state.tasks" class="flex flex-col gap-3" aria-hidden="true">
+          <div t-foreach="[0, 1, 2]" t-as="i" t-key="i" t-att-class="skeletonClass">
+            <div class="skeleton h-11 w-11 shrink-0 rounded-[30%]"/>
+            <div class="flex flex-1 flex-col gap-2"><div class="h-4 w-3/5 ${BAR}"/><div class="h-3 w-24 ${BAR}"/></div>
+            <div class="flex flex-col items-end gap-2"><div class="skeleton h-6 w-20 rounded-full"/><div class="h-4 w-14 ${BAR}"/></div>
           </div>
         </div>
         <EmptyState t-elif="state.tasks.length === 0" title="emptyTitle" description="emptyDescription"/>
-        <div t-else="" t-att-class="cardClass">
-          <table class="w-full text-left text-sm">
-            <thead class="border-b border-line bg-paper-100 text-xs uppercase tracking-wide text-ink-500">
-              <tr>
-                <th scope="col" class="px-3 py-2.5 sm:px-4 font-medium">Task</th>
-                <th scope="col" class="hidden px-3 py-2.5 sm:px-4 font-medium sm:table-cell">Due</th>
-                <th scope="col" class="px-3 py-2.5 sm:px-4 font-medium">Status</th>
-                <th scope="col" class="px-3 py-2.5 sm:px-4 text-right font-medium">Budget</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr t-foreach="state.tasks" t-as="task" t-key="task.id"
-                class="cursor-pointer border-b border-line transition-colors duration-micro ease-onsite last:border-b-0 hover:bg-paper-100"
-                t-on-click="(ev) => open(ev, task.id)">
-                <td class="px-3 py-3 sm:px-4">
-                  <Link to="'/tasks/' + task.id" class="linkClass"><t t-out="task.title"/></Link>
-                </td>
-                <td class="hidden px-3 py-3 sm:px-4 text-ink-500 sm:table-cell"><t t-out="due(task)"/></td>
-                <td class="px-3 py-3 sm:px-4"><StatusPill status="task.status"/></td>
-                <td class="tabular px-3 py-3 sm:px-4 text-right text-ink-700"><t t-out="budget(task)"/></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <ul t-else="" class="flex flex-col gap-3">
+          <li t-foreach="state.tasks" t-as="task" t-key="task.id" t-att-class="rowClass" t-on-click="(ev) => open(ev, task.id)">
+            <CategoryBadge slug="task.categorySlug" size="44"/>
+            <div class="min-w-0 flex-1">
+              <Link to="'/tasks/' + task.id" class="linkClass"><t t-out="task.title"/></Link>
+              <p class="mt-0.5 flex items-center gap-1 text-sm text-ink-500"><Icon name="'clock'" size="14"/> <t t-out="due(task)"/></p>
+            </div>
+            <div class="flex shrink-0 flex-col items-end gap-1.5">
+              <StatusPill status="task.status"/>
+              <span class="tabular text-[15px] font-bold text-ink-900" t-out="budget(task)"/>
+            </div>
+          </li>
+        </ul>
       </div>
     </Page>`;
-  static components = { EmptyState, Link, Page, StatusPill, Tabs };
+  static components = { CategoryBadge, EmptyState, Icon, Link, Page, StatusPill, Tabs };
   static override props = {};
 
   store = useState(store);
@@ -87,8 +79,9 @@ export class TasksView extends Component {
 
   tabs = TABS;
   postClass = btn('primary', 'sm');
-  cardClass = card('overflow-x-auto');
-  linkClass = `font-medium ${LINK}`;
+  rowClass = tappableCard('flex cursor-pointer items-center gap-3 p-4');
+  skeletonClass = card('flex items-center gap-3 p-4');
+  linkClass = 'line-clamp-2 font-bold leading-snug text-ink-900 hover:underline';
 
   private disposed = false;
   private pollTimer: ReturnType<typeof setInterval> | null = null;

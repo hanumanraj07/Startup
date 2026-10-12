@@ -29,7 +29,7 @@ interface AdminCity {
   isActive: boolean;
 }
 
-const BAR = 'animate-pulse rounded bg-paper-100';
+const BAR = 'skeleton rounded-md';
 
 /**
  * Launch configuration as data: which categories and cities exist and are

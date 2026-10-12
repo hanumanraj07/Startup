@@ -21,7 +21,7 @@ const DOCUMENT_TYPES = [
   { value: 'PASSPORT', label: 'Passport' },
 ] as const;
 
-const BAR = 'animate-pulse rounded bg-paper-100';
+const BAR = 'skeleton rounded-md';
 
 /**
  * Identity verification: a government ID and a selfie, reviewed by an admin.

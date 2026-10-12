@@ -27,9 +27,9 @@ const STATUS_META: Record<TaskStatus, { label: string; tone: Tone; icon: string 
 };
 
 const TONE_CLASSES: Record<Tone, string> = {
-  progress: 'bg-tint-yellow text-[#856404]',
-  verified: 'bg-tint-green text-[#155724]',
-  dispute: 'bg-[#f8d7da] text-[#721c24]',
+  progress: 'bg-tint-orange text-[#9a4a00]',
+  verified: 'bg-tint-green text-accent-700',
+  dispute: 'bg-[#fde8e7] text-[#a3241a]',
   neutral: 'bg-paper-100 text-ink-500',
 };
 

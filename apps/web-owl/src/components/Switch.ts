@@ -24,7 +24,7 @@ export class Switch extends Component {
     return (
       `inline-flex h-6 w-11 shrink-0 items-center rounded-full border border-transparent ${tone} ` +
       'transition-colors duration-micro ease-onsite focus-visible:outline-none focus-visible:ring-2 ' +
-      'focus-visible:ring-brand-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50'
+      'focus-visible:ring-ink-900 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50'
     );
   }
 

@@ -106,7 +106,7 @@ export class ChatPanel extends Component {
   }
 
   bubbleClass(m: ChatMessage): string {
-    const tone = m.isMine ? 'bg-brand-solid text-white' : 'bg-paper-100 text-ink-900';
+    const tone = m.isMine ? 'bg-brand-solid text-ink-900' : 'bg-paper-100 text-ink-900';
     return `max-w-[75%] rounded-card px-3 py-2 text-sm ${tone}`;
   }
 

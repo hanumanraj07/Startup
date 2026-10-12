@@ -1,9 +1,24 @@
 import type { Config } from 'tailwindcss';
 
 /**
+ * A colour that lives in a CSS custom property but still honours Tailwind's
+ * opacity modifier (`bg-dispute/10`), which a bare var() silently drops.
+ * Plain uses stay a plain var(), so only modifier classes rely on
+ * color-mix() and older browsers keep every solid colour. Tailwind 3 accepts
+ * a function here at runtime; its types only admit strings, hence the cast.
+ */
+function token(name: string): string {
+  const color = ({ opacityValue }: { opacityValue?: string }) =>
+    opacityValue === undefined || opacityValue.startsWith('var(--tw-')
+      ? `var(--${name})`
+      : `color-mix(in srgb, var(--${name}) calc(${opacityValue} * 100%), transparent)`;
+  return color as unknown as string;
+}
+
+/**
  * Tailwind config for the OWL frontend. Colors are CSS custom properties
  * (defined in src/styles/globals.css) so the whole theme is one file. Token
- * names match apps/web; radii are squarer to suit the Odoo-style look.
+ * names match apps/web; radii are generous, as on Rapido and Blinkit.
  */
 const config: Config = {
   content: ['./index.html', './src/**/*.ts'],
@@ -11,53 +26,55 @@ const config: Config = {
     extend: {
       colors: {
         brand: {
-          50: 'var(--brand-50)',
-          100: 'var(--brand-100)',
-          500: 'var(--brand-500)',
-          600: 'var(--brand-600)',
-          700: 'var(--brand-700)',
-          solid: 'var(--brand-solid)',
+          50: token('brand-50'),
+          100: token('brand-100'),
+          500: token('brand-500'),
+          600: token('brand-600'),
+          700: token('brand-700'),
+          solid: token('brand-solid'),
         },
         accent: {
-          500: 'var(--accent-500)',
-          600: 'var(--accent-600)',
-          700: 'var(--accent-700)',
-          solid: 'var(--accent-solid)',
+          500: token('accent-500'),
+          600: token('accent-600'),
+          700: token('accent-700'),
+          solid: token('accent-solid'),
         },
         tint: {
-          green: 'var(--tint-green)',
-          blue: 'var(--tint-blue)',
-          orange: 'var(--tint-orange)',
-          yellow: 'var(--tint-yellow)',
+          green: token('tint-green'),
+          blue: token('tint-blue'),
+          orange: token('tint-orange'),
+          yellow: token('tint-yellow'),
+          pink: token('tint-pink'),
+          purple: token('tint-purple'),
         },
         ink: {
-          900: 'var(--ink-900)',
-          700: 'var(--ink-700)',
-          500: 'var(--ink-500)',
-          400: 'var(--ink-400)',
-          300: 'var(--ink-300)',
+          900: token('ink-900'),
+          700: token('ink-700'),
+          500: token('ink-500'),
+          400: token('ink-400'),
+          300: token('ink-300'),
         },
         paper: {
-          0: 'var(--paper-0)',
-          '0-light': 'var(--paper-0-light)',
-          50: 'var(--paper-50)',
-          100: 'var(--paper-100)',
+          0: token('paper-0'),
+          '0-light': token('paper-0-light'),
+          50: token('paper-50'),
+          100: token('paper-100'),
         },
-        line: 'var(--line)',
-        'line-light': 'var(--line-light)',
-        verified: 'var(--verified)',
-        progress: 'var(--progress)',
-        dispute: 'var(--dispute)',
-        info: 'var(--info)',
+        line: token('line'),
+        'line-light': token('line-light'),
+        verified: token('verified'),
+        progress: token('progress'),
+        dispute: token('dispute'),
+        info: token('info'),
       },
       fontFamily: {
         sans: ['var(--font-sans)'],
       },
       borderRadius: {
-        input: '4px',
-        card: '6px',
-        sheet: '8px',
-        xl: '12px',
+        input: '12px',
+        card: '16px',
+        sheet: '20px',
+        xl: '24px',
       },
       boxShadow: {
         card: 'var(--shadow-card)',

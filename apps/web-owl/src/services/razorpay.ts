@@ -67,7 +67,7 @@ export async function openRazorpayCheckout(options: CheckoutOptions): Promise<'s
       name: 'OnSite',
       description: options.description,
       prefill: { email: options.prefillEmail, contact: options.prefillContact },
-      theme: { color: '#714B67' },
+      theme: { color: '#141414' },
       handler: () => resolve('success'),
       modal: { ondismiss: () => resolve('dismissed') },
     });

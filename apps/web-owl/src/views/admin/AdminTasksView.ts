@@ -34,7 +34,7 @@ const FILTERS: Filter[] = [
   { value: 'MEDIUM', label: 'MEDIUM risk' },
   { value: 'HIGH', label: 'HIGH risk' },
 ];
-const BAR = 'animate-pulse rounded bg-paper-100';
+const BAR = 'skeleton rounded-md';
 
 /** Every task on the platform, filterable by risk level. */
 export class AdminTasksView extends Component {
@@ -95,7 +95,7 @@ export class AdminTasksView extends Component {
   }
 
   filterClass(f: Filter): string {
-    const tone = this.state.risk === f.value ? 'bg-brand-solid text-white' : 'bg-paper-100 text-ink-500 hover:text-ink-900';
+    const tone = this.state.risk === f.value ? 'bg-ink-900 text-white' : 'bg-paper-100 text-ink-500 hover:text-ink-900';
     return `rounded-full px-3 py-1.5 text-sm font-medium transition-colors duration-micro ease-onsite ${tone}`;
   }
 

@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 /** One third-party package that ends up in the browser bundle. */
 export interface ThirdPartyLicense {
@@ -22,6 +22,8 @@ interface BundledModule {
 interface BundleOutput {
   type: 'chunk' | 'asset';
   modules?: Record<string, BundledModule>;
+  /** For assets (fonts, images): the source files they were emitted from. */
+  originalFileNames?: readonly string[];
 }
 interface EmitContext {
   emitFile(file: { type: 'asset'; fileName: string; source: string }): string;
@@ -63,7 +65,7 @@ function repositoryUrl(repository: unknown): string | null {
 
 /**
  * Emits `licenses.json` and each package's licence text, built from the
- * modules that actually ship in the bundle rather than package.json, so the
+ * modules and assets that actually ship in the bundle rather than package.json, so the
  * list cannot drift from what visitors download. Read by /licenses.
  */
 export function thirdPartyLicenses(): LicensesPlugin {
@@ -73,7 +75,16 @@ export function thirdPartyLicenses(): LicensesPlugin {
     generateBundle(_options, bundle) {
       const roots = new Set<string>();
       for (const output of Object.values(bundle)) {
-        if (output.type !== 'chunk' || !output.modules) continue;
+        // A font or image shipped from a package (a self-hosted web font) is
+        // redistributed just like its code, so its licence is listed too.
+        if (output.type === 'asset') {
+          for (const source of output.originalFileNames ?? []) {
+            const root = packageRoot(resolve(source));
+            if (root) roots.add(root);
+          }
+          continue;
+        }
+        if (!output.modules) continue;
         for (const [id, info] of Object.entries(output.modules)) {
           if (info.renderedLength === 0) continue; // tree-shaken away entirely
           const root = packageRoot(id);

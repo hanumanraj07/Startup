@@ -25,7 +25,7 @@ interface Photo {
   url: string;
 }
 
-const BAR = 'animate-pulse rounded bg-paper-100';
+const BAR = 'skeleton rounded-md';
 
 /**
  * The KYC review queue. Approving needs no reason; rejecting or asking for a
