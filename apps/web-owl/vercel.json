@@ -2,7 +2,36 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "pnpm build",
   "outputDirectory": "dist",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
+  "trailingSlash": false,
+  "rewrites": [
+    { "source": "/licenses", "destination": "/pages/licenses.html" },
+    { "source": "/offline", "destination": "/pages/offline.html" },
+    { "source": "/sign-in", "destination": "/pages/sign-in.html" },
+    { "source": "/sign-up", "destination": "/pages/sign-up.html" },
+    { "source": "/forgot-password", "destination": "/pages/forgot-password.html" },
+    { "source": "/reset-password", "destination": "/pages/reset-password.html" },
+    { "source": "/verify-email", "destination": "/pages/verify-email.html" },
+
+    { "source": "/dashboard", "destination": "/app.html" },
+    { "source": "/feed", "destination": "/app.html" },
+    { "source": "/tasks", "destination": "/app.html" },
+    { "source": "/tasks/:id", "destination": "/app.html" },
+    { "source": "/payments", "destination": "/app.html" },
+    { "source": "/notifications", "destination": "/app.html" },
+    { "source": "/settings", "destination": "/app.html" },
+    { "source": "/kyc", "destination": "/app.html" },
+    { "source": "/profile/:id", "destination": "/app.html" },
+    { "source": "/worker/onboarding", "destination": "/app.html" },
+    { "source": "/worker/earnings", "destination": "/app.html" },
+    { "source": "/admin", "destination": "/app.html" },
+    { "source": "/admin/kyc", "destination": "/app.html" },
+    { "source": "/admin/disputes", "destination": "/app.html" },
+    { "source": "/admin/disputes/:id", "destination": "/app.html" },
+    { "source": "/admin/users", "destination": "/app.html" },
+    { "source": "/admin/tasks", "destination": "/app.html" },
+    { "source": "/admin/tasks/:id", "destination": "/app.html" },
+    { "source": "/admin/categories", "destination": "/app.html" }
+  ],
   "headers": [
     {
       "source": "/(.*)",
@@ -12,6 +41,18 @@
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
         { "key": "Permissions-Policy", "value": "geolocation=(self), camera=(self), microphone=()" }
       ]
+    },
+    {
+      "source": "/(offline|sign-in|sign-up|forgot-password|reset-password|verify-email|dashboard|feed|tasks|payments|notifications|settings|kyc|admin)",
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex" }]
+    },
+    {
+      "source": "/(tasks|profile|worker|admin|pages)/(.*)",
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex" }]
+    },
+    {
+      "source": "/(app|404|offline).html",
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex" }]
     },
     {
       "source": "/sw.js",

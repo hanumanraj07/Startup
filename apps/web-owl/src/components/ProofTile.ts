@@ -22,7 +22,7 @@ export function proofTypeIconName(type: ProofView['type']): string {
 export class ProofTile extends Component {
   static override template = xml`
     <div class="overflow-hidden rounded-card border border-line bg-paper-0">
-      <img t-if="proof.url and proof.type === 'PHOTO'" t-att-src="proof.url" alt="Submitted proof" class="aspect-video w-full object-cover"/>
+      <img t-if="proof.url and proof.type === 'PHOTO'" t-att-src="proof.url" alt="Submitted proof" loading="lazy" decoding="async" class="aspect-video w-full object-cover"/>
       <video t-elif="proof.url and proof.type === 'VIDEO'" t-att-src="proof.url" controls="" class="aspect-video w-full bg-black"/>
       <div t-else="" class="flex aspect-video w-full items-center justify-center bg-paper-100">
         <Icon name="proof.type === 'STRUCTURED_FIELD' ? 'hash' : 'file-text'" size="32" class="'text-ink-300'"/>

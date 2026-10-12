@@ -1,4 +1,5 @@
 import type { Guard, Layout, RouteDef } from '@/router/router';
+import { PUBLIC_PAGES, type PublicPageName } from '@/seo/pages';
 import { AdminCategoriesView } from '@/views/admin/AdminCategoriesView';
 import { AdminDashboardView } from '@/views/admin/AdminDashboardView';
 import { AdminDisputeDetailView } from '@/views/admin/AdminDisputeDetailView';
@@ -39,21 +40,27 @@ function route(
   return { name, path, title, layout, guard, component };
 }
 
+/** A public page: its path and title come from seo/pages.ts, where its search metadata lives. */
+function page(name: PublicPageName, layout: Layout, component: RouteDef['component']): RouteDef {
+  const meta = PUBLIC_PAGES[name];
+  return route(name, meta.path, meta.title, layout, 'public', component);
+}
+
 /**
  * Every route in apps/web, one entry each (27), plus /licenses. First match wins, so fixed
  * paths (/tasks/new) are listed before their parameterised siblings
  * (/tasks/:id).
  */
 export const routes: RouteDef[] = [
-  route('landing', '/', 'OnSite', 'marketing', 'public', LandingView),
-  route('offline', '/offline', 'Offline', 'marketing', 'public', OfflineView),
-  route('licenses', '/licenses', 'Open-source licences', 'marketing', 'public', LicensesView),
+  page('landing', 'marketing', LandingView),
+  page('offline', 'marketing', OfflineView),
+  page('licenses', 'marketing', LicensesView),
 
-  route('sign-in', '/sign-in', 'Sign in', 'auth', 'public', SignInView),
-  route('sign-up', '/sign-up', 'Create account', 'auth', 'public', SignUpView),
-  route('forgot-password', '/forgot-password', 'Forgot password', 'auth', 'public', ForgotPasswordView),
-  route('reset-password', '/reset-password', 'Reset password', 'auth', 'public', ResetPasswordView),
-  route('verify-email', '/verify-email', 'Verify email', 'auth', 'public', VerifyEmailView),
+  page('sign-in', 'auth', SignInView),
+  page('sign-up', 'auth', SignUpView),
+  page('forgot-password', 'auth', ForgotPasswordView),
+  page('reset-password', 'auth', ResetPasswordView),
+  page('verify-email', 'auth', VerifyEmailView),
 
   route('dashboard', '/dashboard', 'Dashboard', 'app', 'user', DashboardView),
   route('feed', '/feed', 'Feed', 'app', 'user', FeedView),

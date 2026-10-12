@@ -64,7 +64,7 @@ export class AdminKycView extends Component {
 
           <div class="grid grid-cols-3 gap-2">
             <a t-foreach="photos(item)" t-as="photo" t-key="photo.label" t-att-href="photo.url" target="_blank" rel="noreferrer" class="block">
-              <img t-att-src="photo.url" t-att-alt="photo.label" class="aspect-[4/3] w-full rounded-input border border-line object-cover"/>
+              <img t-att-src="photo.url" t-att-alt="photo.label" loading="lazy" decoding="async" class="aspect-[4/3] w-full rounded-input border border-line object-cover"/>
               <span class="mt-1 block text-center text-xs text-ink-400" t-out="photo.label"/>
             </a>
           </div>

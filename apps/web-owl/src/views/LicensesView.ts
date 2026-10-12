@@ -22,8 +22,10 @@ const BAR = 'animate-pulse rounded bg-paper-100';
 export class LicensesView extends Component {
   static override template = xml`
     <div class="min-h-screen bg-paper-50">
-      <div class="mx-auto max-w-3xl px-6 py-10">
+      <header class="mx-auto max-w-3xl px-6 pt-10">
         <Link to="'/'" class="'text-lg font-semibold tracking-tight text-brand-700'">OnSite</Link>
+      </header>
+      <main class="mx-auto max-w-3xl px-6 pb-10">
         <h1 class="mt-8 text-2xl font-semibold tracking-tight text-ink-900">Open-source licences</h1>
         <p class="mt-2 text-ink-500">
           OnSite is built with open-source software. These are the third-party packages that are sent to your browser,
@@ -75,7 +77,7 @@ export class LicensesView extends Component {
             </tbody>
           </table>
         </div>
-      </div>
+      </main>
     </div>`;
   static components = { Link };
   static override props = {};

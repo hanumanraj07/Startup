@@ -46,12 +46,3 @@ export function parseQuery(search: string): Record<string, string> {
   }
   return query;
 }
-
-/** The title index.html ships with; the landing page keeps it rather than becoming "OnSite · OnSite". */
-export const DEFAULT_TITLE = 'OnSite — someone on the ground, wherever you need them';
-
-/** The document title for a matched route's title, or for no match (null). */
-export function pageTitle(routeTitle: string | null): string {
-  if (routeTitle === null) return 'Not found · OnSite';
-  return routeTitle === 'OnSite' ? DEFAULT_TITLE : `${routeTitle} · OnSite`;
-}

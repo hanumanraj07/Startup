@@ -21,7 +21,7 @@ export interface AdminProof {
 export class EvidenceCard extends Component {
   static override template = xml`
     <div t-att-class="cardClass">
-      <img t-if="proof.url and proof.type === 'PHOTO'" t-att-src="proof.url" alt="Evidence" class="aspect-video w-full object-cover"/>
+      <img t-if="proof.url and proof.type === 'PHOTO'" t-att-src="proof.url" alt="Evidence" loading="lazy" decoding="async" class="aspect-video w-full object-cover"/>
       <video t-elif="proof.url and proof.type === 'VIDEO'" t-att-src="proof.url" controls="controls" class="aspect-video w-full bg-black"/>
       <div class="flex flex-col gap-1 p-3 text-sm">
         <p t-if="proof.fieldKey"><t t-out="proof.fieldKey"/>: <span class="font-medium" t-out="proof.fieldValue"/></p>

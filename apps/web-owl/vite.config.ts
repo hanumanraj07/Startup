@@ -1,6 +1,7 @@
 import { fileURLToPath, URL } from 'node:url';
 import { defineConfig } from 'vitest/config';
 import { thirdPartyLicenses } from './vite-plugins/licenses';
+import { seoPages } from './vite-plugins/seo';
 
 const fromRoot = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -14,8 +15,21 @@ const API_TARGET = process.env.VITE_DEV_API_TARGET ?? 'http://localhost:4000';
 // presents the API's own allowed origin so the API needs no change in dev.
 const API_ALLOWED_ORIGIN = process.env.VITE_DEV_API_ORIGIN ?? 'http://localhost:3000';
 
+// The canonical origin for canonical URLs, Open Graph, the sitemap and
+// robots.txt. On Vercel it comes from the project's production domain, so it
+// follows a custom domain automatically; VITE_SITE_URL overrides it. A Vercel
+// build without either fails rather than publishing localhost canonicals.
+function siteUrl(): string {
+  if (process.env.VITE_SITE_URL) return process.env.VITE_SITE_URL.replace(/\/$/, '');
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  if (process.env.VERCEL) throw new Error('No site URL: set VITE_SITE_URL or expose Vercel system environment variables.');
+  return 'http://localhost:4173';
+}
+const SITE_URL = siteUrl();
+
 export default defineConfig({
-  plugins: [thirdPartyLicenses()],
+  plugins: [thirdPartyLicenses(), seoPages(SITE_URL)],
+  define: { __SITE_URL__: JSON.stringify(SITE_URL) },
   resolve: {
     alias: {
       '@': fromRoot('./src'),

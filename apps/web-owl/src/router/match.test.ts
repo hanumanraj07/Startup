@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compilePath, DEFAULT_TITLE, matchPath, pageTitle, parseQuery } from './match';
+import { compilePath, matchPath, parseQuery } from './match';
 
 describe('matchPath', () => {
   it('matches the root only for "/"', () => {
@@ -51,19 +51,5 @@ describe('parseQuery', () => {
 
   it('returns an empty object for no query', () => {
     expect(parseQuery('')).toEqual({});
-  });
-});
-
-describe('pageTitle', () => {
-  it('suffixes a route title with the product name', () => {
-    expect(pageTitle('Dashboard')).toBe('Dashboard · OnSite');
-  });
-
-  it('keeps the full default title on the landing page instead of "OnSite · OnSite"', () => {
-    expect(pageTitle('OnSite')).toBe(DEFAULT_TITLE);
-  });
-
-  it('has a title for an unmatched route', () => {
-    expect(pageTitle(null)).toBe('Not found · OnSite');
   });
 });
