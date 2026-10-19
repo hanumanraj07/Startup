@@ -22,6 +22,9 @@ const envSchema = z
     API_PORT: z.coerce.number().int().min(1).max(65_535).default(4000),
     API_URL: z.string().url().default('http://localhost:4000'),
     WEB_URL: z.string().url().default('http://localhost:3000'),
+    // How many reverse proxies sit in front of the API and append to
+    // X-Forwarded-For. 0 locally; 2 in production (Vercel's rewrite, Caddy).
+    TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(0),
 
     DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
     DATABASE_POOL_SIZE: z.coerce.number().int().min(1).max(100).default(20),

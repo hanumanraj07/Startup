@@ -134,6 +134,15 @@ async function bootstrap(): Promise<void> {
   app.use(cookieParser());
 
   // Allow-listed origins only. Never a wildcard with credentials.
+  // Behind proxies (production: Vercel's /api rewrite, then Caddy), the
+  // client address is in X-Forwarded-For. Without this every request looks
+  // like it came from the proxy, and per-IP throttles are shared by all users.
+  if (env.TRUST_PROXY_HOPS > 0) {
+    (app.getHttpAdapter().getInstance() as { set: (key: string, value: number) => void }).set(
+      'trust proxy',
+      env.TRUST_PROXY_HOPS,
+    );
+  }
   app.enableCors({ origin: [env.WEB_URL], credentials: true });
 
   // No global ValidationPipe: validation is Zod-based, using the schemas in
