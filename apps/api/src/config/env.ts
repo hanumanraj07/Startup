@@ -111,6 +111,14 @@ const envSchema = z
     MIN_TASK_BUDGET_PAISE: z.coerce.number().int().positive().default(30_000),
     MAX_TASK_BUDGET_PAISE: z.coerce.number().int().positive().default(5_000_000),
     MAX_CONCURRENT_TASKS_PER_WORKER: z.coerce.number().int().min(1).max(20).default(3),
+    // How long a worker has to answer an incoming task request; the next,
+    // wider wave goes out when every request in a wave is answered or
+    // expired (founder decision, 2026-10-19).
+    OFFER_RESPONSE_SECONDS: z.coerce.number().int().min(15).max(900).default(90),
+    // Live worker location: the latest point lives this long in Redis, and
+    // updates closer together than the interval are dropped.
+    LIVE_LOCATION_TTL_SECONDS: z.coerce.number().int().min(30).max(900).default(120),
+    LIVE_LOCATION_MIN_INTERVAL_MS: z.coerce.number().int().min(500).max(60_000).default(2_000),
     // How far a pickup & delivery task may carry an item, pickup to drop-off.
     MAX_DELIVERY_DISTANCE_M: z.coerce.number().int().min(1_000).max(500_000).default(50_000),
     DEFAULT_WORKER_RADIUS_M: z.coerce.number().int().min(500).max(50_000).default(10_000),

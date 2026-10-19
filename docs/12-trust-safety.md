@@ -111,6 +111,8 @@ The platform sends real people to real places, and a marketplace that treats tha
 
 **They share:** the task location, display names, ratings, verification levels, and in-app chat.
 
+**One deliberate exception: the worker's live position during a trip** (founder decision, 2026-10-18/19). It is shared with the requester only from the moment the worker taps "On my way" until arrival, and for pickup & delivery also while the item is carried to the drop-off — never between accepting and setting off, which would often reveal where the worker lives. The worker sees a banner while it is on. Only the latest point is kept, in Redis with a two-minute expiry, and it is broadcast only to the task's room; no trail is stored. It is a convenience view, never evidence: arrival and proof GPS remain the record for disputes.
+
 Enforced by explicit response projections rather than by remembering to omit fields, and asserted by tests over whole response bodies so that a column added next month cannot quietly leak.
 
 **Contact details are redacted in chat.** Phone numbers, email addresses and UPI identifiers are stripped server-side and flagged. This is not paternalism: a transaction taken off-platform loses escrow, evidence and dispute recourse, and the person who suffers is almost always the worker.

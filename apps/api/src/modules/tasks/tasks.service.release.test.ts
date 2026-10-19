@@ -42,6 +42,7 @@ function build(current: Record<string, unknown>, opts: { removals?: number; upda
   const realtime = { emitTaskStatus: vi.fn(), removeUserFromTask: vi.fn().mockResolvedValue(undefined) };
   const queue = { scheduleTier: vi.fn().mockResolvedValue(undefined) };
   const notifications = { notify: vi.fn().mockResolvedValue(undefined) };
+  const live = { end: vi.fn().mockResolvedValue(undefined) };
   const service = new TasksService(
     prisma as never,
     {} as never,
@@ -52,6 +53,9 @@ function build(current: Record<string, unknown>, opts: { removals?: number; upda
     {} as never,
     realtime as never,
     {} as never,
+    {} as never,
+    {} as never,
+    live as never,
   );
   // removeWorker returns the requester's projection; that read is not under test.
   vi.spyOn(service, 'getById').mockResolvedValue({} as never);

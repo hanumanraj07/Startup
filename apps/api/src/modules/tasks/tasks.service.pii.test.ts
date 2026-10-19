@@ -102,6 +102,9 @@ describe('TasksService.getById — PII projection snapshot', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
     );
 
     const result = await service.getById('t1', REQUESTER_ID);
@@ -124,6 +127,8 @@ describe('TasksService.getById — PII projection snapshot', () => {
         // Pickup & delivery only (null otherwise): the requester's own drop-off.
         'dropoff',
         'locationMode',
+        // Counts only while a worker is being found; null once assigned.
+        'matching',
         'money',
         'assignedWorker',
       ].sort(),
@@ -149,6 +154,9 @@ describe('TasksService.getById — PII projection snapshot', () => {
     const { client } = { client: fakePrisma(fakeTask()) };
     const service = new TasksService(
       client as never,
+      {} as never,
+      {} as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -209,6 +217,9 @@ describe('TasksService.getById — PII projection snapshot', () => {
     const { client } = { client: fakePrisma(fakeTask()) };
     const service = new TasksService(
       client as never,
+      {} as never,
+      {} as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,

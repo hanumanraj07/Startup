@@ -285,7 +285,13 @@ See `ai/memory.md`, 2026-10-18, for the decisions and the scope reversals.
 - [ ] Production: set `GEOCODING_PROVIDER=osm` on the API (prod env files default to `mock`), run the migration
 - [ ] Before real traffic: move `VITE_MAP_TILE_URL` off OSM's own tile servers to a tile provider
 
-**P2 — Real-time** — incoming-task request screen with countdown, assignment notifications, live worker location (active task only), task-progress steps for both sides
+**P2 — Real-time ◑ BUILT AND VERIFIED LOCALLY, NOT PUSHED**
+- [x] Incoming request sheet with a 90 s countdown; waves of a few workers; first accept wins; others see "taken"; next wave at once when a wave is declined in full
+- [x] Requester told instantly when a worker accepts (toast anywhere in the app, plus the existing push)
+- [x] Live worker location from "On my way" to arrival (and while delivering), latest point only, server-measured distance, reconnect handling
+- [x] Task page redesigned: Now card, live trip map, Progress / Details / Payment / Chat tabs, steps that differ for deliveries
+- [ ] Production: deploy the worker process alongside the API (it runs matching waves, expiry and sweeps), run the migration
+- [ ] Later: background tracking needs a native app; the web app tracks only with the screen open
 
 **P3 — Payments** — requester-set price, separate product purchase cost with commission on the task payment only, commission hidden from both parties, worker payouts and history
 

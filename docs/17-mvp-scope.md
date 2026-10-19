@@ -87,7 +87,7 @@ Each of these sounds reasonable, and each would harm the launch.
 | Address verification, level 3 | Only needed above ₹5,000, which is above the expected launch range |
 | Appeals on disputes | Volume does not justify it yet |
 | Surge pricing | Requires demand density two cities will not produce |
-| Live worker tracking | Blocked by iOS background limits, and discrete GPS checkpoints are enough. **Founder reversed this on 2026-10-18 (foreground tracking while the worker is on the way, visible to the requester), to be built in P2.** |
+| Live worker tracking | Blocked by iOS background limits, and discrete GPS checkpoints are enough. **Founder reversed this on 2026-10-18; built 2026-10-19 (P2): foreground tracking from "On my way" to arrival, and while carrying a delivery, latest point only.** |
 
 ## Launch definition of done
 

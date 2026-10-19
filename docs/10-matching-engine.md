@@ -82,6 +82,10 @@ Notifying every worker in the city immediately trains them to ignore notificatio
 
 Each tier is a delayed BullMQ job carrying the task and tier. On acceptance, pending expansion jobs are cancelled. Timings compress automatically for tasks with a near deadline: a task due in 45 minutes does not spend 10 minutes in tier 1.
 
+**Incoming requests with a response window (founder decision, 2026-10-19).** Each offer is a live request on the worker's screen with a countdown: `expires_at = notified_at + OFFER_RESPONSE_SECONDS` (default 90). A wave goes to the tier's top few at once and the first confirmed accept wins (the atomic update below); the moment it does, every other open request in the wave is closed and those workers see "taken". The next, wider wave goes out when the current wave's requests run out — at most the response window plus a 3-second grace after the wave, or **immediately** once every request in it has been declined (`OffersService.advanceIfWaveDone`). The configured tier waits above remain an upper bound. Unanswered requests become `EXPIRED`, closed by the next tier pass or by the worker-process sweep every minute. The task stays in the open feed throughout, so an expired request is not a lost task; if even the last wave finds nobody, the task expires and refunds at its deadline as before. Tasks already past their deadline are never offered.
+
+Requests reach the worker over the Socket.IO user room (`offer:new`, `offer:closed`), published from the worker process through the Redis emitter, plus the existing push notification for a phone that is not looking; `GET /offers/mine` is the catch-up read on open and reconnect.
+
 Every offer is recorded in `task_offers` with rank, score, distance and tier. That table is what makes response rate measurable, ranking auditable, and "why did I not see that task" answerable.
 
 ## Notification discipline

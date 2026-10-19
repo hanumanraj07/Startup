@@ -13,6 +13,8 @@ import { loadEnv } from '../../config/env';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TokenService } from '../auth/token.service';
 import { isAllowedOrigin } from './cors-origin';
+import { LiveLocationService, type LiveLocationInput } from './live-location.service';
+import { taskRoom, userRoom } from './rooms';
 
 /**
  * docs/07-api-specification.md: "WebSocket namespace `/ws`, room per task,
@@ -57,6 +59,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   constructor(
     private readonly tokens: TokenService,
     private readonly prisma: PrismaService,
+    private readonly live: LiveLocationService,
   ) {}
 
   handleConnection(client: Socket): void {
@@ -73,6 +76,10 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     try {
       const payload = this.tokens.verifyAccessToken(token);
       client.data.userId = payload.sub;
+      // Every authenticated socket hears events addressed to its own user:
+      // incoming task requests for a worker, "your task was accepted" for a
+      // requester. Nothing addressed to anyone else.
+      void client.join(userRoom(payload.sub));
     } catch {
       this.logger.debug(`Socket ${client.id} rejected: invalid or expired access token.`);
       client.disconnect(true);
@@ -103,18 +110,40 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       return { ok: false, error: 'Not a party to this task.' };
     }
 
-    await client.join(roomFor(taskId));
+    await client.join(taskRoom(taskId));
     return { ok: true };
+  }
+
+  /**
+   * The assigned worker's live position during a trip. Authorization and
+   * the "only while on the way" rule are checked in LiveLocationService on
+   * every update, not just on join.
+   */
+  @SubscribeMessage('location:update')
+  async onLocationUpdate(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: Partial<LiveLocationInput> | undefined,
+  ): Promise<{ ok: boolean; reason?: string }> {
+    const userId = client.data.userId as string | undefined;
+    if (!userId || typeof data?.taskId !== 'string') return { ok: false, reason: 'Missing task id.' };
+    return this.live.update(userId, {
+      taskId: data.taskId,
+      latitude: Number(data.latitude),
+      longitude: Number(data.longitude),
+      accuracyMeters: data.accuracyMeters === undefined ? undefined : Number(data.accuracyMeters),
+      heading: data.heading === undefined ? undefined : Number(data.heading),
+      speed: data.speed === undefined ? undefined : Number(data.speed),
+    });
   }
 
   @SubscribeMessage('task:leave')
   onLeaveTask(@ConnectedSocket() client: Socket, @MessageBody() data: { taskId?: string }): void {
-    if (data?.taskId) void client.leave(roomFor(data.taskId));
+    if (data?.taskId) void client.leave(taskRoom(data.taskId));
   }
 
   /** Called by ChatService after a message is persisted and redacted. Never emits the raw body. */
   emitNewMessage(taskId: string, message: unknown): void {
-    this.server.to(roomFor(taskId)).emit('message:new', message);
+    this.server.to(taskRoom(taskId)).emit('message:new', message);
   }
 
   /**
@@ -125,9 +154,9 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
    */
   async removeUserFromTask(taskId: string, userId: string): Promise<void> {
     try {
-      const sockets = await this.server.in(roomFor(taskId)).fetchSockets();
+      const sockets = await this.server.in(taskRoom(taskId)).fetchSockets();
       for (const socket of sockets) {
-        if (socket.data.userId === userId) socket.leave(roomFor(taskId));
+        if (socket.data.userId === userId) socket.leave(taskRoom(taskId));
       }
     } catch (error) {
       this.logger.warn(`Could not remove user ${userId} from task room ${taskId}: ${String(error)}`);
@@ -136,10 +165,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   /** Broadcasts a task status change to its room — used for the live timeline (docs/09, docs/07-ui-design). */
   emitTaskStatus(taskId: string, status: string): void {
-    this.server.to(roomFor(taskId)).emit('task:status', { taskId, status });
+    this.server.to(taskRoom(taskId)).emit('task:status', { taskId, status });
   }
 }
 
-function roomFor(taskId: string): string {
-  return `task:${taskId}`;
-}

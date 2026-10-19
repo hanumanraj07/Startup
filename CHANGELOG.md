@@ -4,6 +4,17 @@ Notable changes to OnSite. Format follows [Keep a Changelog](https://keepachange
 
 ## [Unreleased]
 
+### Added — 2026-10-19 · P2: real-time requests and tracking
+
+- **Incoming task requests** pop up for nearby workers with a 90-second countdown, the payout, distance and (for deliveries) the trip. The first to accept gets it; everyone else's request closes with "Another worker accepted this one first". If a whole wave declines, the next wider wave goes out at once.
+- **Instant "worker accepted"** alert for the requester anywhere in the app.
+- **Live worker location** on a map for the requester from "On my way" until arrival (and while a delivery is being carried), with the distance to go. Only the latest point is kept.
+- **Task page as steps and tabs**: a "Now" card with the next action, the live map, and Progress, Details, Payment and Chat tabs. Deliveries get their own steps (heading to pickup, at the pickup, delivering).
+
+### Fixed — 2026-10-19
+
+- Tasks past their deadline are no longer offered to workers.
+
 ### Added — 2026-10-19 · P1: maps, pickup & delivery
 
 - **Map-based location picker** on OpenStreetMap: search for a shop or street, jump by state and city, or use your current location, then drag the map until the pin is on the exact spot. Replaces the latitude/longitude boxes.

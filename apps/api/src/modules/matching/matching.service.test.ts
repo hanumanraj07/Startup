@@ -56,6 +56,10 @@ function fakeSafety() {
   return { getBlockedUserIds: vi.fn().mockResolvedValue([]), isBlocked: vi.fn().mockResolvedValue(false) };
 }
 
+function fakeOffers() {
+  return { expireOverdue: vi.fn().mockResolvedValue(0), announce: vi.fn().mockResolvedValue(undefined) };
+}
+
 function fakeQueue() {
   return { scheduleTier: vi.fn().mockResolvedValue(undefined), cancelPending: vi.fn().mockResolvedValue(undefined) };
 }
@@ -95,23 +99,32 @@ function candidate(overrides: Partial<NearbyWorker> = {}): NearbyWorker {
 describe('MatchingService.runTierPass', () => {
   it('is a no-op when the task does not exist', async () => {
     const { client } = fakePrisma(null);
-    const service = new MatchingService(client as never, fakeGeo([]) as never, fakeQueue() as never, fakeNotifications() as never, fakeSafety() as never);
+    const service = new MatchingService(client as never, fakeGeo([]) as never, fakeQueue() as never, fakeNotifications() as never, fakeSafety() as never, fakeOffers() as never);
     const result = await service.runTierPass('missing', 0);
     expect(result).toEqual({ acted: false, offered: 0 });
   });
 
   it('is a no-op once a worker is already assigned', async () => {
     const { client } = fakePrisma(baseTask({ assignedWorkerId: 'w9', status: 'ASSIGNED' }));
-    const service = new MatchingService(client as never, fakeGeo([]) as never, fakeQueue() as never, fakeNotifications() as never, fakeSafety() as never);
+    const service = new MatchingService(client as never, fakeGeo([]) as never, fakeQueue() as never, fakeNotifications() as never, fakeSafety() as never, fakeOffers() as never);
     const result = await service.runTierPass('t1', 0);
     expect(result).toEqual({ acted: false, offered: 0 });
   });
 
   it('is a no-op once the task has left PUBLISHED/MATCHING (cancelled, expired, etc.)', async () => {
     const { client } = fakePrisma(baseTask({ status: 'CANCELLED' }));
-    const service = new MatchingService(client as never, fakeGeo([]) as never, fakeQueue() as never, fakeNotifications() as never, fakeSafety() as never);
+    const service = new MatchingService(client as never, fakeGeo([]) as never, fakeQueue() as never, fakeNotifications() as never, fakeSafety() as never, fakeOffers() as never);
     const result = await service.runTierPass('t1', 0);
     expect(result).toEqual({ acted: false, offered: 0 });
+  });
+
+  it('offers nothing for a task whose deadline has passed, leaving it to the expiry sweep', async () => {
+    const { client, taskOfferCreateMany } = fakePrisma(baseTask({ status: 'MATCHING', deadlineAt: new Date(Date.now() - 60_000) }));
+    const geo = fakeGeo([candidate()]);
+    const service = new MatchingService(client as never, geo as never, fakeQueue() as never, fakeNotifications() as never, fakeSafety() as never, fakeOffers() as never);
+    await expect(service.runTierPass('t1', 0)).resolves.toEqual({ acted: false, offered: 0 });
+    expect(geo.findNearbyWorkers).not.toHaveBeenCalled();
+    expect(taskOfferCreateMany).not.toHaveBeenCalled();
   });
 
   it('transitions PUBLISHED to MATCHING on the first tier pass', async () => {
@@ -122,6 +135,7 @@ describe('MatchingService.runTierPass', () => {
       fakeQueue() as never,
       fakeNotifications() as never,
       fakeSafety() as never,
+      fakeOffers() as never,
     );
     await service.runTierPass('t1', 0);
     expect(historyCreate).toHaveBeenCalledWith(
@@ -137,6 +151,7 @@ describe('MatchingService.runTierPass', () => {
       fakeQueue() as never,
       fakeNotifications() as never,
       fakeSafety() as never,
+      fakeOffers() as never,
     );
     await service.runTierPass('t1', 1);
     expect(historyCreate).not.toHaveBeenCalledWith(
@@ -147,7 +162,7 @@ describe('MatchingService.runTierPass', () => {
   it('jumps straight to the final tier when nobody at all is eligible at the current tier', async () => {
     const { client } = fakePrisma(baseTask());
     const queue = fakeQueue();
-    const service = new MatchingService(client as never, fakeGeo([]) as never, queue as never, fakeNotifications() as never, fakeSafety() as never);
+    const service = new MatchingService(client as never, fakeGeo([]) as never, queue as never, fakeNotifications() as never, fakeSafety() as never, fakeOffers() as never);
     const result = await service.runTierPass('t1', 0);
     expect(result.offered).toBe(0);
     expect(queue.scheduleTier).toHaveBeenCalledWith('t1', 3, 0);
@@ -156,7 +171,7 @@ describe('MatchingService.runTierPass', () => {
   it('schedules nothing further when even the final tier has nobody eligible', async () => {
     const { client } = fakePrisma(baseTask());
     const queue = fakeQueue();
-    const service = new MatchingService(client as never, fakeGeo([]) as never, queue as never, fakeNotifications() as never, fakeSafety() as never);
+    const service = new MatchingService(client as never, fakeGeo([]) as never, queue as never, fakeNotifications() as never, fakeSafety() as never, fakeOffers() as never);
     await service.runTierPass('t1', 3);
     expect(queue.scheduleTier).not.toHaveBeenCalled();
   });
@@ -164,7 +179,7 @@ describe('MatchingService.runTierPass', () => {
   it('never offers the task again to a worker who left it or was removed from it', async () => {
     const { client } = fakePrisma(baseTask({ status: 'MATCHING' }), ['w-left']);
     const geo = fakeGeo([]);
-    const service = new MatchingService(client as never, geo as never, fakeQueue() as never, fakeNotifications() as never, fakeSafety() as never);
+    const service = new MatchingService(client as never, geo as never, fakeQueue() as never, fakeNotifications() as never, fakeSafety() as never, fakeOffers() as never);
 
     await service.runTierPass('t1', 0);
 
@@ -181,6 +196,7 @@ describe('MatchingService.runTierPass', () => {
       queue as never,
       fakeNotifications() as never,
       fakeSafety() as never,
+      fakeOffers() as never,
     );
 
     const result = await service.runTierPass('t1', 0);
@@ -201,7 +217,7 @@ describe('MatchingService.runTierPass', () => {
   it('does not schedule a next tier once already at the final tier', async () => {
     const { client } = fakePrisma(baseTask());
     const queue = fakeQueue();
-    const service = new MatchingService(client as never, fakeGeo([candidate()]) as never, queue as never, fakeNotifications() as never, fakeSafety() as never);
+    const service = new MatchingService(client as never, fakeGeo([candidate()]) as never, queue as never, fakeNotifications() as never, fakeSafety() as never, fakeOffers() as never);
     await service.runTierPass('t1', 3);
     expect(queue.scheduleTier).not.toHaveBeenCalled();
   });

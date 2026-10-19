@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { OffersService } from '../matching/offers.service';
 import { ReviewService } from './review.service';
 import { TasksService } from './tasks.service';
 
@@ -36,6 +37,7 @@ export class SweeperService {
     private readonly prisma: PrismaService,
     private readonly review: ReviewService,
     private readonly tasks: TasksService,
+    private readonly offers: OffersService,
   ) {}
 
   start(intervalMs: number): void {
@@ -43,6 +45,7 @@ export class SweeperService {
     this.timer = setInterval(() => {
       void this.runReviewDeadlineSweep();
       void this.runTaskExpirySweep();
+      void this.runOfferExpirySweep();
     }, intervalMs);
     // Never let a scheduled tick keep the process alive on its own if
     // everything else has shut down.
@@ -80,6 +83,20 @@ export class SweeperService {
     }
 
     return { processed: due.length, acted };
+  }
+
+  /**
+   * Closes task requests whose 90-second window has passed. The tier pass
+   * closes its own task's requests before sending the next wave; this
+   * catches the last wave, and any request whose tier job Redis lost.
+   */
+  async runOfferExpirySweep(): Promise<number> {
+    try {
+      return await this.offers.expireOverdue();
+    } catch (error) {
+      this.logger.error(`Sweeper failed to expire offers: ${String(error)}`);
+      return 0;
+    }
   }
 
   /**

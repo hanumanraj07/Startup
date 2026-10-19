@@ -81,6 +81,22 @@ export class MatchingQueue implements OnModuleDestroy {
   }
 
   /**
+   * Runs a tier now instead of when its timer fires: the wave before it has
+   * been answered in full (OffersService.advanceIfWaveDone). The delayed job
+   * already scheduled for that tier holds the same job id, so it is removed
+   * first; if it is mid-flight, the add simply fails as a duplicate and the
+   * running pass does the work.
+   */
+  async advanceNow(taskId: string, tierIndex: number): Promise<void> {
+    try {
+      await this.queue.remove(jobIdFor(taskId, tierIndex));
+    } catch (error) {
+      this.logger.warn(`Could not clear the pending tier ${tierIndex} job for task ${taskId}: ${String(error)}`);
+    }
+    await this.scheduleTier(taskId, tierIndex, 0);
+  }
+
+  /**
    * Best-effort cleanup once a task is assigned or otherwise leaves matching,
    * so a stale expansion doesn't fire a no-op later. Sweeps every tier id a
    * task could plausibly have pending — there is no single "the" pending job

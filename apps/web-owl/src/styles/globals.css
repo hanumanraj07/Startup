@@ -212,3 +212,46 @@ body {
 [data-surface='app'] {
   --tap-min: 44px;
 }
+
+/* The worker on a live trip map: a solid dot with a soft pulse, so "this is
+   moving, right now" reads at a glance. Stops pulsing with reduced motion. */
+.live-worker-marker {
+  position: relative;
+  width: 22px;
+  height: 22px;
+}
+
+.live-worker-dot {
+  position: absolute;
+  inset: 3px;
+  border-radius: 9999px;
+  background: var(--accent-600);
+  border: 3px solid #fff;
+  box-shadow: 0 2px 6px rgb(20 20 20 / 0.35);
+}
+
+.live-worker-pulse {
+  position: absolute;
+  inset: -8px;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--accent-500) 30%, transparent);
+  animation: live-pulse 1.8s ease-out infinite;
+}
+
+@keyframes live-pulse {
+  from {
+    transform: scale(0.5);
+    opacity: 1;
+  }
+  to {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-worker-pulse {
+    animation: none;
+    opacity: 0.4;
+  }
+}

@@ -17,13 +17,17 @@ import {
   ForbiddenError,
   NotFoundError,
 } from '../../common/errors';
+import { approximateAddress } from '../../common/projections';
 import { loadEnv } from '../../config/env';
 import { GeoRepository, isWithinIndiaBounds } from '../../repositories/geo.repository';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MatchingQueue } from '../../queue/matching.queue';
 import { ModerationService, type ModerationStage } from '../moderation/moderation.service';
 import { NotificationService } from '../notifications/notification.service';
+import { OffersService } from '../matching/offers.service';
+import { LiveLocationService } from '../realtime/live-location.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { RealtimePublisher } from '../realtime/realtime.publisher';
 import { SafetyService } from '../safety/safety.service';
 import { assertTransitionAllowed, checkTransition, REMOVABLE_BEFORE_ARRIVAL } from './transitions';
 import { RiskService } from './risk.service';
@@ -81,6 +85,9 @@ export class TasksService {
     private readonly safety: SafetyService,
     private readonly realtime: RealtimeGateway,
     private readonly moderation: ModerationService,
+    private readonly offers: OffersService,
+    private readonly publisher: RealtimePublisher,
+    private readonly live: LiveLocationService,
   ) {}
 
   /**
@@ -180,9 +187,9 @@ export class TasksService {
         distanceMeters: distanceById.get(t.id) ?? 0,
         payoutPaise: Number(t.workerPayoutPaise),
         deadlineAt: t.deadlineAt.toISOString(),
-        approximateAddress: approximate(t.taskAddress),
+        approximateAddress: approximateAddress(t.taskAddress),
         dropoff: t.dropoffAddress
-          ? { approximateAddress: approximate(t.dropoffAddress), tripDistanceMeters: tripById.get(t.id) ?? 0 }
+          ? { approximateAddress: approximateAddress(t.dropoffAddress), tripDistanceMeters: tripById.get(t.id) ?? 0 }
           : null,
         requester: { displayName: t.requester.displayName, verificationLevel: t.requester.verificationLevel },
       }))
@@ -520,6 +527,8 @@ export class TasksService {
       });
     });
     this.realtime.emitTaskStatus(taskId, 'CANCELLED');
+    await this.matchingQueue.cancelPending(taskId);
+    await this.offers.withdraw(taskId).catch(() => undefined);
 
     if (payment && payment.status === 'CAPTURED') {
       await this.payments.refundFull(taskId);
@@ -567,6 +576,7 @@ export class TasksService {
     this.realtime.emitTaskStatus(taskId, 'EXPIRED');
 
     await this.matchingQueue.cancelPending(taskId);
+    await this.offers.withdraw(taskId).catch(() => undefined);
 
     const payment = await this.prisma.payment.findUnique({ where: { taskId } });
     if (payment && payment.status === 'CAPTURED') {
@@ -681,6 +691,12 @@ export class TasksService {
       }),
     ]);
     this.realtime.emitTaskStatus(taskId, 'ASSIGNED');
+    // Everyone else's request disappears at once, and the requester hears
+    // about it wherever they are in the app, not only on the task page.
+    await this.offers.closeForAssignment(taskId, workerId).catch((error) =>
+      this.logger.warn(`Could not close offers for task ${taskId}: ${String(error)}`),
+    );
+    this.publisher.toUser(task.requesterId, 'task:assigned', { taskId, taskTitle: task.title, workerName: user.displayName });
 
     try {
       await this.notifications.notify(task.requesterId, {
@@ -735,6 +751,9 @@ export class TasksService {
     });
 
     this.logger.log(`Task ${taskId} declined by worker ${workerId} (${input.reason}).`);
+    await this.offers.advanceIfWaveDone(taskId).catch((error) =>
+      this.logger.warn(`Could not advance matching for task ${taskId}: ${String(error)}`),
+    );
   }
 
   // ─── Releasing an assignment ─────────────────────────────────────────
@@ -854,6 +873,7 @@ export class TasksService {
 
     this.realtime.emitTaskStatus(task.id, 'MATCHING');
     await this.realtime.removeUserFromTask(task.id, workerId);
+    await this.live.end(task.id);
     await this.matchingQueue.scheduleTier(task.id, 0, 0);
     this.logger.log(`Task ${task.id}: worker ${workerId} released by ${initiatedBy.toLowerCase()} (${reason}); re-matching.`);
   }
@@ -957,6 +977,15 @@ export class TasksService {
         ...base,
         location: { latitude: task.taskLat, longitude: task.taskLng, address: task.taskAddress },
         dropoff: dropoffView(task),
+        // While a worker is being found: how many have been sent the request
+        // and how far out the search has reached. Counts only, no identities.
+        matching:
+          task.status === 'PUBLISHED' || task.status === 'MATCHING'
+            ? {
+                workersNotified: await this.prisma.taskOffer.count({ where: { taskId: task.id } }),
+                radiusMeters: task.currentRadiusMeters,
+              }
+            : null,
         money: {
           budgetPaise: Number(task.budgetPaise),
           commissionPaise: Number(task.commissionPaise),
@@ -1006,17 +1035,3 @@ function dropoffView(task: { dropoffLat: number | null; dropoffLng: number | nul
     : null;
 }
 
-/**
- * Reduces a full street address to its locality, so a worker browsing the feed
- * learns roughly where a task is without learning exactly where until they
- * accept it.
- */
-export function approximate(address: string): string {
-  // A PIN code narrows an address to a few streets and says nothing a
-  // worker can picture, so it is dropped before taking the locality.
-  const parts = address
-    .split(',')
-    .map((p) => p.trim())
-    .filter((p) => p && !/^\d{6}$/.test(p));
-  return parts.length <= 2 ? parts.join(', ') : parts.slice(-2).join(', ');
-}

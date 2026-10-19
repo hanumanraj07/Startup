@@ -121,6 +121,8 @@ export interface PickedLocation {
 export interface OwnerTask extends TaskBase {
   money: { budgetPaise: number; commissionPaise: number; workerPayoutPaise: number };
   assignedWorker: { id: string; displayName: string; ratingAvg: number | null; tasksCompleted: number } | null;
+  /** While a worker is being found: how many were sent the request, and how far out the search reaches. */
+  matching: { workersNotified: number; radiusMeters: number } | null;
 }
 
 /** GET /tasks/:id as the assigned worker sees it: only their payout, never the budget or commission. */

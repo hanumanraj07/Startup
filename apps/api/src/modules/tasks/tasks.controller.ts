@@ -34,6 +34,7 @@ import {
 import { formatDistance } from '@onsite/utils';
 import { zodPipe } from '../../common/zod-validation.pipe';
 import { CurrentUser, type RequestUser } from '../auth/decorators/current-user.decorator';
+import { LiveLocationService } from '../realtime/live-location.service';
 import { ExecutionService } from './execution.service';
 import { ReviewService } from './review.service';
 import { TasksService } from './tasks.service';
@@ -71,6 +72,7 @@ export class TasksController {
     private readonly tasks: TasksService,
     private readonly execution: ExecutionService,
     private readonly review: ReviewService,
+    private readonly live: LiveLocationService,
   ) {}
 
   /**
@@ -164,6 +166,16 @@ export class TasksController {
     @CurrentUser() user: RequestUser,
   ) {
     return this.tasks.removeWorker(uuidSchema.parse(id), user.id, body);
+  }
+
+  /**
+   * The worker's latest shared position, for a page that has just opened;
+   * updates then arrive on the task's socket room. Null when nothing is being
+   * shared at this stage. Requester and assigned worker only.
+   */
+  @Get(':id/live-location')
+  async liveLocation(@Param('id') id: string, @CurrentUser() user: RequestUser) {
+    return { data: await this.live.latest(uuidSchema.parse(id), user.id) };
   }
 
   // ─── Execution (assigned worker) ───────────────────────────────────

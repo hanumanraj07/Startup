@@ -1,6 +1,7 @@
 import type { SelfUser } from '@onsite/types';
 import { store } from '@/store/store';
 import { api, refreshSession, setAccessToken, setSessionExpiredHandler } from './api';
+import { stopSessionSocket } from './socket';
 
 interface LoginResponse {
   user: SelfUser;
@@ -58,6 +59,7 @@ export async function loginWithGoogle(idToken: string): Promise<SelfUser> {
 
 export async function logout(): Promise<void> {
   await api.post('/auth/logout').catch(() => undefined);
+  stopSessionSocket();
   setAccessToken(null);
   store.user = null;
   store.unreadNotifications = 0;

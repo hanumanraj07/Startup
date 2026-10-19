@@ -6,6 +6,7 @@ import { GeoRepository } from '../../repositories/geo.repository';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AutoApproveQueue } from '../../queue/auto-approve.queue';
 import { NotificationService } from '../notifications/notification.service';
+import { LiveLocationService } from '../realtime/live-location.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { StorageService } from '../storage/storage.service';
 import { assertTransitionAllowed } from './transitions';
@@ -35,6 +36,7 @@ export class ExecutionService {
     private readonly autoApproveQueue: AutoApproveQueue,
     private readonly notifications: NotificationService,
     private readonly realtime: RealtimeGateway,
+    private readonly live: LiveLocationService,
   ) {}
 
   async markEnRoute(taskId: string, workerId: string) {
@@ -90,6 +92,9 @@ export class ExecutionService {
       }),
     ]);
     this.realtime.emitTaskStatus(taskId, 'ARRIVED');
+    // Arrival ends the trip, so it ends location sharing (for a delivery,
+    // the leg to the pickup; the leg to the drop-off starts with the pickup).
+    await this.live.end(taskId);
 
     this.logger.log(
       `Task ${taskId} arrival: ${measurement.distanceMeters.toFixed(0)}m from the task location ` +
@@ -278,6 +283,7 @@ export class ExecutionService {
       }),
     ]);
     this.realtime.emitTaskStatus(taskId, 'SUBMITTED');
+    await this.live.end(taskId);
 
     // The fast path. If this fails or Redis is unavailable, the task is
     // still correctly SUBMITTED with review_deadline_at set — the sweeper

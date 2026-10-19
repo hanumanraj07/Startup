@@ -100,7 +100,8 @@ Unassigned tasks show an approximate location to workers, not the exact address.
 |---|---|---|---|
 | GET | `/tasks/nearby` | worker | The feed. PostGIS radius search from the worker's **saved** base point and working radius; takes no location or radius from the client. Pickup & delivery items carry the drop-off locality and trip distance only. Paginated |
 | POST | `/tasks/:id/accept` | worker | **Atomic.** Exactly one winner; the rest get `409 TASK_ALREADY_ASSIGNED`. Verification level enforced here |
-| POST | `/tasks/:id/decline` | worker | Records a decline and reason |
+| POST | `/tasks/:id/decline` | worker | Records a decline and reason. If nobody in the current wave is still deciding, the next wave goes out immediately |
+| GET | `/offers/mine` | worker | Open incoming requests (unanswered, inside their window, task still unassigned and before its deadline), each with `expiresAt` and `windowSeconds`. Locality only, like the feed |
 | POST | `/tasks/:id/leave` | assigned worker | Gives the task up before submission. Task returns to `MATCHING`; uploaded proof is discarded; completion rate drops; the worker can never re-accept that task. Reason required (`OTHER` needs a note) |
 | POST | `/tasks/:id/remove-worker` | requester | Removes the assigned worker **before arrival only** (`ASSIGNED`, `WORKER_EN_ROUTE`). Task returns to `MATCHING`, no money moves, not counted against the worker. At most 3 per task |
 
@@ -116,6 +117,7 @@ Unassigned tasks show an approximate location to workers, not the exact address.
 | DELETE | `/tasks/:id/proofs/:proofId` | assigned worker | Before submission only |
 | POST | `/tasks/:id/submit` | assigned worker | **Validates every required proof is present.** Sets `review_deadline_at = now() + 24h` |
 | POST | `/tasks/:id/blocker` | assigned worker | Report an inability to complete, with evidence |
+| GET | `/tasks/:id/live-location` | party | The worker's latest shared position while sharing is on (`WORKER_EN_ROUTE`, and `IN_PROGRESS` for pickup & delivery), else null. Server-measured distance to the current destination |
 
 ## Review
 
@@ -146,6 +148,13 @@ Unassigned tasks show an approximate location to workers, not the exact address.
 | POST | `/tasks/:id/messages/read` | party | |
 
 WebSocket namespace `/ws`, room per task, membership authorized on connection. Socket.IO with the Redis adapter so any API instance can serve any socket.
+
+| Room | Who is in it | Events |
+|---|---|---|
+| `user:{id}` | Every authenticated socket of that user, joined automatically | `offer:new` (an incoming request), `offer:closed` (`TAKEN`, `EXPIRED`, `WITHDRAWN`), `task:assigned` (to the requester) |
+| `task:{id}` | Requester and assigned worker, after `task:join` is authorized | `task:status`, `message:new`, `location:worker`, `location:ended` |
+
+Client → server `location:update` `{ taskId, latitude, longitude, accuracyMeters?, heading?, speed? }`, acknowledged `{ ok, reason? }`. Accepted only from the assigned worker while sharing is on, at most one per `LIVE_LOCATION_MIN_INTERVAL_MS` per task (extra ones are dropped), inside India. Events from the worker process are published with `@socket.io/redis-emitter`.
 
 ## Notifications
 

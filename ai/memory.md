@@ -6,6 +6,23 @@ Newest entries at the top. Every entry states the decision, the reasoning, and w
 
 ---
 
+## 2026-10-19 — P2: live task requests with a 90-second countdown, live worker location, and the task page as steps and tabs
+
+**Decided with the founder.** (1) A request goes to a wave of the best few nearby workers at once, each with **90 seconds** to respond (`OFFER_RESPONSE_SECONDS`); first confirmed accept wins; when every request in a wave has been declined, the next wider wave goes out at once, otherwise when the window runs out (the configured 10/15/20-minute tier waits are now only an upper bound). (2) Live location is shared **from "On my way" until arrival**, and for deliveries also **while carrying the item** to the drop-off — not from acceptance, which would often reveal the worker's home. (3) **Latest point only**, in Redis with a 2-minute TTL; no trail is stored. This is the one exception to invariant 6, now written into `ai/project-context.md` and `docs/12`.
+
+**How.**
+- `task_offers.expires_at`; `OffersService` (matching module) announces requests, closes everyone else's on accept (`TAKEN`), withdraws them on cancel/expiry, expires overdue ones (tier pass + a sweep every minute in the worker process), and advances the wave early. `GET /offers/mine` is the catch-up read.
+- Realtime from the worker process uses **`@socket.io/redis-emitter`** (new dependency, MIT, the official companion to the Redis adapter already in use): the worker process has no socket server, and matching runs there. Every authenticated socket joins `user:{id}`.
+- `LiveLocationService` (realtime module) takes `location:update` only from the assigned worker, only while `trackingLeg()` says so, throttled to one per 2 s per task, measures the distance to the current destination with PostGIS, stores the latest point and broadcasts it to the task room. The web app mirrors the rule in `lib/task-progress.ts isTracking`.
+- No state-machine change: for a delivery, `ARRIVED` is "at the pickup" and the first proof (the item photo) moves it to `IN_PROGRESS` = "picked up, delivering", which is exactly when the drop-off leg of sharing starts.
+- The task page is now a "Now" card with the viewer's next action, the live trip map while sharing is on, and tabs (Progress steps, Details, Payment, Chat on narrow screens). Steps differ by task type (`stepsFor`): a delivery gets "Heading to pickup / At the pickup / Picked up, delivering", an inspection does not.
+
+**Found live, fixed.** A worker process starting up drained queued tier jobs for tasks long past their deadline and put them on workers' screens ("Due in 0 min"). `runTierPass` now does nothing for an overdue task (the expiry sweep refunds it) and `GET /offers/mine` excludes them.
+
+**Limits, stated rather than hidden.** A web app tracks only while the screen is open (no background location on iOS or Android browsers); the worker is told to keep the screen open, and the requester sees "Signal weak" after 45 s without an update. The worker process (`ROLE=worker`) must be running for waves, expiry and the sweeps — locally it is not started by `pnpm dev`.
+
+---
+
 ## 2026-10-19 — P1: map-based locations on OpenStreetMap, pickup & delivery as a category mode, and the real cause of "a friend 50 km away saw my task"
 
 **The 50 km bug had two causes, both fixed.** (1) `GET /tasks/nearby` took `latitude`, `longitude` and `radiusMeters` from the query string, so the feed measured from wherever the client said; the server now uses the worker's saved base and `working_radius_m` and the schema no longer has those fields. (2) More likely the actual report: a worker's base was the **centre of a city chosen from a short list** (onboarding offered city buttons only), so a worker living 60 km away who picked the nearest listed city got that city's tasks. Onboarding now sets the base on a map (search, device location, drag), can be edited later (Feed → Change), and the city is only a display label derived from the point. Matching (`findNearbyWorkers`) already honoured each worker's own radius and needed no change.

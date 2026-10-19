@@ -1,9 +1,11 @@
-import { Component, useRef, useState, xml } from '@odoo/owl';
+import { Component, onMounted, onWillUnmount, useRef, useState, xml } from '@odoo/owl';
 import { navigate, routerState } from '@/router/router';
 import { logout } from '@/services/session';
+import { startSessionSocket, stopSessionSocket } from '@/services/socket';
 import { store } from '@/store/store';
 import { btn, MENU_ITEM } from '@/ui/classes';
 import { Dropdown } from './Dropdown';
+import { IncomingRequest } from './IncomingRequest';
 import { Icon } from './Icon';
 import { Link } from './Link';
 import { Logo } from './Logo';
@@ -70,6 +72,9 @@ export class Shell extends Component {
 
       <main><t t-slot="default"/></main>
 
+      <!-- Live events for the signed-in user: incoming task requests (workers), "your task was accepted" (requesters). -->
+      <IncomingRequest/>
+
       <nav t-if="showTabBar" class="fixed inset-x-0 bottom-0 z-30 border-t border-line-light bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden" aria-label="Tabs">
         <div class="mx-auto grid h-[var(--tabbar-height)] max-w-md grid-cols-5 items-center px-2">
           <t t-foreach="tabs" t-as="tab" t-key="tab.href">
@@ -96,13 +101,18 @@ export class Shell extends Component {
         </div>
       </dialog>
     </div>`;
-  static components = { Dropdown, Icon, Link, Logo, NotificationBell };
+  static components = { Dropdown, Icon, IncomingRequest, Link, Logo, NotificationBell };
   static override props = { slots: { type: Object, optional: true } };
 
   store = useState(store);
   router = useState(routerState);
   dialog = useRef('dialog');
   postTask = POST_TASK;
+
+  override setup() {
+    onMounted(() => startSessionSocket());
+    onWillUnmount(() => stopSessionSocket());
+  }
 
   accountButtonClass =
     'flex min-h-[40px] items-center gap-2 rounded-full p-1 pr-1 text-ink-900 transition-colors duration-micro ease-onsite ' +

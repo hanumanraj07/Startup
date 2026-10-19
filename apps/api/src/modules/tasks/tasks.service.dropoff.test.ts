@@ -53,6 +53,9 @@ function build(locationMode: 'SINGLE' | 'PICKUP_DROPOFF', distanceMeters = 2_900
     {} as never,
     {} as never,
     moderation as never,
+    {} as never,
+    {} as never,
+    {} as never,
   );
   vi.spyOn(service, 'getById').mockResolvedValue({} as never);
   return { service, taskCreate, geo };
@@ -123,7 +126,7 @@ describe('TasksService.create — drop-off rules', () => {
 
 describe('approximate — the locality the open feed shows', () => {
   it('drops the PIN code and keeps the last two named parts', async () => {
-    const { approximate } = await import('./tasks.service');
+    const { approximateAddress: approximate } = await import('../../common/projections');
     expect(approximate('Iscon Mega Mall, S G Highway, Ramdev nagar, Vejalpur Taluka, Gujarat, 380015')).toBe('Vejalpur Taluka, Gujarat');
     expect(approximate('Law Garden, Gulbai tekra, Ahmedabad, Gujarat, 380006')).toBe('Ahmedabad, Gujarat');
     expect(approximate('Central Kolkata')).toBe('Central Kolkata');

@@ -590,6 +590,9 @@ model TaskOffer {
   radiusTierMeters Int @map("radius_tier_m")
 
   notifiedAt   DateTime?      @map("notified_at")
+  /// The end of the worker's response window (notified + OFFER_RESPONSE_SECONDS).
+  /// After it the offer is EXPIRED; the task may still be accepted from the feed.
+  expiresAt    DateTime?      @map("expires_at")
   viewedAt     DateTime?      @map("viewed_at")
   respondedAt  DateTime?      @map("responded_at")
   response     OfferResponse?
@@ -599,6 +602,7 @@ model TaskOffer {
 
   @@unique([taskId, workerId])
   @@index([workerId, notifiedAt(sort: Desc)])
+  @@index([expiresAt])
   @@map("task_offers")
 }
 

@@ -15,9 +15,11 @@ export class WorkerActions extends Component {
   static override template = xml`
     <div t-if="stage === 'assigned'" t-att-class="cardClass">
       <div class="${CARD_CONTENT} flex flex-wrap items-center justify-between gap-3">
-        <p class="text-sm text-ink-500">Let the requester know you’re on your way.</p>
+        <p class="text-sm text-ink-500">
+          Tap when you set off<t t-if="isDelivery"> for the pickup</t>. Your live location is shared with the requester from then until you arrive.
+        </p>
         <button type="button" t-att-class="primaryClass" t-att-disabled="state.busy" t-on-click="markEnRoute">
-          <Icon name="'navigation'" size="16"/> Mark en route
+          <Icon name="'navigation'" size="16"/> On my way
         </button>
       </div>
       <p t-if="state.error" role="alert" class="px-6 pb-6 text-sm text-dispute" t-out="state.error"/>
@@ -26,19 +28,20 @@ export class WorkerActions extends Component {
     <div t-elif="stage === 'en-route'" t-att-class="cardClass">
       <div class="${CARD_CONTENT} flex flex-col gap-3">
         <p class="text-sm text-ink-500">
-          When you’re at the location, confirm arrival. Your GPS position is measured against the task’s exact
-          address — the app never asks you to type a distance.
+          When you’re at <t t-out="isDelivery ? 'the pickup' : 'the location'"/>, confirm arrival. Your GPS position is measured
+          against the exact address — the app never asks you to type a distance.
         </p>
         <button type="button" t-att-class="primaryClass + ' self-start'" t-att-disabled="state.busy" t-on-click="confirmArrival">
-          Confirm arrival
+          <Icon name="'map-pin'" size="16"/> <t t-out="isDelivery ? 'I’m at the pickup' : 'I’m here'"/>
         </button>
         <p t-if="state.error" role="alert" class="text-sm text-dispute" t-out="state.error"/>
       </div>
     </div>
 
     <div t-elif="stage === 'collect'" t-att-class="cardClass">
-      <div class="${CARD_HEADER}"><h2 class="${CARD_TITLE}">Collect proof</h2></div>
+      <div class="${CARD_HEADER}"><h2 class="${CARD_TITLE}" t-out="collectTitle"/></div>
       <div class="${CARD_CONTENT} flex flex-col gap-4">
+        <p t-if="collectHint" class="rounded-input bg-brand-50 px-3 py-2 text-sm text-ink-900" t-out="collectHint"/>
         <ProofChecklist requirements="requirements" proofs="proofs"/>
 
         <div class="flex flex-col gap-3 border-t border-line pt-4">
@@ -51,7 +54,7 @@ export class WorkerActions extends Component {
         <p t-if="state.error" role="alert" class="text-sm text-dispute" t-out="state.error"/>
 
         <button type="button" t-att-class="submitClass" t-att-disabled="state.busy or !allMet" t-on-click="submit">
-          <Icon name="'send'" size="16"/> Submit for review
+          <Icon name="'send'" size="16"/> <t t-out="isDelivery ? 'Delivered: submit proof' : 'Submit for review'"/>
         </button>
       </div>
     </div>
@@ -68,6 +71,8 @@ export class WorkerActions extends Component {
     proofRequirements: Array,
     proofs: Array,
     onChanged: Function,
+    /** SINGLE or PICKUP_DROPOFF: deliveries get their own wording for each leg. */
+    locationMode: { type: String, optional: true },
   };
 
   state = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
@@ -83,6 +88,23 @@ export class WorkerActions extends Component {
     if (status === 'ARRIVED' || status === 'IN_PROGRESS') return 'collect';
     if (status === 'SUBMITTED' || status === 'UNDER_REVIEW') return 'submitted';
     return null;
+  }
+
+  get isDelivery(): boolean {
+    return this.props.locationMode === 'PICKUP_DROPOFF';
+  }
+
+  get collectTitle(): string {
+    if (!this.isDelivery) return 'Collect proof';
+    return this.props.status === 'ARRIVED' ? 'Collect the item' : 'Hand it over';
+  }
+
+  /** For a delivery, the first photo at the pickup is what marks it collected (and starts sharing the drop-off leg). */
+  get collectHint(): string {
+    if (!this.isDelivery) return '';
+    return this.props.status === 'ARRIVED'
+      ? 'Photograph the item at the pickup to confirm you have it. Then head to the drop-off; your live location is shared again on the way.'
+      : 'At the drop-off, photograph the handover and note who received it, then submit.';
   }
 
   get requirements(): ProofRequirement[] {

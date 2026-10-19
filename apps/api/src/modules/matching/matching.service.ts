@@ -14,6 +14,7 @@ import {
   type PlatformMeans,
 } from './scoring';
 import { computeTierDelayMs, offerCountForTier } from './tiers';
+import { OffersService } from './offers.service';
 
 /**
  * Neutral launch-day fallbacks for the platform-mean components of the score,
@@ -54,6 +55,9 @@ export interface TierPassResult {
  * duplicate tier job never corrupt state, without any coordination with
  * whoever changed the task.
  */
+/** Lets an accept tapped in the last second land before the next wave is chosen. */
+const OFFER_GRACE_MS = 3_000;
+
 @Injectable()
 export class MatchingService {
   private readonly logger = new Logger(MatchingService.name);
@@ -64,12 +68,19 @@ export class MatchingService {
     private readonly queue: MatchingQueue,
     private readonly notifications: NotificationService,
     private readonly safety: SafetyService,
+    private readonly offers: OffersService,
   ) {}
 
   async runTierPass(taskId: string, tierIndex: number): Promise<TierPassResult> {
     const task = await this.prisma.task.findUnique({ where: { id: taskId } });
     if (!task) return { acted: false, offered: 0 };
     if (task.assignedWorkerId || (task.status !== 'PUBLISHED' && task.status !== 'MATCHING')) {
+      return { acted: false, offered: 0 };
+    }
+    // Past its deadline, a task is the expiry sweep's to refund, not a
+    // request to put on anyone's screen. Found live: a worker process
+    // starting up drained queued tier jobs for tasks that were long overdue.
+    if (task.deadlineAt.getTime() <= Date.now()) {
       return { acted: false, offered: 0 };
     }
 
@@ -108,6 +119,10 @@ export class MatchingService {
         }),
       ]);
     }
+
+    // The previous wave's window is over by now (or it was answered in
+    // full): close what is left of it before choosing the next.
+    await this.offers.expireOverdue(taskId);
 
     const [alreadyOffered, blockedUserIds, released] = await Promise.all([
       this.prisma.taskOffer.findMany({ where: { taskId }, select: { workerId: true } }),
@@ -184,6 +199,8 @@ export class MatchingService {
         data: chosen.map((c, i) => ({
           taskId,
           workerId: c.userId,
+          notifiedAt: now,
+          expiresAt: new Date(now.getTime() + env.OFFER_RESPONSE_SECONDS * 1000),
           rank: i + 1,
           score: c.score,
           distanceMeters: c.distanceMeters,
@@ -208,6 +225,12 @@ export class MatchingService {
     // aggregation job and is a documented, honest gap (see TODO.md):
     // sending one immediate notification per match is correct, just not yet
     // as considerate of notification volume as the spec ultimately wants.
+    // The request itself, live on the worker's screen with its countdown;
+    // the push notification below is for a phone that is not looking.
+    await this.offers.announce(taskId, chosen.map((c) => c.userId)).catch((error) =>
+      this.logger.warn(`Could not announce offers for task ${taskId}: ${String(error)}`),
+    );
+
     await Promise.all(
       chosen.map((c) =>
         this.notifications
@@ -223,12 +246,14 @@ export class MatchingService {
     );
 
     if (!isLastTier) {
-      const delayMs = computeTierDelayMs({
-        tierIndex: clampedTier,
-        waitMinutes: waits,
-        deadlineAt: task.deadlineAt,
-        now,
-      });
+      // The next wave goes out when this one's requests run out (plus a
+      // moment for an accept that is in flight), unless the configured tier
+      // wait is shorter. A wave answered early advances sooner still
+      // (OffersService.advanceIfWaveDone).
+      const delayMs = Math.min(
+        computeTierDelayMs({ tierIndex: clampedTier, waitMinutes: waits, deadlineAt: task.deadlineAt, now }),
+        env.OFFER_RESPONSE_SECONDS * 1000 + OFFER_GRACE_MS,
+      );
       await this.queue.scheduleTier(taskId, clampedTier + 1, delayMs);
     }
 

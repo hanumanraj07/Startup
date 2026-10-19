@@ -1,7 +1,10 @@
 import { Module } from '@nestjs/common';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { RealtimeModule } from '../realtime/realtime.module';
 import { SafetyModule } from '../safety/safety.module';
 import { MatchingService } from './matching.service';
+import { OffersController } from './offers.controller';
+import { OffersService } from './offers.service';
 
 /**
  * PrismaModule and QueueModule are both @Global(), so most of
@@ -14,8 +17,9 @@ import { MatchingService } from './matching.service';
  * with `context.get(MatchingService)`.
  */
 @Module({
-  imports: [NotificationsModule, SafetyModule],
-  providers: [MatchingService],
-  exports: [MatchingService],
+  imports: [NotificationsModule, SafetyModule, RealtimeModule],
+  controllers: [OffersController],
+  providers: [MatchingService, OffersService],
+  exports: [MatchingService, OffersService],
 })
 export class MatchingModule {}

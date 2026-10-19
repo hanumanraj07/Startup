@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { MatchingModule } from '../matching/matching.module';
 import { ModerationModule } from '../moderation/moderation.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PaymentsModule } from '../payments/payments.module';
@@ -13,7 +14,7 @@ import { TasksController } from './tasks.controller';
 import { TasksService } from './tasks.service';
 
 @Module({
-  imports: [PaymentsModule, StorageModule, NotificationsModule, SafetyModule, RealtimeModule, ModerationModule],
+  imports: [PaymentsModule, StorageModule, NotificationsModule, SafetyModule, RealtimeModule, ModerationModule, MatchingModule],
   controllers: [TasksController],
   providers: [TasksService, RiskService, ExecutionService, ReviewService, SweeperService],
   exports: [TasksService, ReviewService, SweeperService],

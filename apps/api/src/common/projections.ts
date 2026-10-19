@@ -48,3 +48,18 @@ export function toSelfUser(user: User & { workerProfile?: { id: string } | null 
     hasWorkerProfile: Boolean(user.workerProfile),
   };
 }
+
+/**
+ * Reduces a full street address to its locality, so a worker browsing the
+ * open feed (or an incoming request) learns roughly where a task is without
+ * learning exactly where until they accept it. A PIN code narrows an address
+ * to a few streets and says nothing a worker can picture, so it is dropped
+ * before taking the last two named parts.
+ */
+export function approximateAddress(address: string): string {
+  const parts = address
+    .split(',')
+    .map((p) => p.trim())
+    .filter((p) => p && !/^\d{6}$/.test(p));
+  return parts.length <= 2 ? parts.join(', ') : parts.slice(-2).join(', ');
+}

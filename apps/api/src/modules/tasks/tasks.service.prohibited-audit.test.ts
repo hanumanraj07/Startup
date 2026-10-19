@@ -77,6 +77,9 @@ function buildService(auditRecord: ReturnType<typeof vi.fn>, events = fakeModera
     {} as never,
     {} as never,
     moderation,
+    {} as never,
+    {} as never,
+    {} as never,
   );
 }
 
