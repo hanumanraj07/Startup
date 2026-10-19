@@ -30,10 +30,10 @@ beforeEach(() => {
 const pickup = { latitude: 23.0276, longitude: 72.5603 };
 const dropoffLocation = { latitude: 23.0225, longitude: 72.5878 };
 
-function build(locationMode: 'SINGLE' | 'PICKUP_DROPOFF', distanceMeters = 2_900) {
+function build(locationMode: 'SINGLE' | 'PICKUP_DROPOFF', distanceMeters = 2_900, slug = 'pickup-delivery') {
   const taskCreate = vi.fn().mockResolvedValue({ id: 't1' });
   const prisma = {
-    category: { findFirst: vi.fn().mockResolvedValue({ id: 'cat-1', locationMode }) },
+    category: { findFirst: vi.fn().mockResolvedValue({ id: 'cat-1', locationMode, slug }) },
     user: { findUniqueOrThrow: vi.fn().mockResolvedValue({ homeLat: null, homeLng: null }) },
     task: { create: taskCreate },
     taskStatusHistory: { create: vi.fn().mockResolvedValue({}) },
@@ -164,5 +164,30 @@ describe('TasksService.create — buying an item', () => {
     const data = (taskCreate.mock.calls[0]?.[0] as { data: Record<string, unknown> }).data;
     expect(data.itemBudgetPaise).toBe(0);
     expect(data.proofRequirements).toHaveLength(1);
+  });
+});
+
+describe('TasksService.create — the "Other" category', () => {
+  const other = { ...input, categorySlug: 'other' as const };
+
+  it('stores the requester’s own label for an "Other" task', async () => {
+    const { service, taskCreate } = build('SINGLE', 2_900, 'other');
+    await service.create('req-1', { ...other, customCategoryLabel: '  Stand in a queue  ' });
+    const data = (taskCreate.mock.calls[0]?.[0] as { data: Record<string, unknown> }).data;
+    expect(data.customCategoryLabel).toBe('Stand in a queue');
+  });
+
+  it('needs a label for "Other"', async () => {
+    const { service, taskCreate } = build('SINGLE', 2_900, 'other');
+    await expect(service.create('req-1', other)).rejects.toThrow(BusinessRuleError);
+    expect(taskCreate).not.toHaveBeenCalled();
+  });
+
+  it('refuses a label on a named category, so a label cannot disguise one', async () => {
+    const { service, taskCreate } = build('SINGLE', 2_900, 'product-inspection');
+    await expect(
+      service.create('req-1', { ...input, categorySlug: 'product-inspection', customCategoryLabel: 'Something else' }),
+    ).rejects.toThrow(BusinessRuleError);
+    expect(taskCreate).not.toHaveBeenCalled();
   });
 });

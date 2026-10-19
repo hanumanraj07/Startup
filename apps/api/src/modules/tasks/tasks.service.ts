@@ -17,7 +17,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from '../../common/errors';
-import { approximateAddress } from '../../common/projections';
+import { approximateAddress, categoryLabel } from '../../common/projections';
 import { loadEnv } from '../../config/env';
 import { GeoRepository, isWithinIndiaBounds } from '../../repositories/geo.repository';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -186,6 +186,7 @@ export class TasksService {
         deadlineAt: true,
         workerPayoutPaise: true,
         itemBudgetPaise: true,
+        customCategoryLabel: true,
         category: { select: { slug: true, name: true } },
         // Public projection only. No email, phone, home address or
         // requester coordinates. See docs/12-trust-safety.md.
@@ -198,7 +199,7 @@ export class TasksService {
         id: t.id,
         title: t.title,
         categorySlug: t.category.slug,
-        categoryName: t.category.name,
+        categoryName: categoryLabel(t.category, t.customCategoryLabel),
         distanceMeters: distanceById.get(t.id) ?? 0,
         payoutPaise: Number(t.workerPayoutPaise),
         itemBudgetPaise: Number(t.itemBudgetPaise),
@@ -235,7 +236,8 @@ export class TasksService {
 
     // Hard prohibitions block creation outright; risk scoring below only
     // gates publication. See docs/12-trust-safety.md.
-    await this.screenContent(requesterId, 'CREATE', input.title, input.description, actorIp);
+    const customCategoryLabel = resolveCustomLabel(category.slug, input.customCategoryLabel);
+    await this.screenContent(requesterId, 'CREATE', input.title, withLabel(input.description, customCategoryLabel), actorIp);
     const dropoff = await this.resolveDropoff(category.locationMode, input.taskLocation, input, 'create');
     const itemBudgetPaise = resolveItemBudget(category.locationMode, input.itemBudgetPaise ?? 0);
     // Risk and the verification level follow everything at stake, item included.
@@ -263,6 +265,7 @@ export class TasksService {
         cityId: city.id,
         title: input.title,
         description: input.description,
+        customCategoryLabel,
         status: 'DRAFT',
         taskLat: input.taskLocation.latitude,
         taskLng: input.taskLocation.longitude,
@@ -305,12 +308,12 @@ export class TasksService {
 
     // Content edits are re-screened; every edit, content or not, waits out
     // an active cooldown, so a blocked user cannot keep tweaking a draft.
-    if (input.title || input.description) {
+    if (input.title || input.description || input.customCategoryLabel) {
       await this.screenContent(
         requesterId,
         'UPDATE',
         input.title ?? task.title,
-        input.description ?? task.description,
+        withLabel(input.description ?? task.description, input.customCategoryLabel ?? task.customCategoryLabel),
         actorIp,
         taskId,
       );
@@ -342,6 +345,7 @@ export class TasksService {
 
     let category = task.categoryId;
     let locationMode: LocationMode | null = null;
+    let categorySlug: string | null = null;
     if (input.categorySlug) {
       const found = await this.prisma.category.findFirst({
         where: { slug: input.categorySlug, isActive: true },
@@ -349,6 +353,14 @@ export class TasksService {
       if (!found) throw new NotFoundError('That category is not currently available.');
       category = found.id;
       locationMode = found.locationMode;
+      categorySlug = found.slug;
+    }
+    // The custom label belongs to "Other" only: required there, cleared when
+    // the task moves to a named category.
+    let customCategoryLabel: string | null | undefined;
+    if (input.categorySlug !== undefined || input.customCategoryLabel !== undefined) {
+      const slug = categorySlug ?? (await this.prisma.category.findUniqueOrThrow({ where: { id: task.categoryId } })).slug;
+      customCategoryLabel = resolveCustomLabel(slug, input.customCategoryLabel ?? task.customCategoryLabel ?? undefined);
     }
 
     // Re-check the drop-off whenever anything it depends on changes: the
@@ -399,6 +411,7 @@ export class TasksService {
         ...(input.title !== undefined && { title: input.title }),
         ...(input.description !== undefined && { description: input.description }),
         ...(input.categorySlug !== undefined && { categoryId: category }),
+        ...(customCategoryLabel !== undefined && { customCategoryLabel }),
         cityId,
         ...(input.taskLocation && {
           taskLat: input.taskLocation.latitude,
@@ -493,7 +506,7 @@ export class TasksService {
 
     // Re-checked at the gate that makes a task visible: the rules may have
     // tightened since the draft was written, and a cooldown applies here too.
-    await this.screenContent(requesterId, 'PUBLISH', task.title, task.description, actorIp, taskId);
+    await this.screenContent(requesterId, 'PUBLISH', task.title, withLabel(task.description, task.customCategoryLabel), actorIp, taskId);
 
     if (task.riskLevel === 'HIGH') {
       throw new BusinessRuleError(
@@ -1003,7 +1016,8 @@ export class TasksService {
       title: task.title,
       description: task.description,
       categorySlug: task.category.slug,
-      categoryName: task.category.name,
+      categoryName: categoryLabel(task.category, task.customCategoryLabel),
+      customCategoryLabel: task.customCategoryLabel,
       locationMode: task.category.locationMode,
       status: task.status,
       deadlineAt: task.deadlineAt.toISOString(),
@@ -1074,6 +1088,24 @@ export class TasksService {
     if (task.requesterId !== requesterId) throw new NotFoundError('Task not found.');
     return task;
   }
+}
+
+/**
+ * "Other" needs the requester's own description of the kind of task; every
+ * named category refuses one, so a label can never mask a real category.
+ */
+function resolveCustomLabel(slug: string, label: string | undefined): string | null {
+  if (slug === 'other') {
+    if (!label?.trim()) throw new BusinessRuleError('Say what kind of task this is, for example "Stand in a queue".');
+    return label.trim();
+  }
+  if (label?.trim()) throw new BusinessRuleError('Only an "Other" task takes a description of its kind.');
+  return null;
+}
+
+/** The label is screened as part of the task text, so it cannot carry what the title may not. */
+function withLabel(description: string, label: string | null | undefined): string {
+  return label ? `${label}\n${description}` : description;
 }
 
 type ProofRequirementJson = { type: string; fieldKey?: string; label: string; required: boolean; minCount?: number };

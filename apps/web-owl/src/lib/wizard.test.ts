@@ -25,6 +25,8 @@ const home: PickedLocation = { latitude: 22.5526, longitude: 88.3527, suggestedA
 
 const valid: WizardInput = {
   hasCategory: true,
+  isOtherCategory: false,
+  customCategoryLabel: '',
   locationMode: 'SINGLE',
   pickup: shop,
   dropoff: null,
@@ -114,6 +116,9 @@ describe('minDeadlineLocal', () => {
 describe('canAdvance', () => {
   it('requires a category on step 0', () => {
     expect(canAdvance(0, { ...valid, hasCategory: false })).toBe(false);
+    // "Other" needs a few words saying what kind of task it is.
+    expect(canAdvance(0, { ...valid, isOtherCategory: true, customCategoryLabel: '  ' })).toBe(false);
+    expect(canAdvance(0, { ...valid, isOtherCategory: true, customCategoryLabel: 'Stand in a queue' })).toBe(true);
     expect(canAdvance(0, valid)).toBe(true);
   });
 
@@ -247,5 +252,24 @@ describe('composeAddress', () => {
     expect(composeAddress(shop)).toBe('XYZ Computer Store, 2nd floor, Bentinck Street, Kolkata, West Bengal');
     expect(composeAddress({ ...shop, details: '  ' })).toBe('Bentinck Street, Kolkata, West Bengal');
     expect(composeAddress(null)).toBe('');
+  });
+});
+
+describe('"Other" category payload', () => {
+  const base = {
+    title: 'Stand in the queue',
+    description: 'Hold my place in the queue until I arrive.',
+    pickup: shop,
+    dropoff: null,
+    budgetPaise: 20_000,
+    deadlineLocal: '2026-10-12T18:00',
+    proofRequirements: [photo],
+  };
+
+  it('sends the trimmed label for "Other" only', () => {
+    expect(buildDraftPayload({ ...base, categorySlug: 'other', customCategoryLabel: '  Queue  ' }).customCategoryLabel).toBe('Queue');
+    expect(buildDraftPayload({ ...base, categorySlug: 'local-research', customCategoryLabel: 'Queue' })).not.toHaveProperty(
+      'customCategoryLabel',
+    );
   });
 });

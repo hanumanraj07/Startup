@@ -19,20 +19,24 @@ export class ProofStep extends Component {
       <h2 class="text-lg font-medium text-ink-900">What proof do you need?</h2>
       <p class="text-sm text-ink-500">Pre-filled from the category. Adjust or add your own.</p>
       <div class="flex flex-col gap-3">
-        <div t-foreach="props.requirements" t-as="r" t-key="r_index" class="flex flex-wrap items-center gap-2 rounded-card border border-line p-3">
-          <select t-att-class="selectClass" aria-label="Proof type" t-on-change="(ev) => onType(ev, r_index)">
-            <option t-foreach="typeOptions" t-as="opt" t-key="opt.value" t-att-value="opt.value"
-              t-att-selected="opt.value === r.type" t-out="opt.label"/>
-          </select>
-          <input t-att-class="labelClass" t-att-value="r.label" placeholder="Label, e.g. Sealed box photo"
+        <div t-foreach="props.requirements" t-as="r" t-key="r_index" class="flex flex-col gap-3 rounded-card border border-line p-3">
+          <input t-att-class="labelClass" t-att-value="r.label" placeholder="What to capture, e.g. Sealed box photo"
             aria-label="Proof label" t-on-input="(ev) => onLabel(ev, r_index)"/>
-          <label class="flex items-center gap-1.5 whitespace-nowrap text-sm text-ink-500">
-            <input type="checkbox" t-att-checked="r.required" t-on-change="(ev) => onRequired(ev, r_index)"/>
-            Required
-          </label>
-          <button type="button" t-att-class="removeClass" aria-label="Remove" t-on-click="() => props.onRemove(r_index)">
-            <Icon name="'trash'" size="16"/>
-          </button>
+          <div class="flex flex-wrap items-center gap-2">
+            <select t-att-class="selectClass" aria-label="Proof type" t-on-change="(ev) => onType(ev, r_index)">
+              <option t-foreach="typeOptions" t-as="opt" t-key="opt.value" t-att-value="opt.value"
+                t-att-selected="opt.value === r.type" t-out="opt.label"/>
+            </select>
+            <label class="flex min-h-[44px] cursor-pointer items-center gap-2 whitespace-nowrap px-1 text-sm text-ink-700">
+              <input type="checkbox" class="h-5 w-5 accent-[#0c831f]" t-att-checked="r.required" t-on-change="(ev) => onRequired(ev, r_index)"/>
+              Required
+            </label>
+            <!-- Big, labelled and red: removing a requirement should be easy to find and hard to miss on a phone. -->
+            <button type="button" t-att-class="removeClass" t-att-aria-label="'Remove ' + (r.label or 'this proof')"
+              t-on-click="() => props.onRemove(r_index)">
+              <Icon name="'trash'" size="18"/> Remove
+            </button>
+          </div>
         </div>
       </div>
       <button type="button" t-att-class="addClass" t-on-click="props.onAdd">
@@ -48,9 +52,11 @@ export class ProofStep extends Component {
   };
 
   typeOptions = Object.entries(PROOF_TYPE_LABELS).map(([value, label]) => ({ value, label }));
-  selectClass = input(false, 'w-auto px-2 text-sm');
-  labelClass = input(false, 'min-w-[160px] flex-1');
-  removeClass = btn('ghost', 'icon');
+  selectClass = input(false, 'w-auto min-h-[44px] px-2 text-sm');
+  labelClass = input(false, 'w-full');
+  // `!` because the secondary variant's own text and border colours would
+  // otherwise win: two colour utilities resolve by stylesheet order.
+  removeClass = btn('secondary', 'default', 'ml-auto !border-dispute/40 !text-dispute hover:!border-dispute hover:!bg-dispute/5');
   addClass = btn('secondary', 'sm', 'self-start');
 
   // Arrow properties: OWL calls methods from inline template arrows without `this`.

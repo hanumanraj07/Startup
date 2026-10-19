@@ -4,6 +4,16 @@ Notable changes to OnSite. Format follows [Keep a Changelog](https://keepachange
 
 ## [Unreleased]
 
+### Added — 2026-10-19 · P5: polish
+
+- **"Other" category:** for anything the named categories don't cover. Say in a few words what kind of task it is; workers see your words in place of a category name, and can choose to receive "Other" tasks.
+- **Bigger proof delete button** when setting up proof: a clear red "Remove" button that is easy to tap.
+- **Searchable state and city** when admins add a city; picking a city fills in its location.
+
+### Checked — 2026-10-19
+
+- The task page after a worker accepts, on a phone: fits the screen, nothing hidden under the tab bar, every button responds.
+
 ### Added — 2026-10-19 · P4: verification
 
 - **Verify your identity with DigiLocker** in about a minute, instead of waiting for a document review. We keep only your name and the last four digits of your Aadhaar. Uploading documents is still available.

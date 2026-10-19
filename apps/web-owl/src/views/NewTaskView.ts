@@ -30,7 +30,7 @@ interface PaymentOrderView {
   razorpay?: { orderId: string; keyId: string | null };
 }
 
-type TextField = 'title' | 'description' | 'deadlineLocal' | 'budgetRupees' | 'itemRupees';
+type TextField = 'title' | 'description' | 'deadlineLocal' | 'budgetRupees' | 'itemRupees' | 'customCategoryLabel';
 
 interface WizardState {
   step: number;
@@ -38,6 +38,8 @@ interface WizardState {
   loaded: boolean;
   loadError: string | null;
   category: CategoryView | null;
+  /** "Other" only: what kind of task it is, in the requester's words. */
+  customCategoryLabel: string;
   /** The task location; the pickup point for pickup & delivery categories. */
   pickup: PickedLocation | null;
   /** Pickup & delivery categories only. */
@@ -85,7 +87,8 @@ export class NewTaskView extends Component {
           <div class="p-6">
             <CategoryStep t-if="state.step === 0"
               categories="state.categories" selectedId="selectedCategoryId" loading="!state.loaded"
-              onSelect="selectCategory"/>
+              onSelect="selectCategory" customLabel="state.customCategoryLabel"
+              onCustomLabel="(v) => setField('customCategoryLabel', v)"/>
             <LocationStep t-elif="state.step === 1"
               wizard="state" mode="locationMode" onPickup="setPickup" onDropoff="setDropoff"/>
             <DetailsStep t-elif="state.step === 2" wizard="state" onField="setField" onBuyItem="setBuyItem" estimate="estimate"/>
@@ -116,6 +119,7 @@ export class NewTaskView extends Component {
     loaded: false,
     loadError: null,
     category: null,
+    customCategoryLabel: '',
     pickup: null,
     dropoff: null,
     title: '',
@@ -187,6 +191,8 @@ export class NewTaskView extends Component {
     const s = this.state;
     return canAdvance(s.step, {
       hasCategory: s.category !== null,
+      isOtherCategory: s.category?.slug === 'other',
+      customCategoryLabel: s.customCategoryLabel,
       locationMode: this.locationMode,
       pickup: s.pickup,
       dropoff: s.dropoff,
@@ -325,6 +331,7 @@ export class NewTaskView extends Component {
           title: state.title,
           description: state.description,
           categorySlug: state.category.slug,
+          customCategoryLabel: state.customCategoryLabel,
           pickup,
           dropoff,
           budgetPaise,

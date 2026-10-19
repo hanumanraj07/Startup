@@ -71,7 +71,10 @@ export class ReviewStep extends Component {
     const w = this.props.wizard;
     const requirements = w.proofRequirements as ProofRequirement[];
     return [
-      { label: 'Category', value: w.category?.name ?? '' },
+      {
+        label: 'Category',
+        value: w.category?.slug === 'other' ? `Other: ${w.customCategoryLabel.trim()}` : (w.category?.name ?? ''),
+      },
       { label: 'Title', value: w.title },
       ...(w.category?.locationMode === 'PICKUP_DROPOFF'
         ? [

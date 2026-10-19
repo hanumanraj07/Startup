@@ -6,6 +6,17 @@ Newest entries at the top. Every entry states the decision, the reasoning, and w
 
 ---
 
+## 2026-10-19 — P5: an "Other" category in the requester's own words, a proof delete button you can hit, searchable state/city for admins, and the phone layout after accepting checked
+
+**Decided.**
+- **"Other" is a real category** (`other`, one place, inserted by its migration like pickup & delivery), not a free-text category field on every task. Choosing it asks "What kind of task is it?" (3–60 characters, `tasks.custom_category_label`), and that label is shown wherever the category name would be: the feed, incoming requests, the task page. The server requires the label for "Other" and refuses it on every named category, so a label can never disguise a real category. It is screened with the task text on create, edit and publish. Workers opt into "Other" like any category (onboarding lists it, last). Matching is unchanged: a worker is offered "Other" tasks only if they chose "Other".
+- **Why not "Other" with a free-text category everywhere:** categories carry location mode, default proof and matching; a label on a real category keeps all of that while letting the requester say what they mean. Admins can later promote a frequent label to a named category.
+- **Searchable dropdowns:** every long list is now a searchable combobox: state and city in the location picker (P1) and, new, the admin's "New city" form (picking a listed city fills its centre). The remaining native selects have five or six options (proof type, document type, release and report reasons, category mode), where a native select is the faster, more accessible control on a phone; they stay.
+- **Phone layout after accepting:** re-checked live at 375 px through accept → task page → tabs → chat → "On my way": no horizontal overflow, content clears the tab bar, every control responds. The P2 task-page rebuild is what fixed the reported breakage; nothing further was needed.
+- **Proof delete button:** now a full-size, labelled, red "Remove" button on its own line (it had been an icon squeezed to 4 px by a button padding bug, fixed in P3).
+
+---
+
 ## 2026-10-19 — P4: identity through DigiLocker (Cashfree Secure ID), bank and UPI accounts checked against that identity, payouts gated on both
 
 **Provider research first, as the founder asked (2026-10-19).**

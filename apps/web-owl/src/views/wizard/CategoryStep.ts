@@ -1,9 +1,10 @@
 import { Component, xml } from '@odoo/owl';
 import { Icon } from '@/components/Icon';
 import { CategoryBadge } from '@/components/CategoryBadge';
+import { TextField } from '@/components/TextField';
 import type { CategoryView } from '@/lib/api-types';
 
-/** Step 1: pick one of the launch categories. */
+/** Step 1: pick a category, or "Other" and say in your own words what kind of task it is. */
 export class CategoryStep extends Component {
   static override template = xml`
     <div t-if="props.loading" class="flex flex-col gap-3" aria-busy="true">
@@ -35,14 +36,27 @@ export class CategoryStep extends Component {
           <span class="text-xs font-medium text-ink-400" t-out="modeLabel(c)"/>
         </button>
       </div>
+      <div t-if="otherSelected" class="rounded-card border border-line bg-paper-50 p-4">
+        <TextField id="'custom-category'" label="'What kind of task is it?'" maxlength="60"
+          placeholder="'e.g. Stand in a queue, Check a notice board'"
+          hint="'A few words. Workers see this in place of a category name.'"
+          value="props.customLabel" onInput="props.onCustomLabel"/>
+      </div>
     </div>`;
-  static components = { CategoryBadge, Icon };
+  static components = { CategoryBadge, Icon, TextField };
   static override props = {
     categories: Array,
     selectedId: String,
     loading: Boolean,
     onSelect: Function,
+    /** "Other" only: the requester's own words for the kind of task. */
+    customLabel: String,
+    onCustomLabel: Function,
   };
+
+  get otherSelected(): boolean {
+    return (this.props.categories as CategoryView[]).some((c) => c.id === this.props.selectedId && c.slug === 'other');
+  }
 
   isActive(c: CategoryView): boolean {
     return c.id === this.props.selectedId;

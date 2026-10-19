@@ -20,7 +20,7 @@ If that works reliably, the concept is proven. If it does not, no additional fea
 - Task value thresholds enforced by verification level
 
 **Tasks**
-- Creation with the six launch categories only
+- Creation with the launch categories: the six inspection categories, pickup & delivery (2026-10-19), and "Other", where the requester describes the kind of task in a few words (2026-10-19, screened like the rest of the task)
 - Task location via Places autocomplete, stored separately from requester location
 - Budget with a suggested range, deadline, instructions, reference attachments
 - Proof requirements preset by category and adjustable
@@ -70,7 +70,7 @@ Each of these sounds reasonable, and each would harm the launch.
 
 | Excluded | Why |
 |---|---|
-| Any category beyond the launch seven (the six inspection categories plus pickup & delivery, added 2026-10-19) | Every category brings unfamiliar fraud and safety modes |
+| Any named category beyond the launch eight (the six inspection categories, pickup & delivery, and "Other", all added or kept 2026-10-19) | Every category brings unfamiliar fraud and safety modes. "Other" tasks are one place, screened, and reviewed like any task; a label that keeps recurring is a candidate for a named category |
 | Cash handling, or purchases outside the item budget | A worker carrying someone's ₹80,000 is a different, harder business. **Buying an item is in scope since 2026-10-19** on pickup & delivery tasks, through an item budget of up to ₹10,000 held in escrow and settled without commission. See `docs/11-payment-flow.md` |
 | Worker bidding | A negotiation round trip in a marketplace with no liquidity, and it worsens time to match |
 | Machine-learned matching | No training data exists, and a model cannot explain itself to a worker who asks why they rank low |

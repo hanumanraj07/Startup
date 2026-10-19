@@ -231,6 +231,9 @@ export const taskFieldsSchema = z.object({
     .min(30, 'Describe exactly what needs doing, and what must not be done')
     .max(5_000),
   categorySlug: z.enum(CATEGORY_SLUG),
+  // "Other" only (checked by the server): what kind of task it is, in the
+  // requester's words, e.g. "Stand in a queue".
+  customCategoryLabel: z.string().trim().min(3, 'Say what kind of task it is').max(60).optional(),
   taskLocation: coordinatesSchema,
   taskAddress: z.string().trim().min(5).max(500),
   taskPlaceName: z.string().trim().max(200).optional(),

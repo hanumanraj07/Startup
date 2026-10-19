@@ -42,6 +42,8 @@ export class CategoriesController {
       where: { isActive: true },
       orderBy: { name: 'asc' },
     });
+    // "Other" goes last, after every named category, wherever categories are picked.
+    rows.sort((a, b) => Number(a.slug === 'other') - Number(b.slug === 'other'));
 
     // An explicit projection, never the entity itself.
     return {

@@ -311,7 +311,12 @@ See `ai/memory.md`, 2026-10-18, for the decisions and the scope reversals.
 - [ ] Cashfree: merchant account with Secure ID, then set `VERIFICATION_PROVIDER=cashfree` and the client id/secret; first run against the sandbox with Cashfree's test data (the driver has only been tested with a stubbed fetch)
 - [ ] Legal: privacy notice naming the verification provider (DPDP Act), data-processing agreement
 
-**P5 — Polish** — mobile layout fix after accepting a task, larger proof delete button, "Other" category, searchable dropdowns everywhere
+**P5 — Polish ◑ BUILT AND VERIFIED LOCALLY, NOT PUSHED**
+- [x] Phone layout after accepting a task re-checked at 375 px (accept → task page → tabs → chat → On my way): no overflow, nothing under the tab bar
+- [x] Proof delete button: full-size red "Remove" with a label (and the 4 px icon bug fixed in P3)
+- [x] "Other" category: the requester says what kind of task it is; shown in place of the category name; workers opt in
+- [x] Searchable state and city in the admin's New city form (location picker already had them); short lists stay native selects
+- [ ] Production: run the migration (adds the "Other" category and its label column)
 
 **Noticed, not yet scheduled:** production API has no `trust proxy` behind Caddy, so per-IP throttles are shared by all users.
 

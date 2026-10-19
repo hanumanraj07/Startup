@@ -105,8 +105,13 @@ export const CATEGORY_SLUG = [
   'local-photography',
   'local-research',
   'pickup-delivery',
+  // Anything the others do not name; the requester describes it (2026-10-19).
+  'other',
 ] as const;
 export type CategorySlug = (typeof CATEGORY_SLUG)[number];
+
+/** The catch-all category, whose tasks carry the requester's own label. */
+export const OTHER_CATEGORY_SLUG = 'other' satisfies CategorySlug;
 
 /** One place, or a pickup and a drop-off. Set per category; decides what the task wizard asks for. */
 export const LOCATION_MODE = ['SINGLE', 'PICKUP_DROPOFF'] as const;

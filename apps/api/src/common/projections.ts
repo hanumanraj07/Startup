@@ -63,3 +63,11 @@ export function approximateAddress(address: string): string {
     .filter((p) => p && !/^\d{6}$/.test(p));
   return parts.length <= 2 ? parts.join(', ') : parts.slice(-2).join(', ');
 }
+
+/**
+ * The category as people see it: for "Other", the requester's own label
+ * ("Stand in a queue"), otherwise the category's name.
+ */
+export function categoryLabel(category: { slug: string; name: string }, customCategoryLabel: string | null): string {
+  return category.slug === 'other' && customCategoryLabel ? customCategoryLabel : category.name;
+}

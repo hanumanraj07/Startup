@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { approximateAddress } from '../../common/projections';
+import { approximateAddress, categoryLabel } from '../../common/projections';
 import { loadEnv } from '../../config/env';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MatchingQueue } from '../../queue/matching.queue';
@@ -171,6 +171,7 @@ export class OffersService {
         deadlineAt: true,
         workerPayoutPaise: true,
         itemBudgetPaise: true,
+        customCategoryLabel: true,
         category: { select: { slug: true, name: true } },
         // Public projection only, as in the feed. See docs/12-trust-safety.md.
         requester: { select: { displayName: true, verificationLevel: true } },
@@ -200,7 +201,7 @@ export class OffersService {
         taskId: task.id,
         title: task.title,
         categorySlug: task.category.slug,
-        categoryName: task.category.name,
+        categoryName: categoryLabel(task.category, task.customCategoryLabel),
         payoutPaise: Number(task.workerPayoutPaise),
         itemBudgetPaise: Number(task.itemBudgetPaise),
         distanceMeters: Math.round(o.distanceMeters),

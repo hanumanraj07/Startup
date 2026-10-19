@@ -274,6 +274,7 @@ export class AdminService {
       description: task.description,
       status: task.status,
       categoryName: task.category.name,
+      customCategoryLabel: task.customCategoryLabel,
       cityName: task.city.name,
       riskLevel: task.riskLevel,
       riskFlags: task.riskFlags,

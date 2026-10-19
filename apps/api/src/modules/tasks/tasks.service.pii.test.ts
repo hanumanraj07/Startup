@@ -50,6 +50,7 @@ function fakeTask() {
     workerPayoutPaise: 42_500n,
     itemBudgetPaise: 0n,
     itemSpentPaise: null,
+    customCategoryLabel: null,
     category: { slug: 'product-inspection', name: 'Product inspection', locationMode: 'SINGLE' },
     statusHistory: [{ toStatus: 'ASSIGNED', createdAt: new Date(), actorRole: 'WORKER', reason: null }],
     // The full requester row — every PII field a real User row carries.
@@ -118,6 +119,8 @@ describe('TasksService.getById — PII projection snapshot', () => {
         'description',
         'categorySlug',
         'categoryName',
+        // "Other" tasks: the requester's own words for the kind of task; null otherwise.
+        'customCategoryLabel',
         'status',
         'deadlineAt',
         'reviewDeadlineAt',
@@ -186,6 +189,8 @@ describe('TasksService.getById — PII projection snapshot', () => {
         'description',
         'categorySlug',
         'categoryName',
+        // "Other" tasks: the requester's own words for the kind of task; null otherwise.
+        'customCategoryLabel',
         'status',
         'deadlineAt',
         'reviewDeadlineAt',

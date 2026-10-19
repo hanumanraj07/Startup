@@ -17,6 +17,8 @@ const CATEGORY_META: Record<string, CategoryMeta> = {
   'local-research': { icon: 'search', tint: 'var(--tint-purple)', glyph: '#6230c9' },
   // The one category that moves something: the brand yellow, with the dark ink glyph.
   'pickup-delivery': { icon: 'package-check', tint: 'var(--brand-100)', glyph: 'var(--ink-900)' },
+  // The catch-all: deliberately plain, so it never competes with a named category.
+  other: { icon: 'sparkles', tint: 'var(--paper-100)', glyph: 'var(--ink-700)' },
 };
 
 const FALLBACK: CategoryMeta = { icon: 'package', tint: 'var(--paper-100)', glyph: 'var(--ink-700)' };

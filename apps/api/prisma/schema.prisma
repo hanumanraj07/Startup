@@ -518,6 +518,9 @@ model Task {
   title       String
   description String
   status      TaskStatus @default(DRAFT)
+  /// The "Other" category only: what kind of task it is, in the requester's
+  /// words. Shown in place of the category name; screened like the title.
+  customCategoryLabel String? @map("custom_category_label")
 
   // WHERE THE WORK HAPPENS. The matching input. GIST indexed.
   taskLat       Float   @map("task_lat")

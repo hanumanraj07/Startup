@@ -87,6 +87,9 @@ export function isLocationReady(location: PickedLocation | null): boolean {
 
 export interface WizardInput {
   hasCategory: boolean;
+  /** "Other" needs the requester's own words for the kind of task. */
+  isOtherCategory: boolean;
+  customCategoryLabel: string;
   /** From the chosen category: one place, or a pickup and a drop-off. */
   locationMode: LocationMode;
   /** The task location; for pickup & delivery, the pickup point. */
@@ -106,7 +109,7 @@ export interface WizardInput {
 export function canAdvance(step: number, input: WizardInput): boolean {
   switch (step) {
     case 0:
-      return input.hasCategory;
+      return input.hasCategory && (!input.isOtherCategory || input.customCategoryLabel.trim().length >= 3);
     case 1:
       return isLocationReady(input.pickup) && (input.locationMode === 'SINGLE' || isLocationReady(input.dropoff));
     case 2:
@@ -136,6 +139,8 @@ export interface DraftPayloadInput {
   title: string;
   description: string;
   categorySlug: string;
+  /** Sent for "Other" only. */
+  customCategoryLabel?: string;
   pickup: PickedLocation;
   /** Sent only for pickup & delivery categories. */
   dropoff: PickedLocation | null;
@@ -152,6 +157,9 @@ export function buildDraftPayload(input: DraftPayloadInput) {
     title: input.title.trim(),
     description: input.description.trim(),
     categorySlug: input.categorySlug,
+    ...(input.categorySlug === 'other' && input.customCategoryLabel?.trim()
+      ? { customCategoryLabel: input.customCategoryLabel.trim() }
+      : {}),
     taskLocation: { latitude: input.pickup.latitude, longitude: input.pickup.longitude },
     taskAddress: composeAddress(input.pickup),
     ...(input.dropoff && {
