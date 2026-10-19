@@ -79,7 +79,7 @@ REST over HTTPS. JSON. Base path `/api/v1`.
 
 | Method | Path | Auth | Notes |
 |---|---|---|---|
-| POST | `/tasks` | user | Creates a **draft**. Server computes commission and payout. Client-supplied fee values are ignored. Prohibited screening and risk scoring run here. `budgetPaise` is the task payment the requester chose (₹100–₹50,000); `itemBudgetPaise` (pickup & delivery only, up to ₹10,000) adds an item to buy, and a receipt-photo requirement |
+| POST | `/tasks` | user | Creates a **draft**. Server computes commission and payout. Client-supplied fee values are ignored. Prohibited screening and risk scoring run here. `budgetPaise` is the task payment the requester chose (₹100–₹50,000); `itemBudgetPaise` (pickup & delivery only, up to ₹10,000) adds an item to buy; nothing is spent until the requester approves a bill (see Item bills) |
 | GET | `/tasks/mine` | requester | Own tasks |
 | GET | `/tasks/:id` | party | Projection differs by role. See below |
 | PATCH | `/tasks/:id` | requester | Draft only |
@@ -93,7 +93,7 @@ REST over HTTPS. JSON. Base path `/api/v1`.
 |---|---|---|---|
 | Title, description, category, deadline | yes | yes | yes |
 | Task location, exact | yes | yes | approximate only |
-| Money | what they pay: task payment, item budget, total, item cost and refund (never commission or payout) | their earnings (`payoutPaise`) and the item budget apart (never the task payment or commission) | earnings and item budget |
+| Money | what they pay: task payment, item budget, any top-up, total, approved item cost and refund (never commission or payout); the item `handover` code once a bill is approved | their earnings (`payoutPaise`) and the item apart: budget with top-ups, approved bill, cash cap, whether shops can be paid by UPI (never the task payment, commission or handover code) | earnings and item budget |
 | Requester identity | own | display name, rating, level | display name, rating |
 | Requester email, phone, home address, `requester_geog` | never in any response | never | never |
 | Worker identity | display name, rating, level, history | own | not present |
@@ -122,8 +122,20 @@ Unassigned tasks show an approximate location to workers, not the exact address.
 | POST | `/tasks/:id/proofs` | assigned worker | Records metadata after upload. Server computes distance and sets verification flags |
 | GET | `/tasks/:id/proofs` | party | Presigned GET URLs, short-lived. Never permanent public links |
 | DELETE | `/tasks/:id/proofs/:proofId` | assigned worker | Before submission only |
-| POST | `/tasks/:id/submit` | assigned worker | **Validates every required proof is present.** Sets `review_deadline_at = now() + 24h`. With an item budget, `itemSpentPaise` (the receipt total) is required and may not exceed the budget |
+| POST | `/tasks/:id/submit` | assigned worker | **Validates every required proof is present.** Sets `review_deadline_at = now() + 24h`. With an approved item bill, `handoverCode` (the requester's 4 digits) is required; five wrong codes lock it. Refused while a bill awaits an answer. The worker never states an item cost |
 | POST | `/tasks/:id/blocker` | assigned worker | Report an inability to complete, with evidence |
+
+### Item bills (P6, docs/11-payment-flow.md)
+
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| GET | `/tasks/:id/purchases` | party | The task's bills, newest first, with a short-lived photo link. The worker sees only their own. Completes an approval whose top-up the gateway has since captured |
+| POST | `/tasks/:id/purchases` | assigned worker | Sends a bill: `amountPaise`, `description`, `billStorageKey` (from `/proofs/presign`), `method` `SHOP_UPI` (with `merchantVpa`) or `WORKER_CASH` (within the level cap). Only at the pickup (`ARRIVED`/`IN_PROGRESS`); one open bill at a time. Server computes any top-up |
+| POST | `/tasks/:id/purchases/:pid/withdraw` | assigned worker | Withdraws an unanswered bill |
+| POST | `/tasks/:id/purchases/:pid/retry-payment` | assigned worker | Retries a failed shop payment |
+| POST | `/tasks/:id/purchases/:pid/pay-cash` | assigned worker | After a failed shop payment, the worker pays cash instead, within their cap; the amount is unchanged |
+| POST | `/tasks/:id/purchases/:pid/approve` | requester | Approves the exact amount. With a top-up, returns a gateway order for checkout (Razorpay), or captures at once (mock); approval completes on capture. A `SHOP_UPI` bill is then paid to the shop |
+| POST | `/tasks/:id/purchases/:pid/reject` | requester | Optional `reason` |
 | GET | `/tasks/:id/live-location` | party | The worker's latest shared position while sharing is on (`WORKER_EN_ROUTE`, and `IN_PROGRESS` for pickup & delivery), else null. Server-measured distance to the current destination |
 
 ## Review

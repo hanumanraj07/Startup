@@ -6,7 +6,9 @@ import {
   calculateDisputeSplit,
   calculateItemSettlement,
   calculateSplit,
+  cashPurchaseCapPaise,
   formatPaise,
+  itemTopUpNeeded,
   MoneyError,
   paiseToRupees,
   requesterTotal,
@@ -234,5 +236,20 @@ describe("buying an item — the founder's example", () => {
 
   it('refuses a reported cost above the budget', () => {
     expect(() => calculateItemSettlement(100_000, 100_001)).toThrow(MoneyError);
+  });
+});
+
+describe('item bill approval (P6)', () => {
+  it('needs a top-up only for the part of the bill above what is left', () => {
+    expect(itemTopUpNeeded(100_000, 90_000)).toBe(0);
+    expect(itemTopUpNeeded(100_000, 100_000)).toBe(0);
+    expect(itemTopUpNeeded(100_000, 125_050)).toBe(25_050);
+  });
+
+  it('caps cash purchases by verification level', () => {
+    expect(cashPurchaseCapPaise(1)).toBe(200_000);
+    expect(cashPurchaseCapPaise(2)).toBe(200_000);
+    expect(cashPurchaseCapPaise(3)).toBe(500_000);
+    expect(cashPurchaseCapPaise(5)).toBe(1_000_000);
   });
 });

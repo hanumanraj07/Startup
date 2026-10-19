@@ -78,6 +78,21 @@ export function renderNotification(payload: NotificationPayload): RenderedNotifi
         title: 'Payout did not go through',
         body: `${formatPaise(payload.payoutPaise)} for "${payload.taskTitle}" could not be sent: ${payload.reason}`,
       };
+    case 'ITEM_BILL_SENT':
+      return {
+        title: 'Approve the bill',
+        body: `Your worker sent a ${formatPaise(payload.amountPaise)} bill for "${payload.taskTitle}". Nothing is paid until you approve it, within ${payload.minutes} minutes.`,
+      };
+    case 'ITEM_BILL_DECIDED':
+      return payload.approved
+        ? {
+            title: 'Bill approved',
+            body: `The ${formatPaise(payload.amountPaise)} bill for "${payload.taskTitle}" was approved. Collect the item.`,
+          }
+        : {
+            title: 'Bill not approved',
+            body: `The ${formatPaise(payload.amountPaise)} bill for "${payload.taskTitle}" was not approved. Do not buy it; check the chat.`,
+          };
     case 'TASK_EXPIRED_REFUNDED':
       return {
         title: 'Task expired, refunded',

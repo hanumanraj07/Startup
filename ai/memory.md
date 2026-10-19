@@ -6,6 +6,26 @@ Newest entries at the top. Every entry states the decision, the reasoning, and w
 
 ---
 
+## 2026-10-20 — P6: item purchases are approved before anything is paid; the platform pays the shop, the worker fronts nothing by default
+
+**The founder questioned P3's item money**, and rightly. P3 had the worker pay at the shop with their own money (up to ₹10,000), type in the cost with a receipt photo, and be reimbursed on approval, 24 hours or more later. Problems: the worker carried the risk (a full-refund dispute left them out of pocket); the cost was whatever they typed, against an easily edited photo; a colluding requester and worker could move ₹10,000 between themselves with a fake receipt, which is the unexplained money movement trust & safety bans; a price change or substitute had no path; and the reimbursement sat inside the worker's payout, so it looked like income.
+
+**Decision (founder chose "build it as P6"):**
+- **Bill first.** At the shop the worker sends a bill (`item_purchases`): photo, amount, what it is, payment method. The requester approves the exact amount within 10 minutes (`ITEM_BILL_APPROVAL_MINUTES`) or rejects it; unanswered, the worker may withdraw and walk away. Above the budget, approval comes with a **top-up** the requester pays then (its own gateway order into the same escrow).
+- **The platform pays the shop's UPI ID** from escrow (`SHOP_UPI`, default), through the payout driver, so item money goes to a shop, not a person. The worker's own UPI ID is refused. Cash (`WORKER_CASH`) only when the shop takes nothing else, capped by level (₹2,000 / ₹5,000 at level 3 / ₹10,000 from level 4, `cashPurchaseCapPaise`).
+- **Handover code.** Approval gives the requester a 4-digit code, never in the worker's view; the worker enters it to submit. Five wrong codes lock it. A cash bill is repaid **at the handover**, as its own `ITEM_REIMBURSEMENT` payout, not on approval.
+- **Accounting.** New ledger accounts `ITEM_PASS_THROUGH` (item money that left for goods) and `ITEM_REIMBURSABLE` (cash owed back to a worker). Release refunds whatever item money escrow still holds, read from the escrow balance, never a reported cost. A task may now have two payouts (`payouts.task_id` is no longer unique; `kind` EARNINGS | ITEM_REIMBURSEMENT); only the earnings payout moves a task to PAYMENT_RELEASED. The P3 receipt proof requirement is gone (stripped on write, ignored on submit for old tasks).
+- **Disputes.** After approval and handover the item cost cannot be clawed back. Release or split repays an approved, unhanded cash bill to the worker first; a full refund returns everything escrow still holds, including that bill. A bill already paid to a shop is outside the ledger's reach; recovering it is an admin call.
+- **Leaving** is refused once a bill is approved (Report an issue instead); an unanswered bill is cancelled when a worker leaves or is removed; a pending bill blocks submission.
+
+**Rejected:** a virtual card for the worker (needs an issuing partner and KYC we do not have); letting the worker raise the amount without the requester (the whole point is the requester agrees the exact figure); keeping P3 with only a lower cap (limits the damage but keeps every structural problem).
+
+**Known gaps:** a "shop" UPI ID could still be a colluder's personal VPA; a merchant-name check through the payout partner's VPA validation would close most of it once a real partner is connected. `SHOP_UPI` needs `PAYOUT_PROVIDER` other than `none`, so production offers cash only until a payout partner (e.g. RazorpayX) is live. GST/TCS/TDS on item pass-through still needs a chartered accountant.
+
+**Verified locally end to end** (mobile width): ₹1,250 UPI bill on a ₹1,000 budget, ₹250 top-up, shop paid, wrong then right handover code, approval: commission ₹30, earnings ₹170, ₹1,250 to the shop, ledger sum 0. ₹800 cash bill: ₹2,500 refused over the cap, repaid ₹800 at the handover, ₹200 refunded on approval. Approved cash bill disputed without a handover, split 50%: worker repaid ₹500 plus ₹100, requester refunded ₹600, ledger sum 0.
+
+---
+
 ## 2026-10-19 — P5: an "Other" category in the requester's own words, a proof delete button you can hit, searchable state/city for admins, and the phone layout after accepting checked
 
 **Decided.**

@@ -295,7 +295,7 @@ See `ai/memory.md`, 2026-10-18, for the decisions and the scope reversals.
 
 **P3 — Payments ◑ BUILT AND VERIFIED LOCALLY, NOT PUSHED**
 - [x] Requester sets the task payment (no category ranges; floor ₹100)
-- [x] Item budget on pickup & delivery tasks: escrowed with the task payment, receipt required, worker reports the cost, reimbursed without commission, unspent part refunded
+- [x] Item budget on pickup & delivery tasks: escrowed with the task payment, settled without commission, unspent part refunded (the receipt-and-reported-cost flow was replaced by bill approval in P6)
 - [x] Commission hidden from requesters and workers (API projections and every screen); admins still see it
 - [x] Payout accounts (bank or UPI): add with checks, choose where payouts go, remove
 - [x] Payouts sent on release, retried with backoff, swept; "Pay out" button; history with failure reasons and references; earnings shown apart from item reimbursements
@@ -317,6 +317,15 @@ See `ai/memory.md`, 2026-10-18, for the decisions and the scope reversals.
 - [x] "Other" category: the requester says what kind of task it is; shown in place of the category name; workers opt in
 - [x] Searchable state and city in the admin's New city form (location picker already had them); short lists stay native selects
 - [ ] Production: run the migration (adds the "Other" category and its label column)
+
+**P6 — Item purchases, rebuilt ◑ BUILT AND VERIFIED LOCALLY, NOT PUSHED**
+- [x] Bill approval: the worker sends the bill from the shop, the requester approves the exact amount (10-minute window) or rejects it; top-up when above the budget
+- [x] Platform pays the shop UPI ID from escrow; worker cash only where the shop takes nothing else, capped by level, repaid at the handover
+- [x] Handover code for the requester; required to submit with an approved bill; locks after 5 wrong codes
+- [x] Ledger ITEM_PASS_THROUGH / ITEM_REIMBURSABLE; release refunds the escrow balance; reimbursement payouts apart from earnings; dispute rules for approved bills
+- [ ] Production: run the migration `20261020090000_item_bill_approval`. Shop UPI payments need a payout partner; until then production offers cash bills only
+- [ ] Payout partner: VPA name validation for shop UPI IDs (closes the colluder-VPA gap)
+- [ ] Accountant: GST/TCS/TDS on item pass-through
 
 **Noticed, not yet scheduled:** production API has no `trust proxy` behind Caddy, so per-IP throttles are shared by all users.
 

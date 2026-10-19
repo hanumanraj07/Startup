@@ -16,7 +16,8 @@ const money = (paise: number) => formatPaise(paise, { forceDecimals: true });
  * What a requester pays, and nothing about how it divides: the platform's
  * commission and the worker's net earnings are never shown to either side
  * (founder decision 2026-10-19). With an item, the item budget is its own line,
- * and once the worker reports what it cost, so are the cost and the refund.
+ * as is any top-up, and once the requester approves the bill, so are the
+ * approved cost and the refund.
  * docs/19-ui-design-system.md: money screens are calm and explicit, with
  * tabular numerals so the figures align.
  */
@@ -47,14 +48,17 @@ export class MoneyBreakdown extends Component {
       rows.push({
         label: 'Item budget',
         value: money(m.itemBudgetPaise),
-        hint: 'The most the worker may spend. Unspent money comes back to you.',
+        hint: 'Nothing is spent until you approve the bill from the shop. Unspent money comes back to you.',
       });
+    }
+    if (m.itemTopUpPaise > 0) {
+      rows.push({ label: 'Top-up for the bill', value: money(m.itemTopUpPaise), hint: 'Paid when you approved a bill above the budget' });
     }
     rows.push({ label: this.props.paid ? 'You paid' : 'Total to pay', value: money(m.totalPaise), total: true });
     if (m.itemSpentPaise !== null) {
-      rows.push({ label: 'Item cost, from the receipt', value: money(m.itemSpentPaise), muted: true });
+      rows.push({ label: 'Item cost, the bill you approved', value: money(m.itemSpentPaise), muted: true });
       if ((m.itemRefundPaise ?? 0) > 0) {
-        rows.push({ label: 'Unspent item budget, back to you', value: money(m.itemRefundPaise ?? 0), muted: true });
+        rows.push({ label: 'Unspent item money, back to you', value: money(m.itemRefundPaise ?? 0), muted: true });
       }
     }
     return rows;
@@ -67,8 +71,9 @@ export class MoneyBreakdown extends Component {
 }
 
 /**
- * What a worker gets: their earnings, and an item budget shown apart from
- * them, because it is money they spend at the shop and get back, not income.
+ * What a worker gets: their earnings, and the item shown apart from them,
+ * because item money goes to the shop (or back to them for cash they paid),
+ * never into income.
  */
 export class WorkerEarnings extends Component {
   static override template = xml`
@@ -82,12 +87,12 @@ export class WorkerEarnings extends Component {
         <div class="flex items-start justify-between gap-4 text-[15px]">
           <div class="min-w-0">
             <span class="text-ink-900">Item budget</span>
-            <p class="text-xs text-ink-400">You pay at the shop, keep the receipt, and get it back with your earnings. Never spend more than this.</p>
+            <p class="text-xs text-ink-400">Send the bill from the shop; pay nothing until the requester approves it. Not part of your earnings.</p>
           </div>
           <span class="tabular shrink-0 font-semibold text-ink-900" t-out="itemBudget"/>
         </div>
         <div t-if="props.item.spentPaise !== null" class="flex items-center justify-between gap-4 text-[15px]">
-          <span class="text-ink-500">Item cost you reported</span>
+          <span class="text-ink-500">Approved bill</span>
           <span class="tabular shrink-0 text-ink-500" t-out="itemSpent"/>
         </div>
       </t>

@@ -118,13 +118,12 @@ export class LedgerService {
    *   TCS_PAYABLE         +tcs          (only written if nonzero)
    *   TDS_PAYABLE         +tds          (only written if nonzero)
    *   WORKER_PAYABLE      +workerPayout
-   *   WORKER_PAYABLE      +itemReimburse (only if nonzero: an item bought for the requester)
-   *   REFUND              +itemRefund    (only if nonzero: the unspent item budget)
+   *   REFUND              +itemRefund   (only if nonzero: unspent item money)
    *
-   * `budgetPaise` here is everything held, task payment plus item budget.
-   * Commission was calculated on the task payment alone; the item money only
-   * passes through, so the group balances exactly when the item settlement
-   * reconstructs the item budget (packages/money calculateItemSettlement).
+   * `budgetPaise` is the task payment only. Commission is calculated on it
+   * alone. Item money the requester approved has already left escrow by now
+   * (recordItemSpend), so `itemRefundPaise` is whatever item money is still
+   * held: the caller reads it from escrowBalance, never from a reported cost.
    *
    * This credits WORKER_PAYABLE; it does not transfer money to a bank
    * account or UPI handle. That transfer, and the payout job that performs
@@ -140,7 +139,6 @@ export class LedgerService {
     tcsPaise: number;
     tdsPaise: number;
     workerPayoutPaise: number;
-    itemReimbursePaise?: number;
     itemRefundPaise?: number;
   }, tx?: Prisma.TransactionClient): Promise<void> {
     const entries: Parameters<LedgerService['writeEntries']>[0] = [
@@ -149,7 +147,7 @@ export class LedgerService {
         paymentId: params.paymentId,
         account: 'ESCROW',
         entryType: 'RELEASE',
-        amountPaise: -params.budgetPaise,
+        amountPaise: -(params.budgetPaise + (params.itemRefundPaise ?? 0)),
         description: 'Escrow released on task approval',
       },
       {
@@ -200,26 +198,16 @@ export class LedgerService {
         description: 'Tax deducted at source',
       });
     }
-    this.pushItemEntries(entries, params);
+    this.pushItemRefund(entries, params);
 
     await this.writeEntries(entries, tx);
   }
 
-  /** The item reimbursement and unspent-budget refund, each written only when nonzero. */
-  private pushItemEntries(
+  /** Unspent item money going back to the requester, written only when nonzero. */
+  private pushItemRefund(
     entries: Parameters<LedgerService['writeEntries']>[0],
-    params: { taskId: string; paymentId: string; itemReimbursePaise?: number; itemRefundPaise?: number },
+    params: { taskId: string; paymentId: string; itemRefundPaise?: number },
   ): void {
-    if (params.itemReimbursePaise) {
-      entries.push({
-        taskId: params.taskId,
-        paymentId: params.paymentId,
-        account: 'WORKER_PAYABLE',
-        entryType: 'RELEASE',
-        amountPaise: params.itemReimbursePaise,
-        description: 'Item cost reimbursed to the worker, no commission',
-      });
-    }
     if (params.itemRefundPaise) {
       entries.push({
         taskId: params.taskId,
@@ -227,39 +215,135 @@ export class LedgerService {
         account: 'REFUND',
         entryType: 'REFUND',
         amountPaise: params.itemRefundPaise,
-        description: 'Unspent item budget refunded to requester',
+        description: 'Unspent item money refunded to requester',
       });
     }
   }
 
   /**
-   * Payout processed: what the worker was owed leaves the platform for their
-   * bank account or UPI handle.
-   *
-   *   WORKER_PAYABLE  -amount
-   *   WORKER_SETTLED  +amount
+   * What escrow still holds for a task: everything captured (the payment and
+   * any item top-ups) less everything released, refunded or spent on the item.
    */
-  async recordPayout(
-    params: { taskId: string; payoutId: string; amountPaise: number },
+  async escrowBalance(taskId: string, tx?: Prisma.TransactionClient): Promise<number> {
+    const client = tx ?? this.prisma;
+    const result = await client.ledgerEntry.aggregate({
+      where: { taskId, account: 'ESCROW' },
+      _sum: { amountPaise: true },
+    });
+    return Number(result._sum.amountPaise ?? 0);
+  }
+
+  /**
+   * An item top-up captured: the requester approved a bill above what was
+   * left of the item budget and paid the difference, held like the rest.
+   *
+   *   REQUESTER_FUNDS  -topUp
+   *   ESCROW           +topUp
+   */
+  async recordTopUpCapture(
+    params: { taskId: string; amountPaise: number },
     tx?: Prisma.TransactionClient,
   ): Promise<void> {
     await this.writeEntries(
       [
         {
           taskId: params.taskId,
+          account: 'REQUESTER_FUNDS',
+          entryType: 'CAPTURE',
+          amountPaise: -params.amountPaise,
+          description: 'Requester top-up captured for an approved item bill',
+        },
+        {
+          taskId: params.taskId,
+          account: 'ESCROW',
+          entryType: 'CAPTURE',
+          amountPaise: params.amountPaise,
+          description: 'Item top-up held in escrow',
+        },
+      ],
+      tx,
+    );
+  }
+
+  /**
+   * The approved item money leaves escrow. Never commissioned, never income.
+   *
+   *   SHOP  (the platform paid the shop's UPI ID):
+   *     ESCROW             -amount
+   *     ITEM_PASS_THROUGH  +amount
+   *   CASH  (the worker paid cash; the handover code was entered):
+   *     ESCROW             -amount
+   *     ITEM_REIMBURSABLE  +amount   (cleared by the reimbursement payout)
+   */
+  async recordItemSpend(
+    params: { taskId: string; amountPaise: number; route: 'SHOP' | 'CASH' },
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    await this.writeEntries(
+      [
+        {
+          taskId: params.taskId,
+          account: 'ESCROW',
+          entryType: 'RELEASE',
+          amountPaise: -params.amountPaise,
+          description: 'Approved item bill paid out of escrow',
+        },
+        params.route === 'SHOP'
+          ? {
+              taskId: params.taskId,
+              account: 'ITEM_PASS_THROUGH',
+              entryType: 'PAYOUT',
+              amountPaise: params.amountPaise,
+              description: 'Paid to the shop for the item',
+            }
+          : {
+              taskId: params.taskId,
+              account: 'ITEM_REIMBURSABLE',
+              entryType: 'RELEASE',
+              amountPaise: params.amountPaise,
+              description: 'Cash the worker paid for the item, owed back to them',
+            },
+      ],
+      tx,
+    );
+  }
+
+  /**
+   * Payout processed: what the worker was owed leaves the platform for their
+   * bank account or UPI handle.
+   *
+   *   EARNINGS:
+   *     WORKER_PAYABLE     -amount
+   *     WORKER_SETTLED     +amount
+   *   ITEM_REIMBURSEMENT (repaying cash the worker paid at the shop):
+   *     ITEM_REIMBURSABLE  -amount
+   *     ITEM_PASS_THROUGH  +amount
+   *
+   * An EARNINGS payout from before P6 may include a P3 reimbursement; that was
+   * credited to WORKER_PAYABLE then, so it is settled from there, whole.
+   */
+  async recordPayout(
+    params: { taskId: string; payoutId: string; amountPaise: number; kind?: 'EARNINGS' | 'ITEM_REIMBURSEMENT' },
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    const item = params.kind === 'ITEM_REIMBURSEMENT';
+    await this.writeEntries(
+      [
+        {
+          taskId: params.taskId,
           payoutId: params.payoutId,
-          account: 'WORKER_PAYABLE',
+          account: item ? 'ITEM_REIMBURSABLE' : 'WORKER_PAYABLE',
           entryType: 'PAYOUT',
           amountPaise: -params.amountPaise,
-          description: 'Paid out to the worker',
+          description: item ? 'Item cash repaid to the worker' : 'Paid out to the worker',
         },
         {
           taskId: params.taskId,
           payoutId: params.payoutId,
-          account: 'WORKER_SETTLED',
+          account: item ? 'ITEM_PASS_THROUGH' : 'WORKER_SETTLED',
           entryType: 'PAYOUT',
           amountPaise: params.amountPaise,
-          description: 'Settled to the worker payout account',
+          description: item ? 'Item money settled to the worker who paid the shop' : 'Settled to the worker payout account',
         },
       ],
       tx,
@@ -277,22 +361,20 @@ export class LedgerService {
    *   ESCROW           -(everything held)
    *   WORKER_PAYABLE   +workerPaise   (only written if nonzero)
    *   REFUND           +refundPaise   (only written if nonzero)
-   *   WORKER_PAYABLE   +itemReimburse (only if nonzero)
    *   REFUND           +itemRefund    (only if nonzero)
    *
-   * With an item, the percentage divides the task payment only; the item the
-   * worker bought is reimbursed in full and its unspent budget refunded.
+   * With an item, the percentage divides the task payment only. An approved
+   * bill has already left escrow (recordItemSpend) and is not divided; any
+   * item money still held is refunded.
    */
   async recordDisputeSplit(params: {
     taskId: string;
     paymentId: string;
     workerPaise: number;
     refundPaise: number;
-    itemReimbursePaise?: number;
     itemRefundPaise?: number;
   }): Promise<void> {
-    const total =
-      params.workerPaise + params.refundPaise + (params.itemReimbursePaise ?? 0) + (params.itemRefundPaise ?? 0);
+    const total = params.workerPaise + params.refundPaise + (params.itemRefundPaise ?? 0);
     const entries: Parameters<LedgerService['writeEntries']>[0] = [];
 
     if (total > 0) {
@@ -325,7 +407,7 @@ export class LedgerService {
         description: 'Requester refund share of a split dispute resolution',
       });
     }
-    this.pushItemEntries(entries, params);
+    this.pushItemRefund(entries, params);
 
     await this.writeEntries(entries);
   }

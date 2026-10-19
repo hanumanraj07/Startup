@@ -14,12 +14,14 @@ export class PayoutTransferError extends Error {}
 
 interface PayoutDriver {
   transfer(params: { payoutId: string; amountPaise: number; account: PayoutAccount }): Promise<{ reference: string }>;
+  /** Pays a shop's UPI ID directly, for an item bill the requester approved. */
+  payVpa(params: { reference: string; amountPaise: number; vpa: string }): Promise<{ reference: string }>;
 }
 
 /**
  * Settles instantly, for development and tests. An account number ending
- * 0000 is declined, so the failure and retry path can be exercised the same
- * way a gateway's test mode does.
+ * 0000, or a UPI ID containing "fail", is declined, so the failure and retry
+ * paths can be exercised the same way a gateway's test mode does.
  */
 const mockDriver: PayoutDriver = {
   async transfer({ payoutId, account }) {
@@ -27,6 +29,12 @@ const mockDriver: PayoutDriver = {
       throw new PayoutTransferError('The bank declined the transfer. Check the account number and IFSC.');
     }
     return { reference: `MOCK${payoutId.replace(/-/g, '').slice(-12).toUpperCase()}` };
+  },
+  async payVpa({ reference, vpa }) {
+    if (vpa.toLowerCase().includes('fail')) {
+      throw new PayoutTransferError('The shop’s UPI ID did not accept the payment. Check it with the shop.');
+    }
+    return { reference: `MOCKUPI${reference.replace(/-/g, '').slice(-10).toUpperCase()}` };
   },
 };
 
@@ -82,7 +90,7 @@ export class PayoutsService {
    * payout's idempotency key is unique, so a second call returns the first
    * row rather than owing the worker twice.
    */
-  async recordOwed(params: { taskId: string; workerId: string; earningsPaise: number; reimbursementPaise: number }) {
+  async recordOwed(params: { taskId: string; workerId: string; earningsPaise: number }) {
     const idempotencyKey = `payout:${params.taskId}`;
     const existing = await this.prisma.payout.findUnique({ where: { idempotencyKey } });
     if (existing) return existing;
@@ -90,12 +98,52 @@ export class PayoutsService {
       data: {
         taskId: params.taskId,
         workerId: params.workerId,
-        amountPaise: params.earningsPaise + params.reimbursementPaise,
-        reimbursementPaise: params.reimbursementPaise,
+        kind: 'EARNINGS',
+        amountPaise: params.earningsPaise,
         status: 'PENDING',
         idempotencyKey,
       },
     });
+  }
+
+  /**
+   * Records the cash a worker paid at a shop as owed back to them, apart from
+   * their earnings and sent straight away rather than on approval: the
+   * requester's handover code has already confirmed the item. Idempotent on
+   * the bill.
+   */
+  async recordReimbursement(params: { taskId: string; workerId: string; purchaseId: string; amountPaise: number }) {
+    const idempotencyKey = `reimburse:${params.purchaseId}`;
+    const existing = await this.prisma.payout.findUnique({ where: { idempotencyKey } });
+    if (existing) return existing;
+    return this.prisma.payout.create({
+      data: {
+        taskId: params.taskId,
+        workerId: params.workerId,
+        kind: 'ITEM_REIMBURSEMENT',
+        amountPaise: params.amountPaise,
+        reimbursementPaise: params.amountPaise,
+        status: 'PENDING',
+        idempotencyKey,
+      },
+    });
+  }
+
+  /** Whether the platform can pay a shop's UPI ID at all (a payout partner is switched on). */
+  canPayShops(): boolean {
+    return payoutProvider() !== 'none';
+  }
+
+  /**
+   * Pays a shop's UPI ID for an approved bill. Throws PayoutTransferError
+   * with words the worker can act on when the transfer is refused. The
+   * caller owns the claim and the ledger entry.
+   */
+  async payShop(params: { purchaseId: string; amountPaise: number; vpa: string }): Promise<{ reference: string }> {
+    if (!this.canPayShops()) {
+      throw new PayoutTransferError('Paying shops directly is not switched on yet. Pay cash instead, if the shop allows it.');
+    }
+    return mockDriver.payVpa({ reference: params.purchaseId, amountPaise: params.amountPaise, vpa: params.vpa });
   }
 
   /** Best-effort: sends everything a worker is owed now. Never throws; the sweeper is the guarantee. */
@@ -171,13 +219,19 @@ export class PayoutsService {
       return { acted: true };
     }
 
-    const markPaid = checkTransition(payout.task.status, 'PAYMENT_RELEASED', 'SYSTEM').allowed;
+    // Only the earnings payout finishes the task; an item reimbursement is
+    // sent at the handover, before the requester has even reviewed it.
+    const markPaid =
+      payout.kind === 'EARNINGS' && checkTransition(payout.task.status, 'PAYMENT_RELEASED', 'SYSTEM').allowed;
     await this.prisma.$transaction(async (tx) => {
       await tx.payout.update({
         where: { id: payout.id },
         data: { status: 'PROCESSED', processedAt: new Date(), gatewayTransferId: reference },
       });
-      await this.ledger.recordPayout({ taskId: payout.taskId, payoutId: payout.id, amountPaise }, tx);
+      await this.ledger.recordPayout(
+        { taskId: payout.taskId, payoutId: payout.id, amountPaise, kind: payout.kind },
+        tx,
+      );
       // COMPLETED → PAYMENT_RELEASED is the state machine's last step: the
       // money has actually reached the worker, not just been approved.
       if (markPaid) {

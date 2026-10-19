@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { calculateItemSettlement, requesterTotal } from '@onsite/money';
+import { requesterTotal } from '@onsite/money';
 import { decodeCursor, encodeCursor } from '@onsite/utils';
 import { BusinessRuleError, ForbiddenError, NotFoundError } from '../../common/errors';
 import { loadEnv } from '../../config/env';
@@ -183,6 +183,13 @@ export class PaymentsService {
   private async captureFromWebhook(entity: RazorpayPaymentEntity): Promise<void> {
     const payment = await this.prisma.payment.findFirst({ where: { gatewayOrderId: entity.order_id } });
     if (!payment) {
+      // Not a task's own payment: it may be an item top-up the requester
+      // paid to approve a bill above the budget.
+      const purchase = await this.prisma.itemPurchase.findUnique({ where: { topUpGatewayOrderId: entity.order_id } });
+      if (purchase) {
+        await this.captureTopUp(purchase.id);
+        return;
+      }
       this.logger.warn(`payment.captured for unknown order ${entity.order_id} (payment ${entity.id}).`);
       return;
     }
@@ -250,6 +257,60 @@ export class PaymentsService {
     };
   }
 
+  /**
+   * Starts the top-up for a bill above what is left of the item budget. The
+   * mock provider captures at once; Razorpay returns an order for checkout,
+   * and the top-up is captured only by its signed webhook (captureTopUp).
+   * Idempotent: a bill has at most one top-up order.
+   */
+  async startTopUp(purchaseId: string): Promise<{ captured: boolean; razorpay?: { orderId: string; keyId: string | null } }> {
+    const env = loadEnv();
+    const purchase = await this.prisma.itemPurchase.findUniqueOrThrow({ where: { id: purchaseId } });
+    const amountPaise = Number(purchase.topUpPaise);
+    if (amountPaise <= 0) return { captured: true };
+    if (purchase.topUpCapturedAt) return { captured: true };
+
+    if (env.PAYMENT_PROVIDER === 'razorpay') {
+      let orderId = purchase.topUpGatewayOrderId;
+      if (!orderId) {
+        // Razorpay caps receipts at 40 characters.
+        const order = await this.razorpay.createOrder({ amountPaise, receipt: `tu-${purchase.id}` });
+        const claimed = await this.prisma.itemPurchase.updateMany({
+          where: { id: purchase.id, topUpGatewayOrderId: null },
+          data: { topUpGateway: 'RAZORPAY', topUpGatewayOrderId: order.id },
+        });
+        orderId = claimed.count > 0
+          ? order.id
+          : (await this.prisma.itemPurchase.findUniqueOrThrow({ where: { id: purchase.id } })).topUpGatewayOrderId;
+      }
+      return { captured: false, razorpay: { orderId: orderId ?? '', keyId: env.RAZORPAY_KEY_ID ?? null } };
+    }
+
+    await this.prisma.itemPurchase.update({ where: { id: purchase.id }, data: { topUpGateway: 'MOCK' } });
+    await this.captureTopUp(purchase.id);
+    return { captured: true };
+  }
+
+  /**
+   * A top-up's money is held: escrow grows by it and so does the task's item
+   * top-up. The conditional update makes a replayed webhook a no-op.
+   */
+  async captureTopUp(purchaseId: string): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.itemPurchase.updateMany({
+        where: { id: purchaseId, topUpCapturedAt: null },
+        data: { topUpCapturedAt: new Date() },
+      });
+      if (claimed.count === 0) return;
+      const purchase = await tx.itemPurchase.findUniqueOrThrow({ where: { id: purchaseId } });
+      await tx.task.update({
+        where: { id: purchase.taskId },
+        data: { itemTopUpPaise: { increment: purchase.topUpPaise } },
+      });
+      await this.ledger.recordTopUpCapture({ taskId: purchase.taskId, amountPaise: Number(purchase.topUpPaise) }, tx);
+    });
+  }
+
   /** Read by the task service to decide whether DRAFT → PUBLISHED is allowed. */
   async isCaptured(taskId: string): Promise<boolean> {
     const payment = await this.prisma.payment.findUnique({ where: { taskId } });
@@ -287,9 +348,9 @@ export class PaymentsService {
    * calling it twice for the same task writes the entries and the Payout row
    * only once, guarded by the payment's own status.
    *
-   * With an item, the worker is owed their earnings plus what the item cost
-   * (reported at submission with a receipt), and the unspent item budget is
-   * refunded to the requester. Commission was taken on the task payment only.
+   * With an item, the approved bill has already left escrow (paid to the
+   * shop, or owed back to the worker at the handover), so whatever item money
+   * escrow still holds is refunded. Commission is on the task payment only.
    */
   async release(params: {
     taskId: string;
@@ -307,14 +368,15 @@ export class PaymentsService {
       throw new BusinessRuleError('Cannot release payment for a task with no assigned worker.');
     }
 
-    const item = calculateItemSettlement(Number(task.itemBudgetPaise), Number(task.itemSpentPaise ?? 0));
+    const budgetPaise = Number(task.budgetPaise);
+    const itemRefundPaise = await this.heldItemPaise(task.id, budgetPaise);
 
     await this.prisma.payment.update({
       where: { id: payment.id },
       data: {
         status: 'RELEASED',
         releasedAt: new Date(),
-        ...(item.refundPaise > 0 && { refundAmountPaise: item.refundPaise, refundedAt: new Date() }),
+        ...(itemRefundPaise > 0 && { refundAmountPaise: itemRefundPaise, refundedAt: new Date() }),
       },
     });
 
@@ -322,25 +384,36 @@ export class PaymentsService {
       taskId: params.taskId,
       workerId: task.assignedWorkerId,
       earningsPaise: params.workerPayoutPaise,
-      reimbursementPaise: item.reimbursePaise,
     });
 
     await this.ledger.recordRelease({
       taskId: params.taskId,
       paymentId: payment.id,
-      budgetPaise: Number(payment.amountPaise),
+      budgetPaise,
       commissionPaise: params.commissionPaise,
       gstPaise: params.gstPaise,
       tcsPaise: params.tcsPaise,
       tdsPaise: params.tdsPaise,
       workerPayoutPaise: params.workerPayoutPaise,
-      itemReimbursePaise: item.reimbursePaise,
-      itemRefundPaise: item.refundPaise,
+      itemRefundPaise,
     });
 
     // A caller that has not yet written the task's own final status (a
     // dispute decision) sends afterwards, so the payout can mark it paid.
     if (options.sendNow !== false) await this.payouts.sendOwed(task.assignedWorkerId);
+  }
+
+  /**
+   * Item money escrow still holds: everything held less the task payment.
+   * Read from the ledger, never from a reported cost. Escrow holding less
+   * than the task payment would be a defect, so it throws rather than pays.
+   */
+  async heldItemPaise(taskId: string, taskPaymentPaise: number): Promise<number> {
+    const held = await this.ledger.escrowBalance(taskId);
+    if (held < taskPaymentPaise) {
+      throw new Error(`Escrow for task ${taskId} holds ${held} paise, less than its task payment. This is a defect.`);
+    }
+    return held - taskPaymentPaise;
   }
 
   private toView(payment: {

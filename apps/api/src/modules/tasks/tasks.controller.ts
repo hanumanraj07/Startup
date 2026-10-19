@@ -233,7 +233,7 @@ export class TasksController {
     @Body(zodPipe(submitTaskSchema)) body: SubmitTaskInput,
     @CurrentUser() user: RequestUser,
   ) {
-    return this.execution.submit(uuidSchema.parse(id), user.id, body.note, body.itemSpentPaise);
+    return this.execution.submit(uuidSchema.parse(id), user.id, body.note, body.handoverCode);
   }
 
   @Post(':id/blocker')

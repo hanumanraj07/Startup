@@ -240,9 +240,10 @@ export function calculateCancellationCompensation(
 /**
  * Buying an item for the requester (pickup & delivery only, founder decision
  * 2026-10-19). The requester pays the task payment plus an item budget: the
- * most the worker may spend. The worker pays at the shop, reports what it
- * actually cost with a receipt, and on approval is reimbursed exactly that;
- * whatever was not spent goes back to the requester.
+ * most they expect the item to cost. Since P6 nothing is spent until the
+ * requester approves the bill the worker sends from the shop; the approved
+ * amount is what is spent (paid to the shop, or repaid to a worker who paid
+ * cash), and whatever was not spent goes back to the requester.
  *
  * Commission is never taken on the item. It is calculated on the task payment
  * alone by `calculateSplit`, and the item money passes through untouched.
@@ -258,13 +259,13 @@ export function requesterTotal(taskPaymentPaise: Paise, itemBudgetPaise: Paise):
 export interface ItemSettlement {
   itemBudgetPaise: Paise;
   itemSpentPaise: Paise;
-  /** Paid to the worker on top of their earnings. */
+  /** What the item cost: paid to the shop, or repaid to the worker. Never earnings. */
   reimbursePaise: Paise;
   /** The unspent part of the item budget, returned to the requester. */
   refundPaise: Paise;
 }
 
-/** Throws if the worker reports spending more than the budget the requester set. */
+/** Throws if the spend is more than the budget (budget plus top-ups) the requester funded. */
 export function calculateItemSettlement(itemBudgetPaise: Paise, itemSpentPaise: Paise): ItemSettlement {
   assertPaise(itemBudgetPaise, 'itemBudgetPaise');
   assertPaise(itemSpentPaise, 'itemSpentPaise');
@@ -280,4 +281,27 @@ export function calculateItemSettlement(itemBudgetPaise: Paise, itemSpentPaise: 
     // Remainder, so reimbursement and refund always reconstruct the budget.
     refundPaise: itemBudgetPaise - itemSpentPaise,
   };
+}
+
+/**
+ * What the requester must add to approve a bill: the part of it above what is
+ * left of the item budget (budget plus any earlier top-up). Zero when the
+ * bill fits. P6, docs/11-payment-flow.md.
+ */
+export function itemTopUpNeeded(availablePaise: Paise, billPaise: Paise): Paise {
+  assertPaise(availablePaise, 'availablePaise');
+  assertPaise(billPaise, 'billPaise');
+  return Math.max(0, billPaise - availablePaise);
+}
+
+/**
+ * The most a worker may pay in cash at a shop that does not take UPI, and be
+ * repaid at the handover. It rises with their verification level, because
+ * the risk is theirs until the requester's code is entered. Everything above
+ * it goes through a UPI shop payment instead.
+ */
+export function cashPurchaseCapPaise(verificationLevel: number): Paise {
+  if (verificationLevel >= 4) return 1_000_000; // ₹10,000
+  if (verificationLevel >= 3) return 500_000; // ₹5,000
+  return 200_000; // ₹2,000
 }

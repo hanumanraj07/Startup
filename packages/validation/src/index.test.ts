@@ -14,6 +14,7 @@ import {
   resolveDisputeSchema,
   sendMessageSchema,
   submitTaskSchema,
+  createItemPurchaseSchema,
   updateTaskSchema,
   workerProfileSchema,
 } from './index';
@@ -339,8 +340,24 @@ describe('item budget and reported cost', () => {
     expect(createTaskSchema.safeParse({ ...validTask, budgetPaise: 20_000, itemBudgetPaise: 100_000 }).success).toBe(true);
   });
 
-  it('takes the reported item cost at submission as whole paise', () => {
-    expect(submitTaskSchema.safeParse({ itemSpentPaise: 95_000 }).success).toBe(true);
-    expect(submitTaskSchema.safeParse({ itemSpentPaise: 950.5 }).success).toBe(false);
+  it('takes a four-digit handover code at submission, never an item cost', () => {
+    expect(submitTaskSchema.safeParse({ handoverCode: '0427' }).success).toBe(true);
+    expect(submitTaskSchema.safeParse({ handoverCode: '427' }).success).toBe(false);
+    expect(submitTaskSchema.parse({ itemSpentPaise: 95_000 })).toEqual({});
+  });
+});
+
+describe('item bills (P6)', () => {
+  const bill = { amountPaise: 95_000, description: 'Two packs of Amul butter', billStorageKey: 'tasks/t/proofs/w/x.jpg' };
+
+  it('needs the shop UPI ID when the platform pays the shop', () => {
+    expect(createItemPurchaseSchema.safeParse({ ...bill, method: 'SHOP_UPI' }).success).toBe(false);
+    expect(createItemPurchaseSchema.safeParse({ ...bill, method: 'SHOP_UPI', merchantVpa: 'kiranastore@okaxis' }).success).toBe(true);
+    expect(createItemPurchaseSchema.safeParse({ ...bill, method: 'SHOP_UPI', merchantVpa: 'not a upi id' }).success).toBe(false);
+  });
+
+  it('takes a cash bill without a UPI ID, within the item limit', () => {
+    expect(createItemPurchaseSchema.safeParse({ ...bill, method: 'WORKER_CASH' }).success).toBe(true);
+    expect(createItemPurchaseSchema.safeParse({ ...bill, method: 'WORKER_CASH', amountPaise: 1_000_001 }).success).toBe(false);
   });
 });

@@ -35,6 +35,7 @@ function build(options: { payoutStatus?: string; claimCount?: number; accountTai
     taskId: 't1',
     workerId: 'w1',
     amountPaise: 112_000n,
+    kind: 'EARNINGS',
     reimbursementPaise: 95_000n,
     status: options.payoutStatus ?? 'PENDING',
     attempts: 0,
@@ -72,7 +73,10 @@ describe('PayoutsService.process', () => {
     expect(payoutUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'PROCESSED' }) }),
     );
-    expect(ledger.recordPayout).toHaveBeenCalledWith({ taskId: 't1', payoutId: 'po-1', amountPaise: 112_000 }, expect.anything());
+    expect(ledger.recordPayout).toHaveBeenCalledWith(
+      { taskId: 't1', payoutId: 'po-1', amountPaise: 112_000, kind: 'EARNINGS' },
+      expect.anything(),
+    );
     expect(taskUpdateMany).toHaveBeenCalledWith({ where: { id: 't1', status: 'COMPLETED' }, data: { status: 'PAYMENT_RELEASED' } });
     expect(notifications.notify).toHaveBeenCalledWith('w1', expect.objectContaining({ event: 'PAYMENT_RELEASED' }));
   });

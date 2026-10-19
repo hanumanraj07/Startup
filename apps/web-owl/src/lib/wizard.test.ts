@@ -67,6 +67,7 @@ describe('estimateMoney', () => {
     expect(money).toEqual({
       taskPaymentPaise: 20_000,
       itemBudgetPaise: 100_000,
+      itemTopUpPaise: 0,
       totalPaise: 120_000,
       itemSpentPaise: null,
       itemRefundPaise: null,

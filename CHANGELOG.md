@@ -4,6 +4,14 @@ Notable changes to OnSite. Format follows [Keep a Changelog](https://keepachange
 
 ## [Unreleased]
 
+### Changed — 2026-10-20 · P6: buying an item, safely
+
+- **Approve the bill before anything is paid.** At the shop your worker sends a photo of the bill and the exact amount. You approve it (or reject it) within 10 minutes; nothing is paid until you do. If the price changed or there is a substitute, it is just a new bill.
+- **Bills above your budget:** approve and pay the difference in the same tap.
+- **We pay the shop directly by UPI**, so workers no longer spend their own money. If a shop takes only cash, the worker can pay up to a limit set by their level and is paid back the moment the item is handed over.
+- **Handover code:** once you approve a bill you get a 4-digit code. Give it to the worker when the item is in your hands; it confirms the delivery.
+- **Workers:** item money is never counted as your earnings, and cash you paid at a shop comes back as soon as the code is entered, not a day later.
+
 ### Added — 2026-10-19 · P5: polish
 
 - **"Other" category:** for anything the named categories don't cover. Say in a few words what kind of task it is; workers see your words in place of a category name, and can choose to receive "Other" tasks.

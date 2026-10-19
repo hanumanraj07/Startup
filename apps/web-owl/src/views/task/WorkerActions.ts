@@ -4,8 +4,7 @@ import type { TaskStatus } from '@onsite/types';
 import { Icon } from '@/components/Icon';
 import { ProofChecklist } from '@/components/ProofChecklist';
 import { TextField } from '@/components/TextField';
-import { parseBudgetPaise } from '@/lib/wizard';
-import type { ProofRequirement, ProofView } from '@/lib/api-types';
+import type { ProofRequirement, ProofView, WorkerItem } from '@/lib/api-types';
 import { ApiError, api } from '@/services/api';
 import { getPosition } from '@/services/geo';
 import { btn, card, CARD_CONTENT, CARD_HEADER, CARD_TITLE } from '@/ui/classes';
@@ -27,7 +26,7 @@ export class WorkerActions extends Component {
       </div>
       <p t-if="props.item" class="mx-6 mb-6 flex items-start gap-2 rounded-input bg-tint-orange px-3 py-2 text-sm text-[#7a3d00]">
         <Icon name="'wallet'" size="16"/>
-        <span>Carry up to <strong class="tabular" t-out="itemBudget"/> for the item. You pay at the shop, keep the receipt, and get it back with your earnings.</span>
+        <span>There is an item to buy, about <strong class="tabular" t-out="itemBudget"/>. At the shop, send the bill for approval before paying anything.</span>
       </p>
       <p t-if="state.error" role="alert" class="px-6 pb-6 text-sm text-dispute" t-out="state.error"/>
     </div>
@@ -58,13 +57,13 @@ export class WorkerActions extends Component {
           </t>
         </div>
 
-        <TextField t-if="props.item and status === 'IN_PROGRESS'" id="'item-cost'" label="'What did the item cost? (₹)'"
-          type="'number'" min="'0'" max="itemMaxRupees" hint="itemCostHint" error="itemCostError"
-          value="state.itemCost" onInput="setItemCost"/>
+        <TextField t-if="needsHandoverCode" id="'handover-code'" label="'Handover code'" type="'text'"
+          placeholder="'4 digits'" maxlength="4" hint="'Ask the person receiving the item for the code. It confirms the delivery.'"
+          value="state.handoverCode" onInput="setHandoverCode"/>
 
         <p t-if="state.error" role="alert" class="text-sm text-dispute" t-out="state.error"/>
 
-        <button type="button" t-att-class="submitClass" t-att-disabled="state.busy or !allMet or !itemCostReady" t-on-click="submit">
+        <button type="button" t-att-class="submitClass" t-att-disabled="state.busy or !allMet or !handoverReady" t-on-click="submit">
           <Icon name="'send'" size="16"/> <t t-out="isDelivery ? 'Delivered: submit proof' : 'Submit for review'"/>
         </button>
       </div>
@@ -84,11 +83,11 @@ export class WorkerActions extends Component {
     onChanged: Function,
     /** SINGLE or PICKUP_DROPOFF: deliveries get their own wording for each leg. */
     locationMode: { type: String, optional: true },
-    /** An item to buy and be reimbursed for. Undefined when nothing is bought. */
+    /** An item to buy (WorkerItem). Undefined when nothing is bought. */
     item: { type: Object, optional: true },
   };
 
-  state = useState<{ busy: boolean; error: string | null; itemCost: string }>({ busy: false, error: null, itemCost: '' });
+  state = useState<{ busy: boolean; error: string | null; handoverCode: string }>({ busy: false, error: null, handoverCode: '' });
 
   cardClass = card();
   primaryClass = btn('primary');
@@ -111,33 +110,21 @@ export class WorkerActions extends Component {
     return this.props.item ? formatPaise(this.props.item.budgetPaise) : '';
   }
 
-  get itemMaxRupees(): string {
-    return this.props.item ? String(this.props.item.budgetPaise / 100) : '0';
+  /**
+   * An approved bill is handed over with the requester's code. With no
+   * approved bill (the item was unavailable) there is nothing to confirm.
+   */
+  get needsHandoverCode(): boolean {
+    const item = this.props.item as WorkerItem | undefined;
+    return Boolean(item && item.spentPaise !== null && !item.handoverConfirmed && this.status === 'IN_PROGRESS');
   }
 
-  get itemCostHint(): string {
-    return `Exactly as on the receipt, at most ${this.itemBudget}. This is what you are paid back.`;
+  get handoverReady(): boolean {
+    return !this.needsHandoverCode || /^\d{4}$/.test(this.state.handoverCode.trim());
   }
 
-  private get itemCostPaise(): number | null {
-    return parseBudgetPaise(this.state.itemCost.trim());
-  }
-
-  get itemCostError(): string | undefined {
-    const cost = this.itemCostPaise;
-    if (!this.props.item || cost === null) return undefined;
-    return cost > this.props.item.budgetPaise ? `More than the ${this.itemBudget} set aside. Ask the requester in chat first.` : undefined;
-  }
-
-  /** No item, or a cost entered within the budget. Zero is allowed: the item may have been unavailable. */
-  get itemCostReady(): boolean {
-    if (!this.props.item) return true;
-    const cost = this.itemCostPaise;
-    return cost !== null && cost <= this.props.item.budgetPaise;
-  }
-
-  setItemCost = (value: string) => {
-    this.state.itemCost = value;
+  setHandoverCode = (value: string) => {
+    this.state.handoverCode = value;
   };
 
   get isDelivery(): boolean {
@@ -217,9 +204,7 @@ export class WorkerActions extends Component {
   capture = (payload: Record<string, unknown>) => this.run(() => api.post(`/tasks/${this.props.taskId}/proofs`, payload));
 
   submit() {
-    const itemSpentPaise = this.props.item ? this.itemCostPaise : null;
-    return this.run(() =>
-      api.post(`/tasks/${this.props.taskId}/submit`, itemSpentPaise !== null ? { itemSpentPaise } : {}),
-    );
+    const code = this.state.handoverCode.trim();
+    return this.run(() => api.post(`/tasks/${this.props.taskId}/submit`, this.needsHandoverCode ? { handoverCode: code } : {}));
   }
 }

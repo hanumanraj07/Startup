@@ -115,58 +115,61 @@ describe('LedgerService.recordDisputeSplit', () => {
   });
 });
 
-describe('LedgerService.recordRelease — buying an item', () => {
-  it('balances commission on the task payment, the reimbursement and the unspent refund', async () => {
+
+describe('LedgerService — buying an item (P6)', () => {
+  type Entry = { account: string; amountPaise: bigint };
+  const all = (createMany: ReturnType<typeof vi.fn>): Entry[] =>
+    createMany.mock.calls.flatMap((call) => (call[0] as { data: Entry[] }).data);
+  const balance = (entries: Entry[], account: string) =>
+    entries.filter((e) => e.account === account).reduce((s, e) => s + e.amountPaise, 0n);
+  const release = { taskId: 't1', paymentId: 'p1', budgetPaise: 20_000, commissionPaise: 3_000, gstPaise: 0, tcsPaise: 0, tdsPaise: 0, workerPayoutPaise: 17_000 };
+
+  it('cash bill: escrow empties, the worker is repaid apart from earnings, the unspent item money is refunded', async () => {
     const { client, createMany } = fakePrisma();
     const service = new LedgerService(client);
 
-    // ₹200 task payment + ₹1,000 item budget held; the item cost ₹950.
-    await service.recordRelease({
-      taskId: 't1',
-      paymentId: 'p1',
-      budgetPaise: 120_000,
-      commissionPaise: 3_000,
-      gstPaise: 0,
-      tcsPaise: 0,
-      tdsPaise: 0,
-      workerPayoutPaise: 17_000,
-      itemReimbursePaise: 95_000,
-      itemRefundPaise: 5_000,
-    });
+    // ₹200 task payment + ₹1,000 item budget held; a ₹950 cash bill approved.
+    await service.recordCapture({ taskId: 't1', paymentId: 'p1', amountPaise: 120_000 });
+    await service.recordItemSpend({ taskId: 't1', amountPaise: 95_000, route: 'CASH' });
+    await service.recordPayout({ taskId: 't1', payoutId: 'po-r', amountPaise: 95_000, kind: 'ITEM_REIMBURSEMENT' });
+    await service.recordRelease({ ...release, itemRefundPaise: 5_000 });
+    await service.recordPayout({ taskId: 't1', payoutId: 'po-e', amountPaise: 17_000, kind: 'EARNINGS' });
 
-    const data = (createMany.mock.calls[0]?.[0] as { data: unknown }).data as { account: string; amountPaise: bigint }[];
-    expect(data.reduce((sum, e) => sum + e.amountPaise, 0n)).toBe(0n);
-    expect(data.filter((e) => e.account === 'WORKER_PAYABLE').map((e) => e.amountPaise)).toEqual([17_000n, 95_000n]);
-    expect(data.find((e) => e.account === 'REFUND')?.amountPaise).toBe(5_000n);
+    const entries = all(createMany);
+    expect(entries.reduce((s, e) => s + e.amountPaise, 0n)).toBe(0n);
+    expect(balance(entries, 'ESCROW')).toBe(0n);
+    expect(balance(entries, 'ITEM_REIMBURSABLE')).toBe(0n);
+    expect(balance(entries, 'ITEM_PASS_THROUGH')).toBe(95_000n);
+    // Earnings never include the item: the worker's settled income is ₹170.
+    expect(balance(entries, 'WORKER_SETTLED')).toBe(17_000n);
+    expect(balance(entries, 'REFUND')).toBe(5_000n);
+    expect(balance(entries, 'PLATFORM_COMMISSION')).toBe(3_000n);
   });
 
-  it('refuses a release whose item figures do not add up to what was held', async () => {
+  it('UPI bill above the budget: the top-up is held, the shop is paid, nothing item-related is commissioned', async () => {
     const { client, createMany } = fakePrisma();
     const service = new LedgerService(client);
-    await expect(
-      service.recordRelease({
-        taskId: 't1',
-        paymentId: 'p1',
-        budgetPaise: 120_000,
-        commissionPaise: 3_000,
-        gstPaise: 0,
-        tcsPaise: 0,
-        tdsPaise: 0,
-        workerPayoutPaise: 17_000,
-        itemReimbursePaise: 95_000,
-      }),
-    ).rejects.toThrow(/do not balance/);
-    expect(createMany).not.toHaveBeenCalled();
+
+    await service.recordCapture({ taskId: 't1', paymentId: 'p1', amountPaise: 120_000 });
+    await service.recordTopUpCapture({ taskId: 't1', amountPaise: 25_000 });
+    await service.recordItemSpend({ taskId: 't1', amountPaise: 125_000, route: 'SHOP' });
+    await service.recordRelease({ ...release, itemRefundPaise: 0 });
+
+    const entries = all(createMany);
+    expect(entries.reduce((s, e) => s + e.amountPaise, 0n)).toBe(0n);
+    expect(balance(entries, 'ESCROW')).toBe(0n);
+    expect(balance(entries, 'ITEM_PASS_THROUGH')).toBe(125_000n);
+    expect(balance(entries, 'REQUESTER_FUNDS')).toBe(-145_000n);
+    expect(entries.some((e) => e.account === 'REFUND')).toBe(false);
   });
 
-  it('records a payout as payable to settled', async () => {
+  it('settles an earnings payout from payable to settled', async () => {
     const { client, createMany } = fakePrisma();
     const service = new LedgerService(client);
-    await service.recordPayout({ taskId: 't1', payoutId: 'po1', amountPaise: 112_000 });
-    const data = (createMany.mock.calls[0]?.[0] as { data: unknown }).data as { account: string; amountPaise: bigint }[];
-    expect(data.map((e) => [e.account, e.amountPaise])).toEqual([
-      ['WORKER_PAYABLE', -112_000n],
-      ['WORKER_SETTLED', 112_000n],
+    await service.recordPayout({ taskId: 't1', payoutId: 'po1', amountPaise: 17_000 });
+    expect(all(createMany).map((e) => [e.account, e.amountPaise])).toEqual([
+      ['WORKER_PAYABLE', -17_000n],
+      ['WORKER_SETTLED', 17_000n],
     ]);
   });
 });

@@ -121,21 +121,59 @@ export interface PickedLocation {
 }
 
 /**
- * What a requester pays: the task payment they set, any item budget, and the
- * total. Once the worker reports the item's cost, what it cost and what comes
- * back. The commission and the worker's net earnings are never sent.
+ * What a requester pays: the task payment they set, any item budget, any
+ * top-up paid to approve a bill above it, and the total. Once a bill is
+ * approved, what the item cost and what comes back. The commission and the
+ * worker's net earnings are never sent.
  */
 export interface RequesterMoney {
   taskPaymentPaise: number;
   itemBudgetPaise: number;
+  itemTopUpPaise: number;
   totalPaise: number;
   itemSpentPaise: number | null;
   itemRefundPaise: number | null;
 }
 
+/** One of GET /tasks/:id/purchases: a bill the worker sent from the shop (P6). */
+export interface ItemBill {
+  id: string;
+  amountPaise: number;
+  description: string;
+  method: 'SHOP_UPI' | 'WORKER_CASH';
+  merchantVpa: string | null;
+  merchantName: string | null;
+  status: 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'CANCELLED' | 'EXPIRED';
+  expiresAt: string;
+  decidedAt: string | null;
+  rejectReason: string | null;
+  topUpPaise: number;
+  topUpPaid: boolean;
+  shopPayment: { status: 'PENDING' | 'PROCESSING' | 'PROCESSED' | 'FAILED' | 'REVERSED'; reference: string | null; failureReason: string | null } | null;
+  paidOut: boolean;
+  createdAt: string;
+  /** Short-lived presigned link to the bill photo. */
+  billUrl?: string;
+}
+
+/** The item as the assigned worker sees it. Never part of earnings. */
+export interface WorkerItem {
+  /** Item budget plus any top-up. */
+  budgetPaise: number;
+  /** The approved bill, once there is one. */
+  spentPaise: number | null;
+  /** The most this worker may pay in cash at their level. */
+  cashCapPaise: number;
+  /** Whether OnSite can pay a shop's UPI ID directly. */
+  shopPaymentAvailable: boolean;
+  handoverConfirmed: boolean;
+}
+
 /** GET /tasks/:id as the task's owner (requester) sees it. */
 export interface OwnerTask extends TaskBase {
   money: RequesterMoney;
+  /** The item handover code, once a bill is approved. Never in the worker's view. */
+  handover: { code: string; confirmed: boolean } | null;
   assignedWorker: { id: string; displayName: string; ratingAvg: number | null; tasksCompleted: number } | null;
   /** While a worker is being found: how many were sent the request, and how far out the search reaches. */
   matching: { workersNotified: number; radiusMeters: number } | null;
@@ -144,8 +182,8 @@ export interface OwnerTask extends TaskBase {
 /** GET /tasks/:id as the assigned worker sees it: only their payout, never the budget or commission. */
 export interface WorkerTask extends TaskBase {
   payoutPaise: number;
-  /** An item to buy and be reimbursed for, or null. Never part of earnings. */
-  item: { budgetPaise: number; spentPaise: number | null } | null;
+  /** An item to buy, or null. */
+  item: WorkerItem | null;
   requester: { displayName: string; verificationLevel: number };
 }
 

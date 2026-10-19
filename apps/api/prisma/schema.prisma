@@ -169,6 +169,28 @@ enum PayoutStatus {
   REVERSED
 }
 
+enum PayoutKind {
+  EARNINGS
+  ITEM_REIMBURSEMENT
+}
+
+/// A bill the worker sends from the shop. See ItemPurchase.
+enum ItemPurchaseStatus {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  /// Withdrawn by the worker, or replaced after the approval window passed.
+  CANCELLED
+}
+
+/// How an approved bill is paid. By default the worker never fronts money.
+enum ItemPaymentMethod {
+  /// The platform pays the shop's UPI ID from the item escrow.
+  SHOP_UPI
+  /// The shop takes only cash: the worker pays, capped by level, and is repaid at the handover.
+  WORKER_CASH
+}
+
 enum LedgerAccount {
   REQUESTER_FUNDS
   ESCROW
@@ -180,6 +202,11 @@ enum LedgerAccount {
   TCS_PAYABLE
   TDS_PAYABLE
   REFUND
+  /// Item money that left the platform for goods: paid to a shop, or repaid
+  /// to the worker who paid the shop in cash. Never income, never commissioned.
+  ITEM_PASS_THROUGH
+  /// Item cash a worker paid at a shop, owed back to them until repaid.
+  ITEM_REIMBURSABLE
 }
 
 enum LedgerEntryType {
@@ -280,6 +307,7 @@ model User {
   messages          Message[]
   payments          Payment[]
   payouts           Payout[]
+  itemPurchases     ItemPurchase[]
   reviewsGiven      Review[]            @relation("ReviewAuthor")
   reviewsReceived   Review[]            @relation("ReviewSubject")
   disputesRaised    Dispute[]           @relation("DisputeRaiser")
@@ -556,11 +584,20 @@ model Task {
 
   // BUYING AN ITEM, pickup & delivery only. The most the worker may spend,
   // held with the task payment and never subject to commission; zero when
-  // nothing is bought. What it actually cost is reported at submission, with
-  // a receipt photo, and is what the worker is reimbursed on approval. The
-  // rest is refunded. Check constraints keep spent within the budget.
+  // nothing is bought. The worker never decides the cost: they send the bill
+  // from the shop (an ItemPurchase), the requester approves the exact amount,
+  // and that approved amount is itemSpentPaise. A bill above the budget is
+  // approved with a top-up the requester pays then, added to itemTopUpPaise.
+  // Unspent item money is refunded. Check constraints keep spent within
+  // budget plus top-ups.
   itemBudgetPaise BigInt  @default(0) @map("item_budget_paise")
+  itemTopUpPaise  BigInt  @default(0) @map("item_top_up_paise")
   itemSpentPaise  BigInt? @map("item_spent_paise")
+  /// Shown only to the requester once a bill is approved; the worker enters it
+  /// at the drop-off as proof the item reached the requester's side.
+  handoverCode        String?   @map("handover_code")
+  handoverAttempts    Int       @default(0) @map("handover_attempts")
+  handoverConfirmedAt DateTime? @map("handover_confirmed_at")
 
   deadlineAt        DateTime  @map("deadline_at")
   /// submitted_at + 24h. The authoritative auto-approval deadline the sweeper reads.
@@ -592,7 +629,8 @@ model Task {
   proofs         TaskProof[]
   messages       Message[]
   payment        Payment?
-  payout         Payout?
+  payouts        Payout[]
+  itemPurchases  ItemPurchase[]
   ledgerEntries  LedgerEntry[]
   reviews        Review[]
   disputes       Dispute[]
@@ -793,16 +831,21 @@ model Payment {
 
 model Payout {
   id              String  @id @default(uuid(7))
-  taskId          String  @unique @map("task_id")
+  /// A task can owe a worker twice: an item reimbursement at the handover and
+  /// their earnings on approval. Each has its own idempotency key.
+  taskId          String  @map("task_id")
   task            Task    @relation(fields: [taskId], references: [id])
   workerId        String  @map("worker_id")
   worker          User    @relation(fields: [workerId], references: [id])
   payoutAccountId String? @map("payout_account_id")
   payoutAccount   PayoutAccount? @relation(fields: [payoutAccountId], references: [id])
 
-  /// Everything transferred: earnings plus any item reimbursement.
+  kind        PayoutKind   @default(EARNINGS)
+  /// Everything transferred.
   amountPaise BigInt       @map("amount_paise")
-  /// The part of amountPaise that repays an item the worker bought. Not earnings.
+  /// The part of amountPaise that repays an item the worker bought. Not
+  /// earnings. All of an ITEM_REIMBURSEMENT payout; zero on EARNINGS since
+  /// P6 (older EARNINGS rows may carry a P3 reimbursement inside them).
   reimbursementPaise BigInt @default(0) @map("reimbursement_paise")
   status      PayoutStatus @default(PENDING)
   gatewayTransferId String? @map("gateway_transfer_id")
@@ -818,7 +861,57 @@ model Payout {
   ledgerEntries LedgerEntry[]
 
   @@index([status])
+  @@index([taskId])
   @@map("payouts")
+}
+
+/// A bill sent from the shop for an item the requester asked to have bought.
+/// Nothing is paid until the requester approves the exact amount. Then the
+/// platform pays the shop's UPI ID (SHOP_UPI), or the worker pays cash,
+/// capped by their level, and is repaid as soon as the handover code is
+/// entered (WORKER_CASH). At most one bill per task is ever APPROVED.
+model ItemPurchase {
+  id       String @id @default(uuid(7))
+  taskId   String @map("task_id")
+  task     Task   @relation(fields: [taskId], references: [id])
+  workerId String @map("worker_id")
+  worker   User   @relation(fields: [workerId], references: [id])
+
+  amountPaise    BigInt             @map("amount_paise")
+  /// What is being bought, in the worker's words, for the requester to check.
+  description    String
+  /// Photo of the bill or price tag, under the task's proof prefix.
+  billStorageKey String             @map("bill_storage_key")
+  method         ItemPaymentMethod
+  merchantVpa    String?            @map("merchant_vpa")
+  merchantName   String?            @map("merchant_name")
+  status         ItemPurchaseStatus @default(PENDING_APPROVAL)
+  /// After this an unanswered bill can no longer be approved.
+  expiresAt      DateTime           @map("expires_at")
+  decidedAt      DateTime?          @map("decided_at")
+  rejectReason   String?            @map("reject_reason")
+
+  /// The part of the bill above what was left of the item budget, paid by
+  /// the requester to approve it. Approval completes once it is captured.
+  topUpPaise          BigInt          @default(0) @map("top_up_paise")
+  topUpGateway        PaymentGateway? @map("top_up_gateway")
+  topUpGatewayOrderId String?         @unique @map("top_up_gateway_order_id")
+  topUpCapturedAt     DateTime?       @map("top_up_captured_at")
+
+  /// SHOP_UPI only: the transfer to the shop.
+  shopPaymentStatus        PayoutStatus? @map("shop_payment_status")
+  shopPaymentReference     String?       @map("shop_payment_reference")
+  shopPaymentFailureReason String?       @map("shop_payment_failure_reason")
+  shopPaymentAttempts      Int           @default(0) @map("shop_payment_attempts")
+  /// When the item money left escrow in the ledger: the shop was paid, or the
+  /// cash the worker paid became owed back to them.
+  spentRecordedAt          DateTime?     @map("spent_recorded_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([taskId, createdAt])
+  @@map("item_purchases")
 }
 
 /// Double entry. The sum of amountPaise for any task MUST be exactly zero.

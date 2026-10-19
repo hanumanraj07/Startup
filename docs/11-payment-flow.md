@@ -33,26 +33,39 @@ The single most important ordering rule: **funds are captured before a task is p
 
 **The requester sets the task payment** themselves; there are no per-category price ranges, only a platform floor of ₹100 (`MIN_TASK_BUDGET_PAISE`) and ceiling of ₹50,000. **The commission is never shown to requesters or workers.** The requester sees what they pay: the task payment, any item budget, and the total. The worker sees what they earn, and any item money apart from it. Neither API projection contains the commission or the other side's figure; admins see the full split.
 
-## Buying an item (pickup & delivery only, 2026-10-19)
+## Buying an item (pickup & delivery only, 2026-10-19; bill approval since P6, 2026-10-20)
 
-A pickup & delivery task may include an **item budget**: the most the worker may spend buying something for the requester, up to ₹10,000 (`MAX_ITEM_BUDGET_PAISE`).
+A pickup & delivery task may include an **item budget**: what the requester expects the item to cost, up to ₹10,000 (`MAX_ITEM_BUDGET_PAISE`). The requester pays **task payment + item budget**, captured together in escrow.
 
-1. The requester pays **task payment + item budget**, captured together in escrow as one payment.
-2. The worker pays at the shop with their own money and keeps the receipt. A receipt photo is a required proof, added automatically.
-3. At submission the worker reports what the item cost, never more than the budget.
-4. On approval: commission is taken **on the task payment only**; the worker is owed their earnings **plus** the reported cost; the unspent budget is refunded to the requester.
+P3 had the worker pay at the shop with their own money and report the cost at submission. That was replaced (ai/memory.md, 2026-10-20): the worker carried up to ₹10,000 of risk, the cost was whatever they typed, and a colluding pair could move money between themselves with a fake receipt. Since P6:
 
-For the founder's example (₹1,000 item budget, ₹200 task payment, item cost ₹950, 15% commission):
+1. **The worker pays nothing at first.** At the shop they send a **bill** (`ItemPurchase`): a photo of the bill or price tag, the amount, what it is, and how the shop will be paid.
+2. **The requester approves the exact amount**, within `ITEM_BILL_APPROVAL_MINUTES` (default 10), or rejects it. A bill above what is left of the budget is approved with a **top-up**: the requester pays the difference then (its own gateway order, captured into the same escrow). Unanswered, the bill expires and the worker may withdraw it and walk away without penalty. A price change or a substitute is simply another bill.
+3. **Approved, the shop is paid.**
+   - `SHOP_UPI` (the default): OnSite pays the shop's UPI ID straight from escrow through the payout partner. Item money goes to a shop, never to a person; the worker's own UPI ID is refused. Needs a payout partner (`PAYOUT_PROVIDER`), so it is unavailable while that is `none`.
+   - `WORKER_CASH` (the shop takes only cash): the worker pays, capped by level (`cashPurchaseCapPaise`: ₹2,000 up to level 2, ₹5,000 at level 3, ₹10,000 from level 4). If a UPI payment fails, the worker may retry it or switch to cash within the cap; the approved amount never changes.
+4. **Handover.** Approval gives the requester a 4-digit **handover code**, never shown to the worker. The worker enters it at the drop-off to submit; five wrong codes lock it (then Report an issue). A cash bill is repaid to the worker **as soon as the code is entered**, as its own payout, not on approval.
+5. **On approval of the task**, commission is taken **on the task payment only**, the worker is owed their earnings, and whatever item money escrow still holds is refunded. That figure is read from the ledger's escrow balance, never from a reported cost.
 
-| Account | Amount |
-|---|---|
-| `ESCROW` | −120000 |
-| `PLATFORM_COMMISSION` | +3000 |
-| `WORKER_PAYABLE` (earnings) | +17000 |
-| `WORKER_PAYABLE` (item reimbursement) | +95000 |
-| `REFUND` (unspent item budget) | +5000 |
+For the founder's example (₹1,000 item budget, ₹200 task payment, 15% commission) with an approved ₹950 cash bill:
 
-The arithmetic is `calculateSplit` on the task payment and `calculateItemSettlement` on the item, both in `packages/money`. On a split dispute the percentage divides the task payment; the item is reimbursed in full and its unspent budget refunded. A cancellation or expiry before assignment refunds everything, item budget included.
+| When | Account | Amount |
+|---|---|---|
+| Capture | `REQUESTER_FUNDS` / `ESCROW` | −120000 / +120000 |
+| Handover code entered | `ESCROW` / `ITEM_REIMBURSABLE` | −95000 / +95000 |
+| Reimbursement payout | `ITEM_REIMBURSABLE` / `ITEM_PASS_THROUGH` | −95000 / +95000 |
+| Task approved | `ESCROW` | −25000 |
+| | `PLATFORM_COMMISSION` | +3000 |
+| | `WORKER_PAYABLE` (earnings only) | +17000 |
+| | `REFUND` (unspent item money) | +5000 |
+
+With `SHOP_UPI` the shop payment is one group when the transfer is confirmed: `ESCROW` −amount, `ITEM_PASS_THROUGH` +amount. A top-up is `REQUESTER_FUNDS` −x, `ESCROW` +x. `ITEM_PASS_THROUGH` is item money that left the platform for goods; it is never income and never commissioned, and earnings payouts never contain it.
+
+**Disputes.** Once a bill is approved and the handover code entered, the item cost cannot be taken back: the requester agreed the amount and confirmed the item. Without a handover:
+- *Release to worker* or *split*: an approved cash bill is repaid to the worker in full first (the requester agreed it); a split's percentage divides the task payment only; item money still held is refunded.
+- *Refund to requester*: everything escrow still holds is refunded, including an approved cash bill never repaid (the admin judged the item did not arrive). A bill already paid to a shop has left escrow; recovering it is an admin judgement outside the ledger.
+
+A worker cannot leave a task once a bill is approved (Report an issue instead), and a bill still awaiting an answer blocks submission. Cancellation after assignment is not available in this build, so there is no cancel-after-purchase case. Gateway fees on item money and top-ups are borne by the platform; GST/TCS/TDS treatment of item pass-through needs a chartered accountant's confirmation before launch.
 
 ## Representation
 

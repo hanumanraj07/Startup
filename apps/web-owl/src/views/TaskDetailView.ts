@@ -12,6 +12,7 @@ import { Tabs } from '@/components/Tabs';
 import { useTaskSocket } from '@/hooks/use-task-socket';
 import {
   isOwnerView,
+  type ItemBill,
   type OwnerTask,
   type ProofView,
   type TaskDetail,
@@ -34,6 +35,7 @@ import type { LiveLocationEvent } from '@/services/socket';
 import { toast } from '@/store/store';
 import { card, CARD_CONTENT } from '@/ui/classes';
 import { ChatPanel } from './task/ChatPanel';
+import { ItemBillPanel } from './task/ItemBillPanel';
 import { ReleaseAssignmentDialog } from './task/ReleaseAssignmentDialog';
 import { ReportIssueDialog } from './task/ReportIssueDialog';
 import { RequesterActions } from './task/RequesterActions';
@@ -131,6 +133,11 @@ export class TaskDetailView extends Component {
           <LiveTripMap t-if="tracking" t-key="liveKey" destination="destination" destinationLabel="destinationLabel"
             location="state.live or undefined" viewer="workerTask ? 'worker' : 'requester'" workerName="workerName"/>
 
+          <ItemBillPanel t-if="hasItem"
+            taskId="task.id" role="workerTask ? 'worker' : 'requester'" status="task.status" bills="state.bills"
+            onChanged="load" item="workerTask ? (workerTask.item or undefined) : undefined"
+            handover="ownerTask ? (ownerTask.handover or undefined) : undefined"/>
+
           <WorkerActions t-if="workerTask"
             taskId="task.id" status="task.status" proofRequirements="task.proofRequirements"
             proofs="state.proofs" onChanged="load" locationMode="task.locationMode" item="workerTask.item or undefined"/>
@@ -226,6 +233,7 @@ export class TaskDetailView extends Component {
   static components = {
     ChatPanel,
     Icon,
+    ItemBillPanel,
     Link,
     LiveTripMap,
     MoneyBreakdown,
@@ -244,6 +252,8 @@ export class TaskDetailView extends Component {
   state = useState<{
     task: TaskDetail | null;
     proofs: ProofView[];
+    /** Item bills (P6), newest first; empty when nothing is bought or no worker is assigned yet. */
+    bills: ItemBill[];
     error: string | null;
     tab: Tab;
     wide: boolean;
@@ -252,6 +262,7 @@ export class TaskDetailView extends Component {
   }>({
     task: null,
     proofs: [],
+    bills: [],
     error: null,
     tab: 'progress',
     wide: typeof window !== 'undefined' && window.matchMedia(WIDE).matches,
@@ -322,6 +333,13 @@ export class TaskDetailView extends Component {
   get ownerTask(): OwnerTask | null {
     const task = this.state.task;
     return task && isOwnerView(task) ? task : null;
+  }
+
+  /** A task with an item to buy and a worker on it: the bill panel shows. */
+  get hasItem(): boolean {
+    const owner = this.ownerTask;
+    if (owner) return owner.money.itemBudgetPaise > 0 && owner.assignedWorker !== null;
+    return Boolean(this.workerTask?.item);
   }
 
   get workerTask(): WorkerTask | null {
@@ -556,8 +574,12 @@ export class TaskDetailView extends Component {
     if (PROOF_VISIBLE_STATUSES.includes(task.status)) {
       proofs = (await api.get<{ data: ProofView[] }>(`/tasks/${this.taskId}/proofs`)).data;
     }
+    // Bills exist only once a worker is assigned to a task with an item.
+    const withItem = isOwnerView(task) ? task.money.itemBudgetPaise > 0 && task.assignedWorker !== null : task.item !== null;
+    const bills = withItem ? (await api.get<{ data: ItemBill[] }>(`/tasks/${this.taskId}/purchases`)).data : [];
     this.state.task = task;
     this.state.proofs = proofs;
+    this.state.bills = bills;
     await this.syncTracking(task);
   };
 

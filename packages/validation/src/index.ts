@@ -204,10 +204,9 @@ export const MIN_TASK_BUDGET_PAISE = 10_000;
 export const MAX_TASK_BUDGET_PAISE = 5_000_000;
 
 /**
- * The most a requester can ask a worker to spend on an item for them
- * (pickup & delivery only). The worker pays at the shop with their own money
- * and is reimbursed on approval, so this is also the most a worker is ever
- * asked to front. See docs/11-payment-flow.md.
+ * The most a requester can set aside for an item bought for them (pickup &
+ * delivery only), and the most any one bill can be, top-up included. Nothing
+ * is paid until the requester approves the bill. See docs/11-payment-flow.md.
  */
 export const MAX_ITEM_BUDGET_PAISE = 1_000_000;
 
@@ -337,9 +336,42 @@ export const recordProofSchema = z
 
 export const submitTaskSchema = z.object({
   note: z.string().trim().max(2_000).optional(),
-  // What the item actually cost, as on the receipt. Required by the server
-  // when the task has an item budget, and never more than that budget.
-  itemSpentPaise: paiseSchema.max(MAX_ITEM_BUDGET_PAISE).optional(),
+  // The four-digit code the requester gave on receiving the item. Required by
+  // the server when a bill was approved. The worker never states what the
+  // item cost: that is the approved bill (P6).
+  handoverCode: z
+    .string()
+    .trim()
+    .regex(/^\d{4}$/, 'The handover code is 4 digits')
+    .optional(),
+});
+
+/** A UPI ID such as shopname@okaxis. */
+export const UPI_VPA_PATTERN = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z][a-zA-Z0-9]{1,63}$/;
+
+/**
+ * A bill the worker sends from the shop. Nothing is paid until the requester
+ * approves it. SHOP_UPI: the platform pays the shop's UPI ID. WORKER_CASH:
+ * the shop takes only cash, so the worker pays (capped by level) and is
+ * repaid as soon as the handover code is entered.
+ */
+export const createItemPurchaseSchema = z
+  .object({
+    amountPaise: paiseSchema.min(100).max(MAX_ITEM_BUDGET_PAISE),
+    description: z.string().trim().min(3).max(200),
+    billStorageKey: z.string().min(1).max(500),
+    method: z.enum(['SHOP_UPI', 'WORKER_CASH']),
+    merchantVpa: z.string().trim().regex(UPI_VPA_PATTERN, 'That does not look like a UPI ID').optional(),
+    merchantName: z.string().trim().max(100).optional(),
+  })
+  .refine((v) => v.method !== 'SHOP_UPI' || Boolean(v.merchantVpa), {
+    message: 'Enter the shop’s UPI ID',
+    path: ['merchantVpa'],
+  });
+export type CreateItemPurchaseInput = z.infer<typeof createItemPurchaseSchema>;
+
+export const rejectItemPurchaseSchema = z.object({
+  reason: z.string().trim().min(3).max(300).optional(),
 });
 
 export const blockerSchema = z.object({

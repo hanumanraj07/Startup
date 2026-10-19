@@ -1,12 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { ArriveInput, BlockerInput, PresignUploadInput, RecordProofInput } from '@onsite/validation';
-import { formatPaise } from '@onsite/money';
 import { BusinessRuleError, ForbiddenError, NotFoundError } from '../../common/errors';
 import { loadEnv } from '../../config/env';
 import { GeoRepository } from '../../repositories/geo.repository';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AutoApproveQueue } from '../../queue/auto-approve.queue';
 import { NotificationService } from '../notifications/notification.service';
+import { ItemPurchasesService } from '../payments/item-purchases.service';
 import { LiveLocationService } from '../realtime/live-location.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { StorageService } from '../storage/storage.service';
@@ -38,6 +38,7 @@ export class ExecutionService {
     private readonly notifications: NotificationService,
     private readonly realtime: RealtimeGateway,
     private readonly live: LiveLocationService,
+    private readonly purchases: ItemPurchasesService,
   ) {}
 
   async markEnRoute(taskId: string, workerId: string) {
@@ -246,23 +247,8 @@ export class ExecutionService {
    * `proofRequirements` must actually be present, counted by type and, for
    * structured fields, by key. A worker cannot submit an empty task.
    */
-  async submit(taskId: string, workerId: string, note?: string, itemSpentPaise?: number) {
+  async submit(taskId: string, workerId: string, note?: string, handoverCode?: string) {
     const task = await this.requireAssignedTask(taskId, workerId);
-
-    // A task with an item budget is reimbursed on what the item actually
-    // cost, so the worker must say, and it can never exceed what the
-    // requester agreed to. The receipt photo is a proof requirement.
-    const itemBudgetPaise = Number(task.itemBudgetPaise);
-    if (itemBudgetPaise > 0) {
-      if (itemSpentPaise === undefined) {
-        throw new BusinessRuleError('Enter what the item cost, as on the receipt.');
-      }
-      if (itemSpentPaise > itemBudgetPaise) {
-        throw new BusinessRuleError(
-          `The item cost more than the ${formatPaise(itemBudgetPaise)} the requester set aside. Ask them in chat before buying anything above it.`,
-        );
-      }
-    }
 
     // Only this worker's own proof counts toward submission.
     const proofs = await this.prisma.taskProof.findMany({ where: { taskId, workerId } });
@@ -272,6 +258,16 @@ export class ExecutionService {
       isAssignedWorker: true,
       proofRequirementsMet: missing.length === 0,
     });
+
+    // With an approved item bill, the requester's handover code is what
+    // proves the item arrived (P6). The worker never states what it cost:
+    // that is the approved bill. A bill still awaiting an answer blocks
+    // submission, so nothing is bought after the task is handed in.
+    await this.purchases.confirmHandover(task, workerId, handoverCode);
+    const pendingBill = await this.prisma.itemPurchase.count({ where: { taskId, status: 'PENDING_APPROVAL' } });
+    if (pendingBill > 0) {
+      throw new BusinessRuleError('A bill is still waiting for the requester. Wait for an answer, or withdraw it.');
+    }
 
     const env = loadEnv();
     const reviewDeadlineAt = new Date(Date.now() + env.REVIEW_WINDOW_HOURS * 3_600_000);
@@ -290,7 +286,6 @@ export class ExecutionService {
           status: 'SUBMITTED',
           submittedAt: new Date(),
           reviewDeadlineAt,
-          ...(itemBudgetPaise > 0 && { itemSpentPaise }),
         },
       }),
       this.prisma.taskStatusHistory.create({
@@ -438,6 +433,9 @@ export class ExecutionService {
 
     return requirements
       .filter((r) => r.required !== false)
+      // P3's receipt photo, still on older tasks: since P6 the bill photo is
+      // part of the approved bill, and an item may also simply be unavailable.
+      .filter((r) => r.fieldKey !== 'item_receipt')
       .filter((r) => {
         const matching = existingProofs.filter(
           (p) => p.type === r.type && (r.fieldKey ? p.fieldKey === r.fieldKey : true),

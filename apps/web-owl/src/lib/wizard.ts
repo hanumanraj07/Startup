@@ -39,6 +39,7 @@ export function estimateMoney(budgetPaise: number | null, itemBudgetPaise: numbe
   return {
     taskPaymentPaise,
     itemBudgetPaise: item,
+    itemTopUpPaise: 0,
     totalPaise: requesterTotal(taskPaymentPaise, item),
     itemSpentPaise: null,
     itemRefundPaise: null,

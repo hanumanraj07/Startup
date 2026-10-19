@@ -49,7 +49,10 @@ function fakeTask() {
     commissionPaise: 7_500n,
     workerPayoutPaise: 42_500n,
     itemBudgetPaise: 0n,
+    itemTopUpPaise: 0n,
     itemSpentPaise: null,
+    handoverCode: null,
+    handoverConfirmedAt: null,
     customCategoryLabel: null,
     category: { slug: 'product-inspection', name: 'Product inspection', locationMode: 'SINGLE' },
     statusHistory: [{ toStatus: 'ASSIGNED', createdAt: new Date(), actorRole: 'WORKER', reason: null }],
@@ -135,6 +138,8 @@ describe('TasksService.getById — PII projection snapshot', () => {
         // Counts only while a worker is being found; null once assigned.
         'matching',
         'money',
+        // The item handover code, once a bill is approved; null otherwise.
+        'handover',
         'assignedWorker',
       ].sort(),
     );
@@ -151,7 +156,7 @@ describe('TasksService.getById — PII projection snapshot', () => {
     // What the requester pays, never how it divides (founder decision
     // 2026-10-19): no commission, and no worker earnings to derive it from.
     expect(Object.keys(owned.money).sort()).toEqual(
-      ['taskPaymentPaise', 'itemBudgetPaise', 'totalPaise', 'itemSpentPaise', 'itemRefundPaise'].sort(),
+      ['taskPaymentPaise', 'itemBudgetPaise', 'itemTopUpPaise', 'totalPaise', 'itemSpentPaise', 'itemRefundPaise'].sort(),
     );
 
     const serialized = JSON.stringify(result);

@@ -21,6 +21,9 @@ const SAMPLE_PAYLOADS: NotificationPayload[] = [
     payoutPaise: 42_500,
     reason: 'The bank declined the transfer.',
   },
+  { event: 'ITEM_BILL_SENT', taskId: 't1', taskTitle: 'Bring a phone charger', amountPaise: 95_000, minutes: 10 },
+  { event: 'ITEM_BILL_DECIDED', taskId: 't1', taskTitle: 'Bring a phone charger', amountPaise: 95_000, approved: true },
+  { event: 'ITEM_BILL_DECIDED', taskId: 't1', taskTitle: 'Bring a phone charger', amountPaise: 95_000, approved: false },
   { event: 'TASK_EXPIRED_REFUNDED', taskId: 't1', taskTitle: 'Inspect a laptop', refundPaise: 50_000 },
   { event: 'NEW_MESSAGE', taskId: 't1', senderName: 'Rahul S.', preview: 'On my way now' },
   { event: 'DISPUTE_RAISED', taskId: 't1', taskTitle: 'Inspect a laptop', raisedByName: 'Hanuman R.' },
@@ -100,6 +103,8 @@ describe('EVENT_DEFINITIONS', () => {
       [
         'PAYMENT_RELEASED',
         'PAYOUT_FAILED',
+        'ITEM_BILL_SENT',
+        'ITEM_BILL_DECIDED',
         'TASK_APPROVED',
         'TASK_AUTO_APPROVED',
         'TASK_EXPIRED_REFUNDED',

@@ -76,6 +76,10 @@ const envSchema = z
     // is `none` in production and `mock` elsewhere. See payoutProvider().
     PAYOUT_PROVIDER: z.enum(['mock', 'none']).optional(),
     PAYOUT_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(5),
+    // How long a requester has to approve an item bill the worker sent from
+    // the shop. After it, the worker may withdraw it and walk away without
+    // penalty (P6, docs/11-payment-flow.md).
+    ITEM_BILL_APPROVAL_MINUTES: z.coerce.number().int().min(2).max(60).default(10),
     // Who checks identities (DigiLocker) and bank or UPI accounts. Cashfree
     // Secure ID was chosen after checking current offerings (ai/memory.md,
     // P4): Razorpay has no public end-user PAN/Aadhaar API, and its

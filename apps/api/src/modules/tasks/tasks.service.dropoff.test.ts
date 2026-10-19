@@ -136,7 +136,7 @@ describe('approximate — the locality the open feed shows', () => {
 describe('TasksService.create — buying an item', () => {
   const delivery = { ...input, dropoffLocation, dropoffAddress: 'Manek Chowk, Old City, Ahmedabad' };
 
-  it('holds the item budget apart from the task payment and adds the receipt requirement', async () => {
+  it('holds the item budget apart from the task payment, with no receipt proof (the bill is approved instead)', async () => {
     const { service, taskCreate } = build('PICKUP_DROPOFF');
     await service.create('req-1', { ...delivery, budgetPaise: 20_000, itemBudgetPaise: 100_000 });
     const data = (taskCreate.mock.calls[0]?.[0] as { data: Record<string, unknown> }).data;
@@ -145,9 +145,7 @@ describe('TasksService.create — buying an item', () => {
     expect(data.commissionPaise).toBe(3_000);
     expect(data.workerPayoutPaise).toBe(17_000);
     expect(data.itemBudgetPaise).toBe(100_000);
-    expect(data.proofRequirements).toEqual(
-      expect.arrayContaining([expect.objectContaining({ fieldKey: 'item_receipt', type: 'PHOTO', required: true })]),
-    );
+    expect(JSON.stringify(data.proofRequirements)).not.toContain('item_receipt');
     // The verification level follows everything at stake: ₹1,200 needs level 2.
     expect(data.minVerificationLevel).toBe(2);
   });

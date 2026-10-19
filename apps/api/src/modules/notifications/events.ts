@@ -41,6 +41,8 @@ export type NotificationEvent =
   | 'TASK_REJECTED'
   | 'PAYMENT_RELEASED'
   | 'PAYOUT_FAILED'
+  | 'ITEM_BILL_SENT'
+  | 'ITEM_BILL_DECIDED'
   | 'TASK_EXPIRED_REFUNDED'
   | 'NEW_MESSAGE'
   | 'DISPUTE_RAISED'
@@ -73,6 +75,10 @@ export const EVENT_DEFINITIONS: Record<NotificationEvent, EventDefinition> = {
   TASK_REJECTED: { category: 'TASK_ACTIVITY', channels: ['PUSH', 'EMAIL', 'IN_APP'] },
   PAYMENT_RELEASED: { category: 'PAYMENTS', channels: ['PUSH', 'EMAIL', 'IN_APP'], nonDisableable: true },
   PAYOUT_FAILED: { category: 'PAYMENTS', channels: ['PUSH', 'EMAIL', 'IN_APP'], nonDisableable: true },
+  // A worker is standing at a shop waiting: push, never email, and never
+  // switched off, since nothing is bought until the requester answers.
+  ITEM_BILL_SENT: { category: 'PAYMENTS', channels: ['PUSH', 'IN_APP'], nonDisableable: true },
+  ITEM_BILL_DECIDED: { category: 'PAYMENTS', channels: ['PUSH', 'IN_APP'], nonDisableable: true },
   TASK_EXPIRED_REFUNDED: { category: 'PAYMENTS', channels: ['PUSH', 'EMAIL', 'IN_APP'], nonDisableable: true },
   NEW_MESSAGE: { category: 'MESSAGES', channels: ['PUSH', 'IN_APP'] },
   // Dispute and account-security events per docs/13's Preferences section:
@@ -104,6 +110,8 @@ export type NotificationPayload =
   | { event: 'TASK_REJECTED'; taskId: string; taskTitle: string; reason: string }
   | { event: 'PAYMENT_RELEASED'; taskId: string; taskTitle: string; payoutPaise: number }
   | { event: 'PAYOUT_FAILED'; taskId: string; taskTitle: string; payoutPaise: number; reason: string }
+  | { event: 'ITEM_BILL_SENT'; taskId: string; taskTitle: string; amountPaise: number; minutes: number }
+  | { event: 'ITEM_BILL_DECIDED'; taskId: string; taskTitle: string; amountPaise: number; approved: boolean }
   | { event: 'TASK_EXPIRED_REFUNDED'; taskId: string; taskTitle: string; refundPaise: number }
   | { event: 'NEW_MESSAGE'; taskId: string; senderName: string; preview: string }
   | { event: 'DISPUTE_RAISED'; taskId: string; taskTitle: string; raisedByName: string }

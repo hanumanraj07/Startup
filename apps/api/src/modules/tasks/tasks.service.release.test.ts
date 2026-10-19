@@ -31,11 +31,13 @@ function build(current: Record<string, unknown>, opts: { removals?: number; upda
     taskRelease: { create: vi.fn().mockResolvedValue({}) },
     taskStatusHistory: { create: vi.fn().mockResolvedValue({}) },
     taskProof: { deleteMany: vi.fn().mockResolvedValue({ count: 2 }) },
+    itemPurchase: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
     workerProfile: { findUnique: vi.fn().mockResolvedValue(profile), update: vi.fn().mockResolvedValue({}) },
   };
   const prisma = {
     task: { findUnique: vi.fn().mockResolvedValue(current) },
     taskRelease: { count: vi.fn().mockResolvedValue(opts.removals ?? 0) },
+    itemPurchase: { count: vi.fn().mockResolvedValue(0) },
     user: { findUnique: vi.fn().mockResolvedValue({ displayName: 'Rahul S.' }) },
     $transaction: vi.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };

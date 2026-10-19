@@ -70,7 +70,7 @@ Never permitted, regardless of payment:
 - Sexual or exploitative content
 - Anything requiring a professional licence the worker does not hold
 
-**Buying an item for the requester is allowed since 2026-10-19** (founder decision), but only through the **item budget** on a pickup & delivery task: held in escrow with the task payment, capped at ₹10,000, spent by the worker at the shop and reimbursed on approval against a receipt photo and a reported cost that can never exceed the budget. See `docs/11-payment-flow.md`. **Still excluded:** cash handling of any kind, a worker handing the requester money or lending it (blocked by the screening rules), and items above the cap. A worker carrying ₹80,000 of someone else's money is still a different and harder business.
+**Buying an item for the requester is allowed since 2026-10-19** (founder decision), but only through the **item budget** on a pickup & delivery task: held in escrow with the task payment, capped at ₹10,000. Since P6 (2026-10-20) nothing is bought until the requester approves the exact bill the worker sends from the shop; the platform then pays the shop's UPI ID directly (never the worker's own), or, only where a shop takes nothing but cash, the worker pays within a level-based cap and is repaid once the requester's handover code is entered. The worker never states what the item cost. See `docs/11-payment-flow.md`. **Still excluded:** cash handling beyond that capped shop payment, a worker handing the requester money or lending it (blocked by the screening rules), and items above the cap. A worker carrying ₹80,000 of someone else's money is still a different and harder business.
 
 ### How screening works (decided 2026-10-18, see `ai/memory.md`)
 

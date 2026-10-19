@@ -8,7 +8,7 @@ import type {
   RemoveWorkerInput,
   UpdateTaskInput,
 } from '@onsite/validation';
-import { calculateItemSettlement, calculateSplit, requesterTotal } from '@onsite/money';
+import { calculateItemSettlement, calculateSplit, cashPurchaseCapPaise, requesterTotal } from '@onsite/money';
 import { decodeCursor, encodeCursor } from '@onsite/utils';
 import { ACTIVE_WORK_STATUSES } from '@onsite/types';
 import {
@@ -18,7 +18,7 @@ import {
   NotFoundError,
 } from '../../common/errors';
 import { approximateAddress, categoryLabel } from '../../common/projections';
-import { loadEnv } from '../../config/env';
+import { loadEnv, payoutProvider } from '../../config/env';
 import { GeoRepository, isWithinIndiaBounds } from '../../repositories/geo.repository';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MatchingQueue } from '../../queue/matching.queue';
@@ -51,16 +51,12 @@ const RELEASE_REASON_LABEL: Record<string, string> = {
 const MIN_DELIVERY_DISTANCE_M = 50;
 
 /**
- * Added to every task with an item budget, so the worker cannot submit
- * without the receipt the reimbursement is checked against.
+ * P3 added this receipt photo to every task with an item budget. Since P6
+ * the bill photo is part of the bill the requester approves before anything
+ * is bought, so it is no longer a proof requirement and is stripped from
+ * requirements a client sends.
  */
-export const ITEM_RECEIPT_REQUIREMENT = {
-  type: 'PHOTO',
-  fieldKey: 'item_receipt',
-  label: 'Receipt for the item',
-  required: true,
-  minCount: 1,
-} as const;
+const ITEM_RECEIPT_FIELD_KEY = 'item_receipt';
 
 interface DropoffColumns {
   dropoffLat: number | null;
@@ -285,7 +281,7 @@ export class TasksService {
         workerPayoutPaise: split.workerPayoutPaise,
         itemBudgetPaise,
         deadlineAt: input.deadlineAt,
-        proofRequirements: withItemReceipt(input.proofRequirements, itemBudgetPaise) as object,
+        proofRequirements: withoutItemReceipt(input.proofRequirements) as object,
         minVerificationLevel: this.risk.minVerificationLevelForBudget(atStakePaise),
         riskLevel: riskResult.level,
         riskFlags: riskResult.flags,
@@ -398,9 +394,8 @@ export class TasksService {
     const itemChanged = itemBudgetPaise !== Number(task.itemBudgetPaise);
     const proofRequirements =
       input.proofRequirements !== undefined || itemChanged
-        ? withItemReceipt(
+        ? withoutItemReceipt(
             (input.proofRequirements ?? (task.proofRequirements as unknown as ProofRequirementJson[])) as ProofRequirementJson[],
-            itemBudgetPaise,
           )
         : undefined;
     const atStakePaise = requesterTotal(money?.budgetPaise ?? Number(task.budgetPaise), itemBudgetPaise);
@@ -822,6 +817,11 @@ export class TasksService {
     const task = await this.prisma.task.findUnique({ where: { id: taskId } });
     if (!task || task.assignedWorkerId !== workerId) throw new NotFoundError('Task not found.');
     assertTransitionAllowed(task.status, 'MATCHING', 'WORKER', { isAssignedWorker: true });
+    // An approved bill means the item is being, or has been, bought with the
+    // requester's money: walking away from it is not a leave, it is an issue.
+    if ((await this.prisma.itemPurchase.count({ where: { taskId, status: 'APPROVED' } })) > 0) {
+      throw new BusinessRuleError('The item bill is already approved, so you cannot leave this task. Use Report an issue.');
+    }
 
     await this.releaseAssignment(task, workerId, 'WORKER', input.reason, input.note);
 
@@ -909,6 +909,11 @@ export class TasksService {
         },
       });
       await tx.taskProof.deleteMany({ where: { taskId: task.id, workerId } });
+      // An unanswered bill goes with the worker; the next one sends their own.
+      await tx.itemPurchase.updateMany({
+        where: { taskId: task.id, status: 'PENDING_APPROVAL', topUpCapturedAt: null },
+        data: { status: 'CANCELLED', decidedAt: new Date() },
+      });
 
       const profile = await tx.workerProfile.findUnique({ where: { userId: workerId } });
       if (profile) {
@@ -977,7 +982,7 @@ export class TasksService {
         amountPaise:
           perspective === 'worker'
             ? Number(t.workerPayoutPaise)
-            : requesterTotal(Number(t.budgetPaise), Number(t.itemBudgetPaise)),
+            : requesterTotal(Number(t.budgetPaise), Number(t.itemBudgetPaise) + Number(t.itemTopUpPaise)),
         deadlineAt: t.deadlineAt.toISOString(),
         createdAt: t.createdAt.toISOString(),
       })),
@@ -1051,6 +1056,11 @@ export class TasksService {
         // commission and the worker's net earnings stay internal (founder
         // decision 2026-10-19, docs/11-payment-flow.md).
         money: requesterMoney(task),
+        // The code the requester gives whoever receives the item. Never in
+        // the worker's view: entering it is the worker's proof of handover.
+        handover: task.handoverCode
+          ? { code: task.handoverCode, confirmed: task.handoverConfirmedAt !== null }
+          : null,
         assignedWorker: task.assignedWorker
           ? {
               id: task.assignedWorker.id,
@@ -1072,7 +1082,7 @@ export class TasksService {
       location: { latitude: task.taskLat, longitude: task.taskLng, address: task.taskAddress },
       dropoff: dropoffView(task),
       payoutPaise: Number(task.workerPayoutPaise),
-      item: itemView(task),
+      item: itemView(task, task.assignedWorker?.verificationLevel ?? 0),
       requester: {
         displayName: task.requester.displayName,
         verificationLevel: task.requester.verificationLevel,
@@ -1123,37 +1133,56 @@ function resolveItemBudget(mode: LocationMode, itemBudgetPaise: number): number 
   return itemBudgetPaise;
 }
 
-/** The task's proof list with the receipt requirement present exactly when there is an item budget. */
-function withItemReceipt<T extends { fieldKey?: string }>(requirements: readonly T[], itemBudgetPaise: number): (T | typeof ITEM_RECEIPT_REQUIREMENT)[] {
-  const rest = requirements.filter((r) => r.fieldKey !== ITEM_RECEIPT_REQUIREMENT.fieldKey);
-  return itemBudgetPaise > 0 ? [...rest, { ...ITEM_RECEIPT_REQUIREMENT }] : rest;
+/** The task's proof list without P3's receipt requirement (see ITEM_RECEIPT_FIELD_KEY). */
+function withoutItemReceipt<T extends { fieldKey?: string }>(requirements: readonly T[]): T[] {
+  return requirements.filter((r) => r.fieldKey !== ITEM_RECEIPT_FIELD_KEY);
 }
 
 /**
- * The requester's money: the task payment they set, the item budget, and the
- * total charged. Once the worker reports the item's cost, what it cost and
- * what comes back. Commission and worker earnings are deliberately absent.
+ * The requester's money: the task payment they set, the item budget, any
+ * top-up they paid to approve a bill above it, and the total charged. Once
+ * a bill is approved, what the item cost and what comes back. Commission and
+ * worker earnings are deliberately absent.
  */
-function requesterMoney(task: { budgetPaise: bigint; itemBudgetPaise: bigint; itemSpentPaise: bigint | null }) {
+function requesterMoney(task: {
+  budgetPaise: bigint;
+  itemBudgetPaise: bigint;
+  itemTopUpPaise: bigint;
+  itemSpentPaise: bigint | null;
+}) {
   const taskPaymentPaise = Number(task.budgetPaise);
   const itemBudgetPaise = Number(task.itemBudgetPaise);
+  const itemTopUpPaise = Number(task.itemTopUpPaise);
   const settlement =
-    task.itemSpentPaise !== null ? calculateItemSettlement(itemBudgetPaise, Number(task.itemSpentPaise)) : null;
+    task.itemSpentPaise !== null
+      ? calculateItemSettlement(itemBudgetPaise + itemTopUpPaise, Number(task.itemSpentPaise))
+      : null;
   return {
     taskPaymentPaise,
     itemBudgetPaise,
-    totalPaise: requesterTotal(taskPaymentPaise, itemBudgetPaise),
+    itemTopUpPaise,
+    totalPaise: requesterTotal(taskPaymentPaise, itemBudgetPaise + itemTopUpPaise),
     itemSpentPaise: settlement?.itemSpentPaise ?? null,
     itemRefundPaise: settlement?.refundPaise ?? null,
   };
 }
 
-/** The item budget as the assigned worker sees it, or null when nothing is bought. */
-function itemView(task: { itemBudgetPaise: bigint; itemSpentPaise: bigint | null }) {
+/**
+ * The item as the assigned worker sees it, or null when nothing is bought:
+ * what is set aside (with any top-up), the approved bill, the most they may
+ * pay in cash at their level, and whether the platform can pay a shop.
+ */
+function itemView(
+  task: { itemBudgetPaise: bigint; itemTopUpPaise: bigint; itemSpentPaise: bigint | null; handoverConfirmedAt: Date | null },
+  verificationLevel: number,
+) {
   return Number(task.itemBudgetPaise) > 0
     ? {
-        budgetPaise: Number(task.itemBudgetPaise),
+        budgetPaise: Number(task.itemBudgetPaise) + Number(task.itemTopUpPaise),
         spentPaise: task.itemSpentPaise !== null ? Number(task.itemSpentPaise) : null,
+        cashCapPaise: cashPurchaseCapPaise(verificationLevel),
+        shopPaymentAvailable: payoutProvider() !== 'none',
+        handoverConfirmed: task.handoverConfirmedAt !== null,
       }
     : null;
 }
