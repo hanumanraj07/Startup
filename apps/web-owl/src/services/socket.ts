@@ -1,5 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
-import { API_URL, getAccessToken } from './api';
+import { config } from '@/lib/config';
+import { getAccessToken } from './api';
 
 export interface TaskSocketHandlers {
   onMessage?: (message: unknown) => void;
@@ -18,7 +19,7 @@ export function joinTaskRoom(taskId: string, handlers: TaskSocketHandlers): () =
   const token = getAccessToken();
   if (!token) return () => undefined;
 
-  const socket: Socket = io(`${API_URL}/ws`, {
+  const socket: Socket = io(`${config.socketUrl}/ws`, {
     auth: { token },
     transports: ['websocket'],
   });

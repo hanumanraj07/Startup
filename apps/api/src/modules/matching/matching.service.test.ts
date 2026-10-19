@@ -25,7 +25,7 @@ beforeEach(() => {
  * just resolves whatever array of promises it is given, which is enough to
  * observe which writes were attempted.
  */
-function fakePrisma(task: Record<string, unknown> | null) {
+function fakePrisma(task: Record<string, unknown> | null, releasedWorkerIds: string[] = []) {
   const taskUpdate = vi.fn().mockResolvedValue({});
   const historyCreate = vi.fn().mockResolvedValue({});
   const taskOfferCreateMany = vi.fn().mockResolvedValue({ count: 0 });
@@ -36,6 +36,7 @@ function fakePrisma(task: Record<string, unknown> | null) {
     task: { findUnique: vi.fn().mockResolvedValue(task), update: taskUpdate },
     taskStatusHistory: { create: historyCreate },
     taskOffer: { findMany: vi.fn().mockResolvedValue([]), createMany: taskOfferCreateMany },
+    taskRelease: { findMany: vi.fn().mockResolvedValue(releasedWorkerIds.map((workerId) => ({ workerId }))) },
     workerProfile: { updateMany: workerProfileUpdateMany, aggregate },
     $transaction: vi.fn(async (ops: Promise<unknown>[]) => Promise.all(ops)),
   };
@@ -158,6 +159,17 @@ describe('MatchingService.runTierPass', () => {
     const service = new MatchingService(client as never, fakeGeo([]) as never, queue as never, fakeNotifications() as never, fakeSafety() as never);
     await service.runTierPass('t1', 3);
     expect(queue.scheduleTier).not.toHaveBeenCalled();
+  });
+
+  it('never offers the task again to a worker who left it or was removed from it', async () => {
+    const { client } = fakePrisma(baseTask({ status: 'MATCHING' }), ['w-left']);
+    const geo = fakeGeo([]);
+    const service = new MatchingService(client as never, geo as never, fakeQueue() as never, fakeNotifications() as never, fakeSafety() as never);
+
+    await service.runTierPass('t1', 0);
+
+    const params = geo.findNearbyWorkers.mock.calls[0]?.[0] as { excludeUserIds: string[] };
+    expect(params.excludeUserIds).toContain('w-left');
   });
 
   it('offers the eligible candidates and schedules the next tier when one exists', async () => {

@@ -51,3 +51,9 @@ export const PROOF_VISIBLE_STATUSES: readonly TaskStatus[] = [
   'PAYMENT_RELEASED',
   'DISPUTED',
 ];
+
+/** Backend ACTIVE_WORK: the assigned worker may leave the task from any of these (transitions.ts). */
+export const LEAVABLE_STATUSES: readonly TaskStatus[] = ['ASSIGNED', 'WORKER_EN_ROUTE', 'ARRIVED', 'IN_PROGRESS'];
+
+/** Backend REMOVABLE_BEFORE_ARRIVAL: the requester may remove the worker only before they arrive. */
+export const WORKER_REMOVABLE_STATUSES: readonly TaskStatus[] = ['ASSIGNED', 'WORKER_EN_ROUTE'];

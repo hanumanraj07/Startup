@@ -1,24 +1,32 @@
 import { describe, expect, it } from 'vitest';
-import type { CategoryView, ProofRequirement } from '@/lib/api-types';
+import type { CategoryView, PickedLocation, ProofRequirement } from '@/lib/api-types';
 import {
   buildDraftPayload,
   canAdvance,
+  composeAddress,
   defaultProofFor,
   estimateSplit,
   FALLBACK_PROOF,
   minDeadlineLocal,
   parseBudgetPaise,
-  parseCoordinate,
   type WizardInput,
 } from './wizard';
 
 const photo: ProofRequirement = { type: 'PHOTO', label: 'Photo of the item', required: true };
 
-const valid: WizardInput = {
-  hasCategory: true,
+const shop: PickedLocation = {
   latitude: 22.5675,
   longitude: 88.351,
-  address: 'Computer market, Kolkata',
+  suggestedAddress: 'Bentinck Street, Kolkata, West Bengal',
+  details: 'XYZ Computer Store, 2nd floor',
+};
+const home: PickedLocation = { latitude: 22.5526, longitude: 88.3527, suggestedAddress: 'Park Street, Kolkata', details: '' };
+
+const valid: WizardInput = {
+  hasCategory: true,
+  locationMode: 'SINGLE',
+  pickup: shop,
+  dropoff: null,
   title: 'Inspect a laptop',
   description: 'Check the laptop is in stock and photograph the sealed box. Do not buy it.',
   deadlineLocal: '2026-10-12T18:00',
@@ -97,15 +105,18 @@ describe('canAdvance', () => {
     expect(canAdvance(0, valid)).toBe(true);
   });
 
-  it('requires coordinates and an address of at least 5 characters on step 1', () => {
-    expect(canAdvance(1, { ...valid, latitude: null })).toBe(false);
-    expect(canAdvance(1, { ...valid, longitude: null })).toBe(false);
-    expect(canAdvance(1, { ...valid, address: '  abc ' })).toBe(false);
+  it('requires a picked point with enough address text on step 1', () => {
+    expect(canAdvance(1, { ...valid, pickup: null })).toBe(false);
+    expect(canAdvance(1, { ...valid, pickup: { ...shop, suggestedAddress: '', details: ' abc ' } })).toBe(false);
+    // Typed details alone are enough when the address lookup found nothing.
+    expect(canAdvance(1, { ...valid, pickup: { ...shop, suggestedAddress: '' } })).toBe(true);
     expect(canAdvance(1, valid)).toBe(true);
   });
 
-  it('allows latitude and longitude of exactly 0 (not treated as missing)', () => {
-    expect(canAdvance(1, { ...valid, latitude: 0, longitude: 0 })).toBe(true);
+  it('asks for a drop-off only for pickup & delivery categories', () => {
+    expect(canAdvance(1, { ...valid, locationMode: 'PICKUP_DROPOFF' })).toBe(false);
+    expect(canAdvance(1, { ...valid, locationMode: 'PICKUP_DROPOFF', dropoff: home })).toBe(true);
+    expect(canAdvance(1, { ...valid, locationMode: 'SINGLE', dropoff: null })).toBe(true);
   });
 
   it('enforces title, description, deadline and the budget range on step 2', () => {
@@ -136,9 +147,8 @@ describe('buildDraftPayload', () => {
     title: '  Inspect a laptop ',
     description: ' Check stock. ',
     categorySlug: 'product-inspection',
-    latitude: 22.5675,
-    longitude: 88.351,
-    address: ' Computer market ',
+    pickup: { ...shop, details: ' XYZ Computer Store ' },
+    dropoff: null,
     budgetPaise: 50_000,
     deadlineLocal: '2026-10-12T18:00',
     proofRequirements: [
@@ -150,7 +160,7 @@ describe('buildDraftPayload', () => {
   it('trims user text and sends only what the user chose', () => {
     expect(payload.title).toBe('Inspect a laptop');
     expect(payload.description).toBe('Check stock.');
-    expect(payload.taskAddress).toBe('Computer market');
+    expect(payload.taskAddress).toBe('XYZ Computer Store, Bentinck Street, Kolkata, West Bengal');
     expect(payload.taskLocation).toEqual({ latitude: 22.5675, longitude: 88.351 });
     expect(Object.keys(payload).sort()).toEqual(
       ['budgetPaise', 'categorySlug', 'deadlineAt', 'description', 'proofRequirements', 'taskAddress', 'taskLocation', 'title'].sort(),
@@ -173,23 +183,27 @@ describe('buildDraftPayload', () => {
   });
 });
 
-describe('parseCoordinate', () => {
-  it('parses plain and partial decimal text', () => {
-    expect(parseCoordinate('22.5675', 90)).toBe(22.5675);
-    expect(parseCoordinate('22.', 90)).toBe(22);
-    expect(parseCoordinate('-88.351', 180)).toBe(-88.351);
+describe('pickup & delivery payload', () => {
+  it('sends the drop-off with its own composed address', () => {
+    const payload = buildDraftPayload({
+      title: 'Deliver a parcel',
+      description: 'Collect the parcel and hand it over.',
+      categorySlug: 'pickup-delivery',
+      pickup: shop,
+      dropoff: { ...home, details: 'Flat 4B' },
+      budgetPaise: 50_000,
+      deadlineLocal: '2026-10-12T18:00',
+      proofRequirements: [photo],
+    });
+    expect(payload.dropoffLocation).toEqual({ latitude: 22.5526, longitude: 88.3527 });
+    expect(payload.dropoffAddress).toBe('Flat 4B, Park Street, Kolkata');
   });
+});
 
-  it('keeps 0 as a real value, not as missing', () => {
-    expect(parseCoordinate('0', 90)).toBe(0);
-  });
-
-  it('is null for empty, non-numeric and out-of-range text', () => {
-    expect(parseCoordinate('', 90)).toBeNull();
-    expect(parseCoordinate('  ', 90)).toBeNull();
-    expect(parseCoordinate('abc', 90)).toBeNull();
-    expect(parseCoordinate('91', 90)).toBeNull();
-    expect(parseCoordinate('-181', 180)).toBeNull();
-    expect(parseCoordinate('Infinity', 90)).toBeNull();
+describe('composeAddress', () => {
+  it('puts what the user typed before the looked-up address, skipping whichever is empty', () => {
+    expect(composeAddress(shop)).toBe('XYZ Computer Store, 2nd floor, Bentinck Street, Kolkata, West Bengal');
+    expect(composeAddress({ ...shop, details: '  ' })).toBe('Bentinck Street, Kolkata, West Bengal');
+    expect(composeAddress(null)).toBe('');
   });
 });

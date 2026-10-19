@@ -4,6 +4,8 @@
   "outputDirectory": "dist",
   "trailingSlash": false,
   "rewrites": [
+    { "source": "/api/v1/:path*", "destination": "https://onsite-api.duckdns.org/api/v1/:path*" },
+
     { "source": "/licenses", "destination": "/pages/licenses.html" },
     { "source": "/offline", "destination": "/pages/offline.html" },
     { "source": "/sign-in", "destination": "/pages/sign-in.html" },
@@ -30,7 +32,8 @@
     { "source": "/admin/users", "destination": "/app.html" },
     { "source": "/admin/tasks", "destination": "/app.html" },
     { "source": "/admin/tasks/:id", "destination": "/app.html" },
-    { "source": "/admin/categories", "destination": "/app.html" }
+    { "source": "/admin/categories", "destination": "/app.html" },
+    { "source": "/admin/moderation", "destination": "/app.html" }
   ],
   "headers": [
     {

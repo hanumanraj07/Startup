@@ -1,6 +1,7 @@
 import { calculateSplit, rupeesToPaise, ZERO_DEDUCTIONS, type TaskSplit } from '@onsite/money';
 import { MAX_TASK_BUDGET_PAISE, MIN_TASK_BUDGET_PAISE } from '@onsite/validation';
-import type { CategoryView, ProofRequirement } from '@/lib/api-types';
+import type { LocationMode } from '@onsite/types';
+import type { CategoryView, PickedLocation, ProofRequirement } from '@/lib/api-types';
 
 /**
  * Pure rules for the task-posting wizard, kept out of the view so they can be
@@ -58,11 +59,30 @@ export function minDeadlineLocal(now: Date = new Date(), leadMinutes = 35): stri
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/**
+ * The address a worker is given for a picked point: what the user typed
+ * (shop name, floor, landmark) first, then the looked-up street address.
+ * Either may be missing; the server requires at least 5 characters.
+ */
+export function composeAddress(location: PickedLocation | null): string {
+  if (!location) return '';
+  const details = location.details.trim();
+  const suggested = location.suggestedAddress.trim();
+  return [details, suggested].filter(Boolean).join(', ').slice(0, 500);
+}
+
+/** A point is usable once it is set and there is enough address text to find it. */
+export function isLocationReady(location: PickedLocation | null): boolean {
+  return location !== null && composeAddress(location).length >= 5;
+}
+
 export interface WizardInput {
   hasCategory: boolean;
-  latitude: number | null;
-  longitude: number | null;
-  address: string;
+  /** From the chosen category: one place, or a pickup and a drop-off. */
+  locationMode: LocationMode;
+  /** The task location; for pickup & delivery, the pickup point. */
+  pickup: PickedLocation | null;
+  dropoff: PickedLocation | null;
   title: string;
   description: string;
   deadlineLocal: string;
@@ -76,7 +96,7 @@ export function canAdvance(step: number, input: WizardInput): boolean {
     case 0:
       return input.hasCategory;
     case 1:
-      return input.latitude !== null && input.longitude !== null && input.address.trim().length >= 5;
+      return isLocationReady(input.pickup) && (input.locationMode === 'SINGLE' || isLocationReady(input.dropoff));
     case 2:
       return (
         input.title.trim().length >= 8 &&
@@ -97,9 +117,9 @@ export interface DraftPayloadInput {
   title: string;
   description: string;
   categorySlug: string;
-  latitude: number;
-  longitude: number;
-  address: string;
+  pickup: PickedLocation;
+  /** Sent only for pickup & delivery categories. */
+  dropoff: PickedLocation | null;
   budgetPaise: number;
   deadlineLocal: string;
   proofRequirements: readonly ProofRequirement[];
@@ -111,8 +131,12 @@ export function buildDraftPayload(input: DraftPayloadInput) {
     title: input.title.trim(),
     description: input.description.trim(),
     categorySlug: input.categorySlug,
-    taskLocation: { latitude: input.latitude, longitude: input.longitude },
-    taskAddress: input.address.trim(),
+    taskLocation: { latitude: input.pickup.latitude, longitude: input.pickup.longitude },
+    taskAddress: composeAddress(input.pickup),
+    ...(input.dropoff && {
+      dropoffLocation: { latitude: input.dropoff.latitude, longitude: input.dropoff.longitude },
+      dropoffAddress: composeAddress(input.dropoff),
+    }),
     budgetPaise: input.budgetPaise,
     deadlineAt: new Date(input.deadlineLocal).toISOString(),
     proofRequirements: input.proofRequirements.map((r) => ({
@@ -123,16 +147,4 @@ export function buildDraftPayload(input: DraftPayloadInput) {
       ...(r.minCount ? { minCount: r.minCount } : {}),
     })),
   };
-}
-
-/**
- * A latitude or longitude typed into a text box, as a number, or null when it is
- * empty, not a number, or outside `[-limit, limit]`. The wizard keeps these as
- * text while editing so a partial entry like "22." is not rewritten under the
- * cursor.
- */
-export function parseCoordinate(text: string, limit: number): number | null {
-  if (!text.trim()) return null;
-  const value = Number(text);
-  return Number.isFinite(value) && Math.abs(value) <= limit ? value : null;
 }

@@ -15,6 +15,8 @@ const CATEGORY_META: Record<string, CategoryMeta> = {
   'document-collection': { icon: 'file-text', tint: 'var(--tint-yellow)', glyph: 'var(--brand-700)' },
   'local-photography': { icon: 'camera', tint: 'var(--tint-pink)', glyph: '#b4235f' },
   'local-research': { icon: 'search', tint: 'var(--tint-purple)', glyph: '#6230c9' },
+  // The one category that moves something: the brand yellow, with the dark ink glyph.
+  'pickup-delivery': { icon: 'package-check', tint: 'var(--brand-100)', glyph: 'var(--ink-900)' },
 };
 
 const FALLBACK: CategoryMeta = { icon: 'package', tint: 'var(--paper-100)', glyph: 'var(--ink-700)' };

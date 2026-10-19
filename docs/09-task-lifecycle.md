@@ -33,7 +33,8 @@ DRAFT                          → CANCELLED   (requester, before payment)
 PUBLISHED, MATCHING            → CANCELLED   (requester, full refund)
 PUBLISHED, MATCHING            → EXPIRED     (deadline passed, nobody accepted)
 ASSIGNED … IN_PROGRESS         → CANCELLED   (requester, refund minus worker compensation)
-ASSIGNED … IN_PROGRESS         → MATCHING    (worker abandons, task re-offered)
+ASSIGNED … IN_PROGRESS         → MATCHING    (worker leaves, task re-offered)
+ASSIGNED, WORKER_EN_ROUTE      → MATCHING    (requester removes the worker before arrival)
 SUBMITTED, UNDER_REVIEW        → IN_PROGRESS (requester rejects, rework requested)
 SUBMITTED, UNDER_REVIEW        → DISPUTED    (either party, payment frozen)
 COMPLETED                      → DISPUTED    (within the window)
@@ -63,7 +64,8 @@ Every transition names its actor, its precondition, and its side effects. Anythi
 | `DISPUTED → CANCELLED` | Admin | Decision favours the requester | Refund executed |
 | `PUBLISHED / MATCHING → CANCELLED` | Requester | Not yet assigned | Full refund, offers expired |
 | `ASSIGNED … IN_PROGRESS → CANCELLED` | Requester | Assigned | Refund minus worker compensation. Worker notified |
-| `ASSIGNED … IN_PROGRESS → MATCHING` | Assignee or System | Worker abandons or goes unresponsive past deadline | Assignment cleared, completion rate penalised, task re-offered, requester notified |
+| `ASSIGNED … IN_PROGRESS → MATCHING` | Assignee or System | Worker leaves (`POST /tasks/:id/leave`, reason required) or goes unresponsive past deadline | Assignment cleared, `task_releases` row written, the worker's uploaded proof discarded, `tasks_abandoned` incremented and completion rate recomputed, the worker can never re-accept this task, matching restarts from tier 1, requester notified. No money moves |
+| `ASSIGNED / WORKER_EN_ROUTE → MATCHING` | Requester | **Before arrival only.** At most 3 removals per task | Same as above, except it is not counted against the worker (the acceptance is taken back out of their ratio). Worker notified. After arrival the requester's route is Report an issue. Decided 2026-10-18, see `ai/memory.md` |
 | `PUBLISHED / MATCHING → EXPIRED` | System | Deadline passed unassigned | Full refund, requester notified and offered a repost at a higher suggested budget |
 
 ## Rules the machine enforces

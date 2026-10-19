@@ -104,8 +104,13 @@ export const CATEGORY_SLUG = [
   'document-collection',
   'local-photography',
   'local-research',
+  'pickup-delivery',
 ] as const;
 export type CategorySlug = (typeof CATEGORY_SLUG)[number];
+
+/** One place, or a pickup and a drop-off. Set per category; decides what the task wizard asks for. */
+export const LOCATION_MODE = ['SINGLE', 'PICKUP_DROPOFF'] as const;
+export type LocationMode = (typeof LOCATION_MODE)[number];
 
 /** Ledger accounts. Entries for a task must sum to zero. See docs/11-payment-flow.md. */
 export const LEDGER_ACCOUNT = [

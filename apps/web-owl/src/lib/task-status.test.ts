@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { CHAT_VISIBLE_STATUSES, CHAT_WRITABLE_STATUSES, PROOF_VISIBLE_STATUSES, REPORTABLE_STATUSES } from './task-status';
+import {
+  CHAT_VISIBLE_STATUSES,
+  CHAT_WRITABLE_STATUSES,
+  LEAVABLE_STATUSES,
+  PROOF_VISIBLE_STATUSES,
+  REPORTABLE_STATUSES,
+  WORKER_REMOVABLE_STATUSES,
+} from './task-status';
 
 describe('task status sets', () => {
   it('only lets people write in chats they can also read', () => {
@@ -28,5 +35,12 @@ describe('task status sets', () => {
     expect(PROOF_VISIBLE_STATUSES).toContain('ARRIVED');
     expect(PROOF_VISIBLE_STATUSES).not.toContain('ASSIGNED');
     expect(PROOF_VISIBLE_STATUSES).not.toContain('WORKER_EN_ROUTE');
+  });
+
+  it('lets a worker leave until submission, and a requester remove them only before arrival', () => {
+    expect(LEAVABLE_STATUSES).toContain('IN_PROGRESS');
+    expect(LEAVABLE_STATUSES).not.toContain('SUBMITTED');
+    expect(WORKER_REMOVABLE_STATUSES).toEqual(['ASSIGNED', 'WORKER_EN_ROUTE']);
+    for (const status of WORKER_REMOVABLE_STATUSES) expect(LEAVABLE_STATUSES).toContain(status);
   });
 });

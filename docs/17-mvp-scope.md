@@ -6,7 +6,7 @@ The most useful file in this repository for keeping work in bounds.
 
 ## The MVP in one sentence
 
-A requester anywhere in India can post a funded inspection task at a specific location, a verified worker nearby can find and accept it, complete it with photo, video and GPS evidence, and be paid automatically on approval. The canonical proof case remains a requester in Ahmedabad and a task in Kolkata, since that is where verified worker supply is concentrated at launch (see `ai/memory.md`, 2026-09-22).
+A requester anywhere in India can post a funded inspection task at a specific location (or a pickup & delivery task between two nearby points, added 2026-10-19), a verified worker nearby can find and accept it, complete it with photo, video and GPS evidence, and be paid automatically on approval. The canonical proof case remains a requester in Ahmedabad and a task in Kolkata, since that is where verified worker supply is concentrated at launch (see `ai/memory.md`, 2026-09-22).
 
 If that works reliably, the concept is proven. If it does not, no additional feature rescues it.
 
@@ -70,8 +70,8 @@ Each of these sounds reasonable, and each would harm the launch.
 
 | Excluded | Why |
 |---|---|
-| Any category beyond the launch six | Every category brings unfamiliar fraud and safety modes |
-| Purchasing on a requester's behalf, or cash handling | A worker carrying someone's ₹80,000 is a different, harder business |
+| Any category beyond the launch seven (the six inspection categories plus pickup & delivery, added 2026-10-19) | Every category brings unfamiliar fraud and safety modes |
+| Purchasing on a requester's behalf, or cash handling | A worker carrying someone's ₹80,000 is a different, harder business. **Founder reversed this on 2026-10-18 for purchases (held and settled separately from the task payment), to be built in P3; still excluded until then.** See `ai/memory.md` |
 | Worker bidding | A negotiation round trip in a marketplace with no liquidity, and it worsens time to match |
 | Machine-learned matching | No training data exists, and a model cannot explain itself to a worker who asks why they rank low |
 | Wallets or stored balances | Holding user balances is a much heavier regulatory obligation than escrowing one transaction |
@@ -87,7 +87,7 @@ Each of these sounds reasonable, and each would harm the launch.
 | Address verification, level 3 | Only needed above ₹5,000, which is above the expected launch range |
 | Appeals on disputes | Volume does not justify it yet |
 | Surge pricing | Requires demand density two cities will not produce |
-| Live worker tracking | Blocked by iOS background limits, and discrete GPS checkpoints are enough |
+| Live worker tracking | Blocked by iOS background limits, and discrete GPS checkpoints are enough. **Founder reversed this on 2026-10-18 (foreground tracking while the worker is on the way, visible to the requester), to be built in P2.** |
 
 ## Launch definition of done
 

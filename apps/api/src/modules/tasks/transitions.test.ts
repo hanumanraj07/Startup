@@ -177,6 +177,28 @@ describe('nobody can release their own money', () => {
   });
 });
 
+describe('releasing an assignment', () => {
+  it('lets the assigned worker leave at any stage of active work, and nobody else as WORKER', () => {
+    for (const from of ['ASSIGNED', 'WORKER_EN_ROUTE', 'ARRIVED', 'IN_PROGRESS'] as const) {
+      expect(allowed(from, 'MATCHING', 'WORKER', { isAssignedWorker: true }), from).toBe(true);
+      expect(allowed(from, 'MATCHING', 'WORKER', { isAssignedWorker: false }), from).toBe(false);
+    }
+  });
+
+  it('does not let a worker leave once proof is submitted', () => {
+    expect(allowed('SUBMITTED', 'MATCHING', 'WORKER', { isAssignedWorker: true })).toBe(false);
+    expect(allowed('UNDER_REVIEW', 'MATCHING', 'WORKER', { isAssignedWorker: true })).toBe(false);
+  });
+
+  it('lets the requester remove the worker only before arrival', () => {
+    expect(allowed('ASSIGNED', 'MATCHING', 'REQUESTER')).toBe(true);
+    expect(allowed('WORKER_EN_ROUTE', 'MATCHING', 'REQUESTER')).toBe(true);
+    expect(allowed('ARRIVED', 'MATCHING', 'REQUESTER')).toBe(false);
+    expect(allowed('IN_PROGRESS', 'MATCHING', 'REQUESTER')).toBe(false);
+    expect(allowed('SUBMITTED', 'MATCHING', 'REQUESTER')).toBe(false);
+  });
+});
+
 describe('terminal states are terminal', () => {
   it.each(TERMINAL_STATUSES)('%s permits no transition, for any actor', (terminal) => {
     for (const to of ALL_STATUSES) {

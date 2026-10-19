@@ -1,8 +1,9 @@
 import { Component, onMounted, onWillUnmount, useState, xml } from '@odoo/owl';
 import type { TaskSplit } from '@onsite/money';
+import { ModerationNotice, moderationNoticeFrom, type ModerationNoticeData } from '@/components/ModerationNotice';
 import { Page } from '@/components/Page';
 import { StepProgress } from '@/components/StepProgress';
-import type { CategoryView, CityView, ProofRequirement } from '@/lib/api-types';
+import type { CategoryView, PickedLocation, ProofRequirement } from '@/lib/api-types';
 import {
   buildDraftPayload,
   canAdvance,
@@ -10,12 +11,10 @@ import {
   estimateSplit,
   LAST_STEP,
   parseBudgetPaise,
-  parseCoordinate,
   STEPS,
 } from '@/lib/wizard';
 import { navigate } from '@/router/router';
 import { ApiError, api } from '@/services/api';
-import { getPosition } from '@/services/geo';
 import { openRazorpayCheckout } from '@/services/razorpay';
 import { store, toast } from '@/store/store';
 import { btn, card } from '@/ui/classes';
@@ -31,19 +30,18 @@ interface PaymentOrderView {
   razorpay?: { orderId: string; keyId: string | null };
 }
 
-type TextField = 'latitudeText' | 'longitudeText' | 'address' | 'title' | 'description' | 'deadlineLocal' | 'budgetRupees';
+type TextField = 'title' | 'description' | 'deadlineLocal' | 'budgetRupees';
 
 interface WizardState {
   step: number;
   categories: CategoryView[];
-  cities: CityView[];
   loaded: boolean;
   loadError: string | null;
   category: CategoryView | null;
-  latitudeText: string;
-  longitudeText: string;
-  address: string;
-  cityNote: string;
+  /** The task location; the pickup point for pickup & delivery categories. */
+  pickup: PickedLocation | null;
+  /** Pickup & delivery categories only. */
+  dropoff: PickedLocation | null;
   title: string;
   description: string;
   deadlineLocal: string;
@@ -52,6 +50,7 @@ interface WizardState {
   draft: DraftTask | null;
   submitting: boolean;
   submitError: string | null;
+  moderation: ModerationNoticeData | null;
 }
 
 const PAYMENT_POLL_ATTEMPTS = 20;
@@ -74,6 +73,9 @@ export class NewTaskView extends Component {
       <div t-else="" class="mx-auto flex max-w-2xl flex-col gap-6">
         <p class="text-sm text-ink-500">One decision per screen. Nothing is charged until the last step.</p>
 
+        <ModerationNotice t-if="state.moderation" t-key="state.moderation.eventId or state.moderation.kind"
+          notice="state.moderation" onExpired="onRestrictionExpired"/>
+
         <StepProgress steps="steps" current="state.step"/>
 
         <div t-att-class="cardClass">
@@ -82,8 +84,7 @@ export class NewTaskView extends Component {
               categories="state.categories" selectedId="selectedCategoryId" loading="!state.loaded"
               onSelect="selectCategory"/>
             <LocationStep t-elif="state.step === 1"
-              wizard="state" cities="state.cities"
-              onSelectCity="selectCity" onUseMyLocation="useMyLocation" onField="setField"/>
+              wizard="state" mode="locationMode" onPickup="setPickup" onDropoff="setDropoff"/>
             <DetailsStep t-elif="state.step === 2" wizard="state" onField="setField" estimate="estimate"/>
             <ProofStep t-elif="state.step === 3"
               requirements="state.proofRequirements"
@@ -102,21 +103,18 @@ export class NewTaskView extends Component {
         </div>
       </div>
     </Page>`;
-  static components = { CategoryStep, DetailsStep, LocationStep, Page, ProofStep, ReviewStep, StepProgress };
+  static components = { CategoryStep, DetailsStep, LocationStep, ModerationNotice, Page, ProofStep, ReviewStep, StepProgress };
   static override props = {};
 
   store = useState(store);
   state = useState<WizardState>({
     step: 0,
     categories: [],
-    cities: [],
     loaded: false,
     loadError: null,
     category: null,
-    latitudeText: '',
-    longitudeText: '',
-    address: '',
-    cityNote: '',
+    pickup: null,
+    dropoff: null,
     title: '',
     description: '',
     deadlineLocal: '',
@@ -125,6 +123,7 @@ export class NewTaskView extends Component {
     draft: null,
     submitting: false,
     submitError: null,
+    moderation: null,
   });
 
   steps: string[] = [...STEPS];
@@ -137,6 +136,7 @@ export class NewTaskView extends Component {
   override setup() {
     onMounted(() => {
       void this.loadReferenceData();
+      void this.loadRestriction();
     });
     onWillUnmount(() => {
       this.disposed = true;
@@ -169,21 +169,17 @@ export class NewTaskView extends Component {
     return this.state.step < LAST_STEP;
   }
 
-  private get latitude(): number | null {
-    return parseCoordinate(this.state.latitudeText, 90);
-  }
-
-  private get longitude(): number | null {
-    return parseCoordinate(this.state.longitudeText, 180);
+  get locationMode(): 'SINGLE' | 'PICKUP_DROPOFF' {
+    return this.state.category?.locationMode ?? 'SINGLE';
   }
 
   get advanceable(): boolean {
     const s = this.state;
     return canAdvance(s.step, {
       hasCategory: s.category !== null,
-      latitude: this.latitude,
-      longitude: this.longitude,
-      address: s.address,
+      locationMode: this.locationMode,
+      pickup: s.pickup,
+      dropoff: s.dropoff,
       title: s.title,
       description: s.description,
       deadlineLocal: s.deadlineLocal,
@@ -224,24 +220,16 @@ export class NewTaskView extends Component {
   selectCategory = (category: CategoryView) => {
     this.state.category = category;
     this.state.proofRequirements = defaultProofFor(category);
+    // A one-place category never carries a drop-off.
+    if (category.locationMode === 'SINGLE') this.state.dropoff = null;
   };
 
-  selectCity = (city: CityView) => {
-    this.state.latitudeText = String(city.latitude);
-    this.state.longitudeText = String(city.longitude);
-    this.state.cityNote = `Must be within ${(city.radiusMeters / 1000).toFixed(0)} km of central ${city.name}.`;
+  setPickup = (location: PickedLocation | null) => {
+    this.state.pickup = location;
   };
 
-  useMyLocation = async () => {
-    const position = await getPosition();
-    if (this.disposed) return;
-    if (position) {
-      this.state.latitudeText = String(position.coords.latitude);
-      this.state.longitudeText = String(position.coords.longitude);
-      this.state.cityNote = '';
-    } else {
-      this.state.cityNote = 'Could not read your location. Enter the coordinates below instead.';
-    }
+  setDropoff = (location: PickedLocation | null) => {
+    this.state.dropoff = location;
   };
 
   updateProof = (index: number, patch: Partial<ProofRequirement>) => {
@@ -260,23 +248,55 @@ export class NewTaskView extends Component {
 
   private async loadReferenceData() {
     try {
-      const [categories, cities] = await Promise.all([
-        api.get<{ data: CategoryView[] }>('/categories'),
-        api.get<{ data: CityView[] }>('/cities'),
-      ]);
+      const categories = await api.get<{ data: CategoryView[] }>('/categories');
       if (this.disposed) return;
       this.state.categories = categories.data;
-      this.state.cities = cities.data;
       this.state.loaded = true;
     } catch {
       if (!this.disposed) this.state.loadError = 'Could not load categories. Refresh to try again.';
     }
   }
 
+  /** Shows the cooldown up front, before the user fills in five screens only to be refused. */
+  private async loadRestriction() {
+    try {
+      const r = await api.get<{ restricted: boolean; eventId?: string; restrictedUntil?: string; reason?: string }>(
+        '/moderation/restriction',
+      );
+      if (this.disposed || !r.restricted) return;
+      this.state.moderation = {
+        kind: 'restricted',
+        message: `A recent task broke our rules (${r.reason ?? 'prohibited content'}), so posting and editing tasks is paused for a few minutes.`,
+        eventId: r.eventId,
+        restrictedUntil: r.restrictedUntil,
+      };
+    } catch {
+      // Purely informational; the API enforces the pause regardless.
+    }
+  }
+
+  onRestrictionExpired = () => {
+    if (this.state.moderation?.kind === 'restricted') this.state.moderation = null;
+  };
+
+  /** Moderation refusals get the full notice instead of a one-line error. */
+  private showError(error: unknown, fallback: string) {
+    const notice = moderationNoticeFrom(error);
+    if (notice) {
+      this.state.moderation = notice;
+      this.state.submitError = null;
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    this.state.submitError = error instanceof ApiError ? error.message : fallback;
+  }
+
   createDraft = async () => {
     const { state } = this;
     const budgetPaise = this.budgetPaise;
-    if (!state.category || this.latitude === null || this.longitude === null || budgetPaise === null) return;
+    const pickup = state.pickup;
+    if (!state.category || !pickup || budgetPaise === null) return;
+    const dropoff = this.locationMode === 'PICKUP_DROPOFF' ? state.dropoff : null;
     state.submitting = true;
     state.submitError = null;
     try {
@@ -286,16 +306,15 @@ export class NewTaskView extends Component {
           title: state.title,
           description: state.description,
           categorySlug: state.category.slug,
-          latitude: this.latitude,
-          longitude: this.longitude,
-          address: state.address,
+          pickup,
+          dropoff,
           budgetPaise,
           deadlineLocal: state.deadlineLocal,
           proofRequirements: state.proofRequirements,
         }),
       );
     } catch (error) {
-      state.submitError = error instanceof ApiError ? error.message : 'Could not create the task. Try again.';
+      this.showError(error, 'Could not create the task. Try again.');
     } finally {
       state.submitting = false;
     }
@@ -351,7 +370,7 @@ export class NewTaskView extends Component {
       toast('Task published', { description: 'Funds are held in escrow until you approve the work.', variant: 'success' });
       navigate(`/tasks/${draft.id}`);
     } catch (error) {
-      state.submitError = error instanceof ApiError ? error.message : 'Payment or publishing failed. Try again.';
+      this.showError(error, 'Payment or publishing failed. Try again.');
     } finally {
       state.submitting = false;
     }

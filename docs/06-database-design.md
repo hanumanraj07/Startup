@@ -101,6 +101,7 @@ Public projection: display name, avatar, city, rating, completion rate, tasks co
 | `default_proof_requirements` | jsonb | Preset checklist for the category |
 | `suggested_min_paise`, `suggested_max_paise` | bigint | Drives the price hint |
 | `is_active` | boolean | Only active categories can be selected |
+| `location_mode` | enum | `SINGLE` (one place) or `PICKUP_DROPOFF` (a pickup and a drop-off). Decides what the task wizard asks for |
 
 ## cities
 
@@ -127,7 +128,9 @@ The core entity. **Two locations, and they are not interchangeable.**
 | `task_geog` | geography(Point,4326) | **Where the work happens. The matching input.** GIST indexed |
 | `task_lat`, `task_lng` | double precision | Display only |
 | `task_address`, `task_place_name` | text | Shown to the assigned worker |
-| `task_place_id` | text | Google Place identifier |
+| `task_place_id` | text | Provider place identifier, optional |
+| `dropoff_lat`, `dropoff_lng`, `dropoff_address`, `dropoff_place_name` | float, text | Pickup & delivery tasks only; all-or-nothing (check constraint). Exact drop-off shown to the assignee only |
+| `dropoff_geog` | geography(Point, 4326) | **Generated** from the drop-off coordinates. Not indexed: measured against (proof distance, trip distance), never searched by |
 | `city_id` | uuid | FK cities |
 | `requester_geog` | geography(Point,4326) | **Private.** Snapshot of where the requester was. Never exposed, never matched on |
 | `budget_paise` | bigint | |
@@ -148,6 +151,14 @@ The core entity. **Two locations, and they are not interchangeable.**
 | `created_at`, `updated_at` | timestamptz | |
 
 Worker projection excludes `requester_geog`, and the joined requester's email, phone, `home_address` and `home_geog`. Asserted by test over the whole response body.
+
+## task_releases
+
+Append-only record of an assignment ending early: the worker left (`initiated_by = WORKER`) or the requester removed them before arrival (`REQUESTER`). Holds `from_status`, `reason`, `note`. Read by accept, the feed and matching so a released worker never gets that task back.
+
+## moderation_events
+
+One row per blocked task create, edit or publish: user, content, content hash, `source` (`RULES` or `AI`), reason, `restricted_until` (the posting cooldown is enforced from this), and the appeal fields (`appeal_status`, note, reviewer, review note). An overturned event lets that exact content through for that user.
 
 ## task_status_history
 

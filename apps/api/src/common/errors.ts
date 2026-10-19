@@ -69,6 +69,21 @@ export class IllegalTransitionError extends DomainError {
   readonly status = 422;
 }
 
+/**
+ * Task content failed moderation. Details carry the moderation event id (so
+ * the user can appeal), the reason, and how long posting is now restricted.
+ */
+export class TaskBlockedError extends DomainError {
+  readonly code = 'TASK_BLOCKED';
+  readonly status = 422;
+}
+
+/** The user is inside the posting cooldown that follows a moderation violation. */
+export class PostingRestrictedError extends DomainError {
+  readonly code = 'POSTING_RESTRICTED';
+  readonly status = 429;
+}
+
 export class InsufficientVerificationError extends DomainError {
   readonly code = 'INSUFFICIENT_VERIFICATION';
   readonly status = 403;

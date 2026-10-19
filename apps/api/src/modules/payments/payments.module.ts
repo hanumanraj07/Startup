@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ModerationModule } from '../moderation/moderation.module';
 import { LedgerService } from './ledger.service';
 import { PaymentsController } from './payments.controller';
 import { PayoutsController } from './payouts.controller';
@@ -9,6 +10,7 @@ import { RazorpayService } from './razorpay.service';
 // @Global() PrismaModule (which binds PrismaClient to PrismaService); no
 // factory is needed.
 @Module({
+  imports: [ModerationModule],
   controllers: [PaymentsController, PayoutsController],
   providers: [PaymentsService, LedgerService, RazorpayService],
   exports: [PaymentsService, LedgerService],

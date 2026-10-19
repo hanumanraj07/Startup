@@ -109,12 +109,19 @@ export class MatchingService {
       ]);
     }
 
-    const [alreadyOffered, blockedUserIds] = await Promise.all([
+    const [alreadyOffered, blockedUserIds, released] = await Promise.all([
       this.prisma.taskOffer.findMany({ where: { taskId }, select: { workerId: true } }),
       this.safety.getBlockedUserIds(task.requesterId),
+      // A worker who left this task or was removed from it is never re-offered it.
+      this.prisma.taskRelease.findMany({ where: { taskId }, select: { workerId: true } }),
     ]);
     // "Not blocked: neither party has blocked the other." docs/10-matching-engine.md's filter table.
-    const excludeUserIds = [task.requesterId, ...alreadyOffered.map((o) => o.workerId), ...blockedUserIds];
+    const excludeUserIds = [
+      task.requesterId,
+      ...alreadyOffered.map((o) => o.workerId),
+      ...blockedUserIds,
+      ...released.map((r) => r.workerId),
+    ];
 
     const candidates = await this.geo.findNearbyWorkers({
       taskLat: task.taskLat,

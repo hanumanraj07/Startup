@@ -28,6 +28,16 @@ export function renderNotification(payload: NotificationPayload): RenderedNotifi
         title: 'Worker assigned',
         body: `${payload.workerName} accepted "${payload.taskTitle}" and will be in touch.`,
       };
+    case 'WORKER_LEFT':
+      return {
+        title: 'Your worker left the task',
+        body: `${payload.workerName} can no longer do "${payload.taskTitle}". It is back in matching and your payment is still held safely.`,
+      };
+    case 'WORKER_REMOVED':
+      return {
+        title: 'You were removed from a task',
+        body: `The requester has given "${payload.taskTitle}" to someone else. You do not need to go to the location.`,
+      };
     case 'WORKER_EN_ROUTE':
       return {
         title: 'Worker on the way',
@@ -103,6 +113,16 @@ export function renderNotification(payload: NotificationPayload): RenderedNotifi
         title: 'You received a new rating',
         body: `${'★'.repeat(payload.rating)}${'☆'.repeat(5 - payload.rating)} for "${payload.taskTitle}".`,
       };
+    case 'MODERATION_REVIEWED':
+      return payload.overturned
+        ? {
+            title: 'Your task was cleared',
+            body: `We reviewed "${payload.taskTitle}" and it is allowed. You can post it now.`,
+          }
+        : {
+            title: 'Review complete',
+            body: `We reviewed "${payload.taskTitle}" and the block stays in place.`,
+          };
   }
 }
 

@@ -10,6 +10,10 @@
 
 **Rotation with reuse detection.** Every refresh issues a new token and retires the old one. Refresh tokens carry a `family_id`. If a retired token is presented again, that is a stolen-token signal and **the entire family is revoked**, forcing re-authentication. This is the single highest-value authentication control here and it is not optional.
 
+**Benign duplicates are not theft (2026-10-18).** A token rotated within the last `REFRESH_REUSE_GRACE_SECONDS` (default 30) whose replacement is still live is treated as a concurrent duplicate — two tabs, or the installed app and a tab, restoring the session on the same cookie at once — and gets a fresh token in the same family instead of burning it. A token revoked by sign-out is never revived, and a rotated token presented after the window still revokes the family. The web app additionally serialises refreshes across tabs with the Web Locks API. Before this, opening OnSite in two tabs after a while signed the user out everywhere.
+
+**The cookie must be first-party.** In production the web app calls the API through its own origin (`vercel.json` rewrites `/api/v1/*` to the API host), so the refresh cookie belongs to the site the user is on. As a cross-site cookie it was a third-party cookie, which Safari, iOS home-screen apps and privacy-strict browsers drop, signing people out whenever they returned. Socket.IO still connects to the API host directly; it authenticates with the in-memory access token, not the cookie.
+
 **OTP** codes are six digits, hashed at rest, valid for 10 minutes, single use, capped at five attempts, and rate limited per user and per phone number. In development they are printed to the console so the whole flow works without an SMS provider.
 
 **Google sign-in** verifies the ID token server-side against Google's keys. An unverified email from an identity provider is not treated as verified.

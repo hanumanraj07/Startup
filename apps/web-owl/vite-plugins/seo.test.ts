@@ -55,14 +55,20 @@ describe('vercel.json routing', () => {
   const routesSource = readFileSync(resolve(__dirname, '../src/routes.ts'), 'utf8');
   const appRoutes = [...routesSource.matchAll(/route\('([\w-]+)', '([^']+)'/g)].map((m) => ({ name: m[1], path: m[2] ?? '' }));
 
-  // Vercel sources are path-to-regexp patterns; `:param` matches one segment.
-  const toRegExp = (source: string) => new RegExp(`^${source.replace(/:\w+/g, '[^/]+')}$`);
+  // Vercel sources are path-to-regexp patterns; `:param` matches one segment, `:param*` any number.
+  const toRegExp = (source: string) =>
+    new RegExp(`^${source.replace(/:\w+\*/g, '.*').replace(/:\w+/g, '[^/]+')}$`);
   const sample = (path: string) => path.replace(/:\w+/g, 'abc123');
   const destination = (path: string) => vercel.rewrites.find((r) => toRegExp(r.source).test(path))?.destination;
   const noindexHeader = (path: string) =>
     vercel.headers.some(
       (rule) => toRegExp(rule.source).test(path) && rule.headers.some((h) => h.key === 'X-Robots-Tag' && h.value.includes('noindex')),
     );
+
+  it("proxies the REST API through the site's own origin, so the login cookie is first-party", () => {
+    expect(destination('/api/v1/auth/refresh')).toBe('https://onsite-api.duckdns.org/api/v1/:path*');
+    expect(destination('/api/v1/tasks/abc123/leave')).toMatch(/^https:\/\/onsite-api\./);
+  });
 
   it('finds the signed-in routes in routes.ts', () => {
     expect(appRoutes.length).toBeGreaterThan(15);

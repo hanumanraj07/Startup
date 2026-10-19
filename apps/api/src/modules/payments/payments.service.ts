@@ -5,6 +5,7 @@ import { loadEnv } from '../../config/env';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LedgerService } from './ledger.service';
 import { RazorpayService } from './razorpay.service';
+import { ModerationService } from '../moderation/moderation.service';
 
 /**
  * Order creation, capture, and (for the real provider) webhook-driven
@@ -26,6 +27,7 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
     private readonly ledger: LedgerService,
     private readonly razorpay: RazorpayService,
+    private readonly moderation: ModerationService,
   ) {}
 
   async createOrder(params: { taskId: string; requesterId: string; idempotencyKey: string }) {
@@ -37,6 +39,12 @@ export class PaymentsService {
       where: { idempotencyKey: params.idempotencyKey },
     });
     if (existing) return this.toView(existing);
+
+    // No money is taken from someone inside a moderation cooldown: the
+    // task could not be published until it ends, so the charge would only
+    // sit there. Checked after the idempotency replay so a retry of an order
+    // created before the cooldown still returns it.
+    await this.moderation.assertNotRestricted(params.requesterId);
 
     const task = await this.prisma.task.findUnique({ where: { id: params.taskId } });
     if (!task) throw new NotFoundError('Task not found.');

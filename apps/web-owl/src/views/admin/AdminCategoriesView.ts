@@ -17,6 +17,7 @@ interface AdminCategory {
   suggestedMinPaise: number;
   suggestedMaxPaise: number;
   isActive: boolean;
+  locationMode: 'SINGLE' | 'PICKUP_DROPOFF';
 }
 
 interface AdminCity {
@@ -52,6 +53,12 @@ export class AdminCategoriesView extends Component {
                 <p class="truncate text-sm text-ink-500" t-out="c.description"/>
                 <p class="tabular text-xs text-ink-400" t-out="priceRange(c)"/>
               </div>
+              <label class="sr-only" t-att-for="'mode-' + c.id">Locations for <t t-out="c.name"/></label>
+              <select t-att-id="'mode-' + c.id" class="ml-auto h-9 rounded-input border border-line bg-paper-0 px-2 text-sm text-ink-900"
+                t-on-change="(ev) => setLocationMode(c.id, ev.target.value)">
+                <option value="SINGLE" t-att-selected="c.locationMode === 'SINGLE'">One place</option>
+                <option value="PICKUP_DROPOFF" t-att-selected="c.locationMode === 'PICKUP_DROPOFF'">Pickup + drop-off</option>
+              </select>
               <Switch checked="c.isActive" label="'Enable ' + c.name" onChange="(checked) => toggleCategory(c.id, checked)"/>
             </div>
           </div>
@@ -130,6 +137,18 @@ export class AdminCategoriesView extends Component {
       await api.patch(`/admin/categories/${id}`, { isActive });
       this.state.categories = this.state.categories?.map((r) => (r.id === id ? { ...r, isActive } : r)) ?? null;
       toast(isActive ? 'Category enabled' : 'Category disabled', { variant: 'success' });
+    } catch (error) {
+      toast(error instanceof ApiError ? error.message : 'Could not update the category.', { variant: 'error' });
+    }
+  };
+
+  /** Only changes what the wizard asks for new tasks; existing tasks keep their locations. */
+  setLocationMode = async (id: string, locationMode: string) => {
+    try {
+      await api.patch(`/admin/categories/${id}`, { locationMode });
+      this.state.categories =
+        this.state.categories?.map((r) => (r.id === id ? { ...r, locationMode: locationMode as AdminCategory['locationMode'] } : r)) ?? null;
+      toast('Category updated', { variant: 'success' });
     } catch (error) {
       toast(error instanceof ApiError ? error.message : 'Could not update the category.', { variant: 'error' });
     }

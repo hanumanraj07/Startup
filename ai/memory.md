@@ -6,6 +6,42 @@ Newest entries at the top. Every entry states the decision, the reasoning, and w
 
 ---
 
+## 2026-10-19 — P1: map-based locations on OpenStreetMap, pickup & delivery as a category mode, and the real cause of "a friend 50 km away saw my task"
+
+**The 50 km bug had two causes, both fixed.** (1) `GET /tasks/nearby` took `latitude`, `longitude` and `radiusMeters` from the query string, so the feed measured from wherever the client said; the server now uses the worker's saved base and `working_radius_m` and the schema no longer has those fields. (2) More likely the actual report: a worker's base was the **centre of a city chosen from a short list** (onboarding offered city buttons only), so a worker living 60 km away who picked the nearest listed city got that city's tasks. Onboarding now sets the base on a map (search, device location, drag), can be edited later (Feed → Change), and the city is only a display label derived from the point. Matching (`findNearbyWorkers`) already honoured each worker's own radius and needed no change.
+
+**Decided.**
+- **OpenStreetMap only** (founder, 2026-10-19), replacing the never-implemented "Google for geocoding". Search and reverse geocoding go through the API (`modules/places`) to Photon (no key, fair use, honest User-Agent, 60/min per user, India bbox); `GEOCODING_PROVIDER` is now `osm | mock`, and a stale `google` value is read as `osm` so an old env file cannot stop the API booting. Display is MapLibre GL **5.24** with OSM raster tiles, lazy-loaded as its own chunk (~285 KB gzip) so the main bundle and the feed budget are unaffected. MapLibre 6.x exists; 5.x was chosen for a known API, and upgrading is a separate change.
+- **Pickup & delivery is a category mode** (founder choice): `categories.location_mode` is `SINGLE` or `PICKUP_DROPOFF`, and a new `pickup-delivery` category is inserted by the migration itself so production gets it without a seed. The task location stays the pickup point and the only matching input; the drop-off (`dropoff_*` columns, generated `dropoff_geog`, all-or-nothing check constraint) must be inside India, at least 50 m and at most `MAX_DELIVERY_DISTANCE_M` (default 50 km) from the pickup, measured with PostGIS. Whether a drop-off is required or refused is decided by the server from the category, never by the client. The open feed shows only the drop-off locality and trip distance; the exact drop-off is revealed to the assignee (recorded in the PII projection test). Proof GPS on a delivery task counts against the nearer of pickup and drop-off.
+- **The picker emits nothing below zoom 14**, so a country- or city-wide view can never become a task or base location; the state → city dropdowns only frame the map.
+- PIN codes are dropped from the feed's approximate locality ("Vejalpur Taluka, Gujarat", not "Gujarat, 380015").
+
+**Not done in P1, deliberately:** the execution flow for deliveries (separate "picked up" and "delivered" steps) belongs to P2's task-progress redesign; until then a delivery task runs through the existing inspection flow with its category's three default proofs. OSM's own tile servers are fine for development and light use only; switch `VITE_MAP_TILE_URL` to a tile provider before real traffic.
+
+---
+
+## 2026-10-18 — Founder's feature list: built in priority phases; P0 is moderation, leave/remove, and sessions; three recorded scope decisions reversed
+
+**Context.** The founder sent an 18-item feature and bug list with a priority table (P0 safety and core → P5 polish) and asked for it to be built phase by phase, each phase shown on localhost before anything is pushed. Several items reverse decisions recorded below, so they were raised before building rather than resolved silently.
+
+**Scope decisions the founder confirmed (2026-10-18), reversing "Launch scope stays narrow" (2026-09-07) in part:**
+1. **Pickup & delivery tasks are in scope** (a task may have a pickup and a drop-off location, not only one inspection point). To be built in P1.
+2. **Workers may buy products on the requester's behalf.** The purchase cost is held and handled separately from the task payment, and commission applies only to the task payment. To be built in P3. Until then the "purchasing on the requester's behalf" hard block in `risk.service.ts` stays as it is.
+3. **The requester may see the assigned worker's live location** while the worker is on the way to an active task, with the worker told it's on. This is a deliberate exception to invariant 6 ("they share the task location and in-app chat, nothing else"), and must stay scoped to the active-task window. To be built in P2.
+`docs/01`, `docs/17` and `ai/project-context.md` must be updated in the phase that actually builds each of these, not before, so the docs never describe something the code does not do.
+
+**P0 decided and built:**
+- **Requester removes the worker: before arrival only** (`ASSIGNED`, `WORKER_EN_ROUTE` → `MATCHING`). No money moves, it is not counted against the worker, at most 3 per task. After arrival, use Report an issue. A new transition rule for actor `REQUESTER` in `transitions.ts`.
+- **Worker leaves: any time before submission** (the existing `ACTIVE_WORK → MATCHING` rule, now guarded to the assigned worker). Reason required. Completion rate drops (`tasks_abandoned` +1, rate recomputed), uploaded proof is discarded, the worker can never re-accept that task or be re-offered it (`task_releases` table, checked by accept, the feed query and matching), the requester is notified, and matching restarts from tier 1. Chat for a later worker shows only messages from their own assignment onward.
+- **Known consequence, accepted:** remove-then-cancel lets a requester get a full refund after assignment but before arrival. That matches "no compensation before arrival" and leaves the open compensation question (min(₹50, 10%)) for after-arrival cancellation, which is still blocked.
+- **Moderation** (`modules/moderation`): rules (now normalised against `k1ll`/`k.i.l.l`/zero-width tricks, with a short benign-phrase list) plus the **OpenAI Moderation API**, which the founder chose over Claude and which only runs when `OPENAI_API_KEY` is set (it fails open). Blocks start a **5-minute posting pause** enforced by the API on create, edit, payment order and publish. Users can appeal; admins uphold or overturn at `/admin/moderation`, and overturning whitelists that exact content for that user. No auto-ban (a policy call left to humans).
+- **"Logged out when I come back"** had two causes: (a) the refresh cookie was third-party in production (vercel.app ↔ duckdns.org), which Safari/iOS/strict browsers drop; fixed by proxying `/api/v1/*` through `vercel.json` so the cookie is first-party (sockets still go direct). (b) Two tabs refreshing at once tripped reuse detection and burned the family; fixed by a 30-second grace window for a just-rotated token with a live replacement, plus Web Locks in the client. Theft detection (replay after the window, or a signed-out token) is unchanged and tested.
+- Assignment concurrency needed no change: acceptance was already a single conditional `UPDATE`.
+
+**Noticed, not changed (out of P0 scope):** the production API sits behind Caddy with no `trust proxy`, so every request reaches Nest from the same IP and per-IP throttles (login: 5 per 15 minutes) are shared by all users. Needs a deliberate `trust proxy` setting matched to the real hop count.
+
+---
+
 ## 2026-10-12 — OWL frontend restyled from the Odoo look to a Rapido/Blinkit-style consumer look
 
 **Decided.** At the owner's request (Swiggy/Rapido feel; match Rapido's and Blinkit's colours; drop the purple), `apps/web-owl` now uses: a bright yellow primary (`#ffcb05`) always paired with near-black text, a green secondary (`#0c831f`) for links, money and success, white rounded cards (12/16/20px radii) on a soft gray page, and Plus Jakarta Sans, self-hosted from `@fontsource-variable` (OFL, listed on /licenses). This replaces the Odoo-style direction recorded under 2026-10-10. Token names are unchanged, so the change is mostly in `globals.css`, `tailwind.config.ts` and `ui/classes.ts`.

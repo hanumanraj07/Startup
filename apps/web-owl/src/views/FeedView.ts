@@ -41,8 +41,9 @@ export class FeedView extends Component {
         </div>
       </div>
       <div t-else="" class="flex flex-col gap-4">
-        <p class="text-sm text-ink-500">
-          Within <t t-out="radius"/> km of <t t-out="state.profile.baseCity"/>
+        <p class="flex flex-wrap items-center gap-x-2 text-sm text-ink-500">
+          <span>Within <t t-out="radius"/> km of your starting point near <t t-out="state.profile.baseCity"/></span>
+          <Link to="'/worker/onboarding'" class="'${LINK}'">Change</Link>
         </p>
 
         <div t-if="needsVerification" class="flex items-start gap-2 rounded-card border border-progress bg-tint-orange p-3 text-sm text-ink-700" role="status">
@@ -117,9 +118,9 @@ export class FeedView extends Component {
       // is visible is the honest stopgap: new work shows within ~20s.
       this.pollTimer = setInterval(() => {
         const current = this.state.profile;
-        if (document.visibilityState === 'visible' && current) void this.loadFeed(current).catch(() => undefined);
+        if (document.visibilityState === 'visible' && current) void this.loadFeed().catch(() => undefined);
       }, POLL_MS);
-      await this.loadFeed(profile);
+      await this.loadFeed();
     } catch (err) {
       if (this.disposed) return;
       if (err instanceof ApiError && err.status === 404) {
@@ -130,12 +131,12 @@ export class FeedView extends Component {
     }
   }
 
-  private async loadFeed(profile: WorkerProfile) {
+  private async loadFeed() {
     const [{ data: categories }, { data: items }] = await Promise.all([
       api.get<{ data: CategoryView[] }>('/categories'),
       api.get<{ data: RawFeedItem[] }>(
-        `/tasks/nearby?latitude=${profile.baseLocation.latitude}&longitude=${profile.baseLocation.longitude}` +
-          `&radiusMeters=${profile.workingRadiusMeters}&limit=20`,
+        // The server measures from the saved base location and radius; it takes neither from here.
+        '/tasks/nearby?limit=20',
       ),
     ]);
     if (this.disposed) return;
@@ -165,7 +166,7 @@ export class FeedView extends Component {
       this.state.actionError =
         err instanceof ApiError ? err.message : 'Could not accept this task. It may have just been taken.';
       const profile = this.state.profile;
-      if (profile) await this.loadFeed(profile).catch(() => undefined);
+      if (profile) await this.loadFeed().catch(() => undefined);
     } finally {
       this.state.acceptingId = null;
     }

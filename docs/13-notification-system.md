@@ -22,10 +22,13 @@ Notification logic scattered across services is how a marketplace ends up sendin
 | Password reset | User | | ✓ | |
 | KYC approved | Worker | ✓ | ✓ | ✓ |
 | KYC rejected | Worker | ✓ | ✓ | ✓ |
+| Moderation appeal reviewed (cannot be disabled) | User | | ✓ | ✓ |
 | **New task nearby** | Matched workers | ✓ | | ✓ |
 | Task published | Requester | | | ✓ |
 | **Worker assigned** | Requester | ✓ | ✓ | ✓ |
 | Offer expired, another worker accepted | Offered workers | | | ✓ |
+| Worker left the task (back in matching) | Requester | ✓ | ✓ | ✓ |
+| Removed from a task by the requester | Worker | ✓ | | ✓ |
 | Worker en route | Requester | ✓ | | ✓ |
 | Worker arrived | Requester | ✓ | | ✓ |
 | **Proof submitted** | Requester | ✓ | ✓ | ✓ |

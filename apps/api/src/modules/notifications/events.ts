@@ -31,6 +31,8 @@ export const NOTIFICATION_CATEGORIES: readonly NotificationCategory[] = [
 export type NotificationEvent =
   | 'NEW_TASK_NEARBY'
   | 'WORKER_ASSIGNED'
+  | 'WORKER_LEFT'
+  | 'WORKER_REMOVED'
   | 'WORKER_EN_ROUTE'
   | 'WORKER_ARRIVED'
   | 'PROOF_SUBMITTED'
@@ -45,7 +47,8 @@ export type NotificationEvent =
   | 'KYC_APPROVED'
   | 'KYC_REJECTED'
   | 'ACCOUNT_SUSPENDED'
-  | 'RATING_RECEIVED';
+  | 'RATING_RECEIVED'
+  | 'MODERATION_REVIEWED';
 
 export interface EventDefinition {
   category: NotificationCategory;
@@ -57,6 +60,10 @@ export interface EventDefinition {
 export const EVENT_DEFINITIONS: Record<NotificationEvent, EventDefinition> = {
   NEW_TASK_NEARBY: { category: 'TASK_ACTIVITY', channels: ['PUSH', 'IN_APP'] },
   WORKER_ASSIGNED: { category: 'TASK_ACTIVITY', channels: ['PUSH', 'EMAIL', 'IN_APP'] },
+  // A requester whose worker left needs to know the task is back in matching;
+  // a removed worker needs to know to stop travelling.
+  WORKER_LEFT: { category: 'TASK_ACTIVITY', channels: ['PUSH', 'EMAIL', 'IN_APP'] },
+  WORKER_REMOVED: { category: 'TASK_ACTIVITY', channels: ['PUSH', 'IN_APP'] },
   WORKER_EN_ROUTE: { category: 'TASK_ACTIVITY', channels: ['PUSH', 'IN_APP'] },
   WORKER_ARRIVED: { category: 'TASK_ACTIVITY', channels: ['PUSH', 'IN_APP'] },
   PROOF_SUBMITTED: { category: 'TASK_ACTIVITY', channels: ['PUSH', 'EMAIL', 'IN_APP'] },
@@ -78,11 +85,15 @@ export const EVENT_DEFINITIONS: Record<NotificationEvent, EventDefinition> = {
   KYC_REJECTED: { category: 'TASK_ACTIVITY', channels: ['PUSH', 'EMAIL', 'IN_APP'], nonDisableable: true },
   ACCOUNT_SUSPENDED: { category: 'TASK_ACTIVITY', channels: ['EMAIL', 'IN_APP'], nonDisableable: true },
   RATING_RECEIVED: { category: 'TASK_ACTIVITY', channels: ['IN_APP'] },
+  // The outcome of a moderation appeal is about the account's standing, like KYC.
+  MODERATION_REVIEWED: { category: 'TASK_ACTIVITY', channels: ['EMAIL', 'IN_APP'], nonDisableable: true },
 };
 
 export type NotificationPayload =
   | { event: 'NEW_TASK_NEARBY'; taskId: string; taskTitle: string; payoutPaise: number; distanceLabel: string }
   | { event: 'WORKER_ASSIGNED'; taskId: string; taskTitle: string; workerName: string }
+  | { event: 'WORKER_LEFT'; taskId: string; taskTitle: string; workerName: string }
+  | { event: 'WORKER_REMOVED'; taskId: string; taskTitle: string }
   | { event: 'WORKER_EN_ROUTE'; taskId: string; taskTitle: string; workerName: string }
   | { event: 'WORKER_ARRIVED'; taskId: string; taskTitle: string; workerName: string }
   | { event: 'PROOF_SUBMITTED'; taskId: string; taskTitle: string }
@@ -97,4 +108,5 @@ export type NotificationPayload =
   | { event: 'KYC_APPROVED' }
   | { event: 'KYC_REJECTED'; reason: string }
   | { event: 'ACCOUNT_SUSPENDED'; reason: string }
-  | { event: 'RATING_RECEIVED'; taskId: string; taskTitle: string; rating: number };
+  | { event: 'RATING_RECEIVED'; taskId: string; taskTitle: string; rating: number }
+  | { event: 'MODERATION_REVIEWED'; taskTitle: string; overturned: boolean };

@@ -16,8 +16,10 @@ import { DisputesModule } from './modules/disputes/disputes.module';
 import { HealthModule } from './modules/health/health.module';
 import { MatchingModule } from './modules/matching/matching.module';
 import { MessagingModule } from './modules/messaging/messaging.module';
+import { ModerationModule } from './modules/moderation/moderation.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PaymentsModule } from './modules/payments/payments.module';
+import { PlacesModule } from './modules/places/places.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { SafetyModule } from './modules/safety/safety.module';
 import { TasksModule } from './modules/tasks/tasks.module';
@@ -65,10 +67,12 @@ import { PrismaModule } from './prisma/prisma.module';
     QueueModule,
     HealthModule,
     CategoriesModule,
+    PlacesModule,
     PaymentsModule,
     NotificationsModule,
     RealtimeModule,
     SafetyModule,
+    ModerationModule,
     MatchingModule,
     TasksModule,
     ChatModule,

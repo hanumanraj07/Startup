@@ -150,12 +150,14 @@ export class AuthService {
       throw new UnauthenticatedError('Your session has expired. Please sign in again.');
     }
 
-    if (stored.revokedAt) {
+    const isConcurrentDuplicate = stored.revokedAt ? await this.isConcurrentDuplicate(stored) : false;
+
+    if (stored.revokedAt && !isConcurrentDuplicate) {
       // The token that should be the current one for this family has already
-      // been used. Either it was replayed by an attacker who stole an old
-      // token, or a legitimate client retried after losing the response to a
-      // previous rotation. Either way, the safe action is identical: burn the
-      // whole family and require a fresh login everywhere.
+      // been used, and not just a moment ago by a sibling request. Either it
+      // was replayed by an attacker who stole an old token, or a client is
+      // retrying long after losing a rotation response. The safe action is
+      // the same: burn the whole family and require a fresh login everywhere.
       await this.prisma.refreshToken.updateMany({
         where: { familyId: stored.familyId, revokedAt: null },
         data: { revokedAt: new Date() },
@@ -194,10 +196,14 @@ export class AuthService {
           expiresAt,
         },
       });
-      await tx.refreshToken.update({
-        where: { id: stored.id },
-        data: { revokedAt: new Date(), replacedById: row.id },
-      });
+      // A concurrent duplicate's token was already retired by its sibling;
+      // leave that record (and its replacedById) as it is.
+      if (!isConcurrentDuplicate) {
+        await tx.refreshToken.update({
+          where: { id: stored.id },
+          data: { revokedAt: new Date(), replacedById: row.id },
+        });
+      }
       return row;
     });
 
@@ -211,6 +217,30 @@ export class AuthService {
       refreshToken: next.token,
       refreshTokenExpiresAt: created.expiresAt,
     };
+  }
+
+  /**
+   * Whether an already-rotated token is being presented again only because
+   * of a benign race: two tabs (or a tab and the installed app) refreshing
+   * on the same cookie at once, or a retry after a lost response. True only
+   * when the token was rotated (not revoked by logout) within the grace
+   * window and its replacement is still live. Without this, opening the
+   * app in two tabs after a while signed the user out everywhere, which is
+   * what "I get logged out when I come back" was. Auth0 and others use the
+   * same "reuse interval" idea.
+   */
+  private async isConcurrentDuplicate(stored: {
+    revokedAt: Date | null;
+    replacedById: string | null;
+  }): Promise<boolean> {
+    if (!stored.revokedAt || !stored.replacedById) return false;
+    const graceMs = loadEnv().REFRESH_REUSE_GRACE_SECONDS * 1000;
+    if (Date.now() - stored.revokedAt.getTime() > graceMs) return false;
+    const replacement = await this.prisma.refreshToken.findUnique({
+      where: { id: stored.replacedById },
+      select: { revokedAt: true, expiresAt: true },
+    });
+    return Boolean(replacement && !replacement.revokedAt && replacement.expiresAt.getTime() > Date.now());
   }
 
   /** Revokes the entire family the presented token belongs to. Idempotent. */

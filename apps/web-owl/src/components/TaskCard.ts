@@ -1,5 +1,6 @@
 import { Component, xml } from '@odoo/owl';
 import { formatPaise } from '@onsite/money';
+import { formatDistance } from '@onsite/utils';
 import type { FeedTask } from '@/lib/api-types';
 import { hoursLeft } from '@/lib/format';
 import { btn, card, tappableCard } from '@/ui/classes';
@@ -37,6 +38,12 @@ export class TaskCard extends Component {
           <span class="truncate" t-out="props.task.approximateAddress"/>
         </span>
       </div>
+      <p t-if="props.task.dropoff" class="mt-2 flex items-center gap-2 rounded-input bg-paper-50 px-3 py-2 text-sm text-ink-700">
+        <Icon name="'package'" size="14" class="'shrink-0'"/>
+        <span class="min-w-0 truncate">
+          Deliver <span class="tabular font-semibold" t-out="tripLabel"/> to <t t-out="props.task.dropoff.approximateAddress"/>
+        </span>
+      </p>
 
       <div class="mt-4 flex items-center justify-between gap-3 border-t border-line-light pt-3">
         <span class="flex min-w-0 items-center gap-1.5 text-sm text-ink-500">
@@ -65,6 +72,11 @@ export class TaskCard extends Component {
 
   get payout(): string {
     return formatPaise((this.props.task as FeedTask).payoutPaise);
+  }
+
+  /** Pickup to drop-off, as measured by the server. */
+  get tripLabel(): string {
+    return this.props.task.dropoff ? formatDistance(this.props.task.dropoff.tripDistanceMeters) : '';
   }
 
   get hoursLeft(): number {

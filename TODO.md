@@ -264,6 +264,39 @@ Every phase above shipped a real, tested API with no interface beyond a static m
 
 ---
 
+## Phase 12 — Founder feature list (2026-10-18), built P0 → P5, each shown on localhost before push
+
+See `ai/memory.md`, 2026-10-18, for the decisions and the scope reversals.
+
+**P0 — Safety and core ◑ BUILT AND VERIFIED LOCALLY, NOT PUSHED**
+- [x] Moderation: normalised rules, OpenAI Moderation (when `OPENAI_API_KEY` set), 5-minute server-enforced posting pause, appeals, admin queue at `/admin/moderation`
+- [x] Worker can leave an accepted task (until submission), with penalty; requester can remove the worker before arrival
+- [x] Assignment concurrency — already atomic, no change needed
+- [x] Session persistence: first-party API proxy in `vercel.json`, refresh grace window, Web Locks across tabs
+- [ ] Add `OPENAI_API_KEY` to the production API environment (founder)
+- [ ] Production check after push: sign in on Safari/iPhone, close the browser, come back
+
+**P1 — Location and task creation ◑ BUILT AND VERIFIED LOCALLY, NOT PUSHED**
+- [x] Map-based location picker (MapLibre + OSM) with place search, "my location" and a fixed centre pin; latitude/longitude inputs removed
+- [x] 50 km bug: feed measures from the saved base and radius only; worker base set on a map, editable from the feed
+- [x] Searchable state → city dropdowns (every state and UT)
+- [x] Pickup & delivery category with pickup + drop-off, Rapido/Uber-style route card; one-place categories ask for one place
+- [x] Admin can switch a category between one place and pickup + drop-off
+- [ ] Production: set `GEOCODING_PROVIDER=osm` on the API (prod env files default to `mock`), run the migration
+- [ ] Before real traffic: move `VITE_MAP_TILE_URL` off OSM's own tile servers to a tile provider
+
+**P2 — Real-time** — incoming-task request screen with countdown, assignment notifications, live worker location (active task only), task-progress steps for both sides
+
+**P3 — Payments** — requester-set price, separate product purchase cost with commission on the task payment only, commission hidden from both parties, worker payouts and history
+
+**P4 — Verification** — third-party KYC provider (research current offerings first), bank account verification
+
+**P5 — Polish** — mobile layout fix after accepting a task, larger proof delete button, "Other" category, searchable dropdowns everywhere
+
+**Noticed, not yet scheduled:** production API has no `trust proxy` behind Caddy, so per-IP throttles are shared by all users.
+
+---
+
 ## Not engineering, and easy to underestimate
 
 These block launch as firmly as any code.

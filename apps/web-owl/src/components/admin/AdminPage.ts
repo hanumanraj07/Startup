@@ -7,6 +7,7 @@ const TABS = [
   { href: '/admin', label: 'Dashboard' },
   { href: '/admin/kyc', label: 'KYC queue' },
   { href: '/admin/disputes', label: 'Disputes' },
+  { href: '/admin/moderation', label: 'Moderation' },
   { href: '/admin/users', label: 'Users' },
   { href: '/admin/tasks', label: 'Tasks' },
   { href: '/admin/categories', label: 'Categories & cities' },

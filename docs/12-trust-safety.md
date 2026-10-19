@@ -70,7 +70,17 @@ Never permitted, regardless of payment:
 
 **Also excluded at launch, though not unlawful:** purchasing on the requester's behalf and any task where the worker fronts money. The founding example ends with "do NOT purchase it" deliberately. A worker carrying ₹80,000 of someone else's money is a fundamentally different and harder business.
 
-Screening runs at task creation against keyword and pattern rules. Matches escalate to manual review rather than silent rejection, since automated screening produces false positives and a wrongly blocked legitimate task loses a customer.
+### How screening works (decided 2026-10-18, see `ai/memory.md`)
+
+Screening runs on **every task write**: create, edit and publish, server-side in `modules/moderation/moderation.service.ts`, so no client or screen can skip it.
+
+1. **Keyword and pattern rules** (`tasks/risk.service.ts`), checked against the text as written *and* a normalised copy that undoes disguises: digit-for-letter swaps (`k1ll`), spaced or dotted letters (`k.i.l.l`), zero-width characters and look-alike Unicode. A short list of benign phrases (`glue gun`, `drug store`, `forged alloy wheels`, `kill switch`, …) is removed first, so legitimate items that merely contain a sensitive word are not blocked. Every entry on that list is a hole in the filter and must be justified by a real everyday use.
+2. **OpenAI Moderation API** (`omni-moderation-latest`), only when `OPENAI_API_KEY` is set, and only if the rules passed. It fails open: an outage or timeout leaves the rules as the only check rather than stopping all posting. Task text is sent to OpenAI when it is enabled.
+3. **A block is a block.** The task is not created (or the edit or publish is refused), the user sees the reason in plain language, and the attempt is recorded as a `moderation_events` row plus a `PROHIBITED_TASK_BLOCKED` audit entry with the full text.
+4. **Five-minute posting pause.** After a block the user cannot create, edit, fund or publish any task for `MODERATION_COOLDOWN_SECONDS` (default 300). Enforced by the API from `moderation_events.restricted_until`, never by the UI alone, so resubmitting or editing around the block does not work. Each new violation starts a new pause.
+5. **Appeal.** Within 7 days the user can ask for a human review with a short explanation. Admins see appeals at `/admin/moderation`, with the original text and how many blocks the user had in the last 24 hours. Overturning lifts the pause at once and lets *that exact content* (hashed, case and whitespace folded) through for that user; upholding keeps the block. Both are audited and the user is notified.
+
+Not built, deliberately: automatic bans or reports to authorities on a match. Repeated blocks are surfaced to admins (count in the last 24 hours), and suspension stays a human decision under *Reporting and enforcement* below.
 
 ## Task risk scoring
 

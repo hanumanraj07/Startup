@@ -45,6 +45,35 @@ describe('assertNotProhibited', () => {
     expect(() => service.assertNotProhibited('Task', 'Kidnap this person for me')).toThrow(BusinessRuleError);
   });
 
+  it('sees through disguised spellings of a prohibited word', () => {
+    for (const text of ['I need someone to k1ll him', 'k.i.l.l my neighbour', 'k i l l him', 'mur​der', 'buy n4rcotics']) {
+      expect(service.findProhibitedMatch('Task', text), text).toBeDefined();
+    }
+  });
+
+  it('blocks stalking, harassment and sexual services', () => {
+    expect(service.findProhibitedMatch('Follow my ex', 'Spy on her and report where she goes')).toBe(
+      'harassment, stalking or intimidation of a person',
+    );
+    expect(service.findProhibitedMatch('Message', 'Threaten the shopkeeper until he pays')).toBeDefined();
+    expect(service.findProhibitedMatch('Booking', 'Arrange an escort service at the hotel')).toBe('sexual services');
+  });
+
+  it('does not block legitimate items that merely contain a sensitive word', () => {
+    const legit: [string, string][] = [
+      ['Check a glue gun', 'Confirm the hardware shop has a hot glue gun in stock'],
+      ['Spray gun price', 'Ask the price of the paint spray gun'],
+      ['Medicine availability', 'Visit the drug store near the station and check if the syrup is available'],
+      ['Alloy wheels', 'Inspect the forged alloy wheels and photograph the rims'],
+      ['Bike check', 'Ask about the break-in period for the new engine'],
+      ['Machine safety', 'Photograph the kill switch on the generator'],
+      ['Laptop check', 'Inspect MacBook Air M4 16/512 and note the serial number'],
+    ];
+    for (const [title, description] of legit) {
+      expect(service.findProhibitedMatch(title, description), description).toBeUndefined();
+    }
+  });
+
   it('does not block ordinary photography or video tasks', () => {
     // The false-positive risk this pattern deliberately avoids: "shoot" is
     // an everyday verb for this app's own task categories.

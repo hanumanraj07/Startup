@@ -100,6 +100,29 @@ enum OfferResponse {
   EXPIRED
 }
 
+/// Whether a category's tasks happen at one place, or are a pickup and a drop-off.
+enum LocationMode {
+  SINGLE
+  PICKUP_DROPOFF
+}
+
+enum ReleaseInitiator {
+  WORKER
+  REQUESTER
+}
+
+enum ModerationSource {
+  RULES
+  AI
+}
+
+enum ModerationAppealStatus {
+  NONE
+  PENDING
+  UPHELD
+  OVERTURNED
+}
+
 enum PaymentGateway {
   RAZORPAY
   MOCK
@@ -242,6 +265,9 @@ model User {
   reportsFiled      Report[]            @relation("Reporter")
   reportsReceived   Report[]            @relation("ReportedUser")
   auditLogs         AuditLog[]
+  moderationEvents  ModerationEvent[]   @relation("ModeratedUser")
+  moderationReviews ModerationEvent[]   @relation("ModerationReviewer")
+  taskReleases      TaskRelease[]
 
   @@index([status])
   @@map("users")
@@ -391,6 +417,8 @@ model Category {
   suggestedMinPaise      BigInt  @map("suggested_min_paise")
   suggestedMaxPaise      BigInt  @map("suggested_max_paise")
   isActive               Boolean @default(true) @map("is_active")
+  /// Decides which location fields the task wizard asks for. See docs/09.
+  locationMode           LocationMode @default(SINGLE) @map("location_mode")
 
   tasks         Task[]
   workerLinks   WorkerCategory[]
@@ -437,6 +465,16 @@ model Task {
   taskAddress   String  @map("task_address")
   taskPlaceName String? @map("task_place_name")
   taskPlaceId   String? @map("task_place_id")
+
+  // WHERE TO DELIVER, for pickup & delivery categories only; null otherwise.
+  // The task location above is then the pickup point, and stays the matching
+  // input. The exact drop-off is shown to the assigned worker only. Not
+  // indexed: it is only ever measured against, never searched by.
+  dropoffLat       Float?  @map("dropoff_lat")
+  dropoffLng       Float?  @map("dropoff_lng")
+  dropoffGeog      Unsupported("geography(Point, 4326)")? @default(dbgenerated("(st_setsrid(st_makepoint(dropoff_lng, dropoff_lat), 4326))::geography")) @map("dropoff_geog")
+  dropoffAddress   String? @map("dropoff_address")
+  dropoffPlaceName String? @map("dropoff_place_name")
 
   // PRIVATE. Where the requester was. Never exposed, never matched on.
   requesterLat  Float?  @map("requester_lat")
@@ -487,6 +525,7 @@ model Task {
   reviews        Review[]
   disputes       Dispute[]
   reports        Report[]
+  releases       TaskRelease[]
 
   @@index([requesterId, createdAt(sort: Desc)])
   @@index([assignedWorkerId, status])
@@ -513,6 +552,27 @@ model TaskStatusHistory {
 
   @@index([taskId, createdAt])
   @@map("task_status_history")
+}
+
+/// An assignment that ended without the work being finished: the worker left,
+/// or the requester removed them before arrival. Append-only. It is what stops
+/// a released worker from re-accepting the same task, and it is dispute and
+/// reliability evidence. See docs/09-task-lifecycle.md.
+model TaskRelease {
+  id          String           @id @default(uuid(7))
+  taskId      String           @map("task_id")
+  task        Task             @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  workerId    String           @map("worker_id")
+  worker      User             @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  initiatedBy ReleaseInitiator @map("initiated_by")
+  fromStatus  TaskStatus       @map("from_status")
+  reason      String
+  note        String?
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  @@index([taskId])
+  @@index([workerId, createdAt(sort: Desc)])
+  @@map("task_releases")
 }
 
 /// Which workers were matched, ranked, notified, and what they did. This is
@@ -845,6 +905,45 @@ model PushSubscription {
 
   @@index([userId])
   @@map("push_subscriptions")
+}
+
+// ─── Moderation ──────────────────────────────────────────────────────────
+
+/// One blocked attempt to create, edit or publish a task. Append-only apart
+/// from the appeal fields. `restrictedUntil` is what the posting cooldown is
+/// enforced from, server-side; an overturned event stops counting and lets
+/// that exact content through for that user. See docs/12-trust-safety.md.
+model ModerationEvent {
+  id          String           @id @default(uuid(7))
+  userId      String           @map("user_id")
+  user        User             @relation("ModeratedUser", fields: [userId], references: [id], onDelete: Cascade)
+  taskId      String?          @map("task_id")
+  /// CREATE, UPDATE or PUBLISH.
+  stage       String
+  title       String
+  description String
+  /// sha256 of the normalised title and description; how an overturned
+  /// decision is matched to a resubmission of the same content.
+  contentHash String           @map("content_hash")
+  source      ModerationSource
+  /// Human-readable, shown to the user.
+  reason      String
+  categories  String[]
+  restrictedUntil DateTime     @map("restricted_until")
+
+  appealStatus ModerationAppealStatus @default(NONE) @map("appeal_status")
+  appealNote   String?   @map("appeal_note")
+  appealedAt   DateTime? @map("appealed_at")
+  reviewedById String?   @map("reviewed_by_id")
+  reviewedBy   User?     @relation("ModerationReviewer", fields: [reviewedById], references: [id])
+  reviewNote   String?   @map("review_note")
+  reviewedAt   DateTime? @map("reviewed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([appealStatus, createdAt(sort: Desc)])
+  @@map("moderation_events")
 }
 
 // ─── Audit ───────────────────────────────────────────────────────────────

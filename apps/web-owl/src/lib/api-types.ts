@@ -1,4 +1,4 @@
-import type { CategorySlug, ProofType, TaskStatus } from '@onsite/types';
+import type { CategorySlug, LocationMode, ProofType, TaskStatus } from '@onsite/types';
 
 export interface ProofRequirement {
   type: ProofType;
@@ -17,6 +17,8 @@ export interface CategoryView {
   suggestedMinPaise: number;
   suggestedMaxPaise: number;
   defaultProofRequirements: ProofRequirement[];
+  /** SINGLE: one place. PICKUP_DROPOFF: collect at one place, hand over at another. */
+  locationMode: LocationMode;
 }
 
 export interface CityView {
@@ -49,6 +51,8 @@ export interface RawFeedItem {
   payoutPaise: number;
   deadlineAt: string;
   approximateAddress: string;
+  /** Pickup & delivery tasks: roughly where it goes and how far. The exact drop-off is shown once accepted. */
+  dropoff: { approximateAddress: string; tripDistanceMeters: number } | null;
   requester: { displayName: string; verificationLevel: number };
 }
 
@@ -86,7 +90,31 @@ interface TaskBase {
   deadlineAt: string;
   proofRequirements: ProofRequirement[];
   statusHistory: StatusEvent[];
+  locationMode: LocationMode;
+  /** The task location; for pickup & delivery tasks, the pickup point. */
   location: { latitude: number; longitude: number; address: string };
+  /** Pickup & delivery tasks only. */
+  dropoff: { latitude: number; longitude: number; address: string } | null;
+}
+
+// ─── Places (map picker) ─────────────────────────────────────────────────
+
+/** One GET /places/search result, or the GET /places/reverse result. A suggestion only. */
+export interface PlaceView {
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+}
+
+/** A point the user settled on in the location picker, plus what they typed to help a worker find it. */
+export interface PickedLocation {
+  latitude: number;
+  longitude: number;
+  /** From search or the "what is here" lookup; empty when the provider had nothing. */
+  suggestedAddress: string;
+  /** Shop name, floor, landmark: free text from the user. */
+  details: string;
 }
 
 /** GET /tasks/:id as the task's owner (requester) sees it: the money breakdown, never a worker payout alone. */

@@ -49,6 +49,9 @@ export const ACTIVE_WORK: readonly TaskStatus[] = [
 
 export const AWAITING_REVIEW: readonly TaskStatus[] = ['SUBMITTED', 'UNDER_REVIEW'];
 
+/** Where a requester may still remove the assigned worker: before arrival only. */
+export const REMOVABLE_BEFORE_ARRIVAL: readonly TaskStatus[] = ['ASSIGNED', 'WORKER_EN_ROUTE'];
+
 /** Every status a task can be disputed FROM — mirrors the DISPUTED transition rule below exactly. */
 export const DISPUTABLE_STATUSES: readonly TaskStatus[] = [...AWAITING_REVIEW, 'COMPLETED', ...ACTIVE_WORK];
 
@@ -143,8 +146,27 @@ export const TRANSITION_RULES: readonly TransitionRule[] = [
   { from: ['DRAFT', 'PUBLISHED', 'MATCHING'], to: 'CANCELLED', actors: ['REQUESTER', 'ADMIN'] },
   { from: ACTIVE_WORK, to: 'CANCELLED', actors: ['REQUESTER', 'ADMIN'] },
 
-  // Abandonment returns the task to matching rather than punishing the requester.
-  { from: ACTIVE_WORK, to: 'MATCHING', actors: ['WORKER', 'SYSTEM', 'ADMIN'] },
+  // Abandonment returns the task to matching rather than punishing the
+  // requester. Only the assigned worker can leave; the completion-rate
+  // penalty is applied by the service.
+  {
+    from: ACTIVE_WORK,
+    to: 'MATCHING',
+    actors: ['WORKER'],
+    requires: 'only the assigned worker may leave the task',
+    guard: (ctx) => ctx.isAssignedWorker === true,
+  },
+  { from: ACTIVE_WORK, to: 'MATCHING', actors: ['SYSTEM', 'ADMIN'] },
+  // The requester may hand the task to someone else, but only before the
+  // worker has arrived: after arrival the worker has done real work, and the
+  // route is Report an issue / dispute instead. No money moves; the held
+  // funds stay held. See ai/memory.md, 2026-10-18.
+  {
+    from: [...REMOVABLE_BEFORE_ARRIVAL],
+    to: 'MATCHING',
+    actors: ['REQUESTER'],
+    requires: 'a worker can only be removed before they arrive',
+  },
 
   // Expiry: nobody accepted before the deadline. Full refund.
   { from: ['PUBLISHED', 'MATCHING'], to: 'EXPIRED', actors: ['SYSTEM'] },

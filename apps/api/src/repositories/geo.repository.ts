@@ -56,12 +56,17 @@ export interface NearbyWorker {
 export interface NearbyTask {
   id: string;
   distanceMeters: number;
+  /** Pickup to drop-off, for pickup & delivery tasks; null otherwise. */
+  tripDistanceMeters: number | null;
   deadlineAt: Date;
   workerPayoutPaise: bigint;
 }
 
 export interface DistanceMeasurement {
+  /** To the task location (the pickup point, for pickup & delivery tasks). */
   distanceMeters: number;
+  /** To the drop-off, when the task has one and it was asked for; otherwise null. */
+  dropoffDistanceMeters: number | null;
   isWithinGeofence: boolean;
 }
 
@@ -168,6 +173,8 @@ export class GeoRepository {
     verificationLevel: number;
     categoryIds: string[];
     excludeRequesterIds: string[];
+    /** Tasks this worker left or was removed from. */
+    excludeTaskIds?: string[];
     limit: number;
     offset: number;
   }): Promise<NearbyTask[]> {
@@ -181,6 +188,7 @@ export class GeoRepository {
       limit,
       offset,
     } = params;
+    const excludeTaskIds = params.excludeTaskIds ?? [];
 
     if (categoryIds.length === 0) return [];
 
@@ -190,6 +198,8 @@ export class GeoRepository {
       SELECT
         t.id,
         ST_Distance(t.task_geog, ${point})::float8 AS "distanceMeters",
+        CASE WHEN t.dropoff_geog IS NULL THEN NULL
+             ELSE ST_Distance(t.task_geog, t.dropoff_geog)::float8 END AS "tripDistanceMeters",
         t.deadline_at          AS "deadlineAt",
         t.worker_payout_paise  AS "workerPayoutPaise"
       FROM tasks t
@@ -200,6 +210,7 @@ export class GeoRepository {
         AND t.category_id = ANY(${categoryIds}::text[])
         AND ST_DWithin(t.task_geog, ${point}, ${radiusMeters})
         AND NOT (t.requester_id = ANY(${excludeRequesterIds}::text[]))
+        AND NOT (t.id = ANY(${excludeTaskIds}::text[]))
       ORDER BY "distanceMeters" ASC
       LIMIT ${limit} OFFSET ${offset}
     `;
@@ -221,15 +232,23 @@ export class GeoRepository {
     reportedLat: number;
     reportedLng: number;
     geofenceMeters?: number;
+    /**
+     * Also measure against the drop-off, and count the coordinate as inside
+     * the geofence if it is near either point. Proof on a pickup & delivery
+     * task is legitimately taken at both ends; arrival is only ever at the
+     * pickup, so it leaves this off.
+     */
+    includeDropoff?: boolean;
   }): Promise<DistanceMeasurement | null> {
     const { taskId, reportedLat, reportedLng } = params;
     const geofence = params.geofenceMeters ?? DEFAULT_GEOFENCE_METERS;
+    const point = Prisma.sql`ST_SetSRID(ST_MakePoint(${reportedLng}, ${reportedLat}), 4326)::geography`;
 
-    const rows = await this.prisma.$queryRaw<{ distanceMeters: number }[]>`
-      SELECT ST_Distance(
-        t.task_geog,
-        ST_SetSRID(ST_MakePoint(${reportedLng}, ${reportedLat}), 4326)::geography
-      )::float8 AS "distanceMeters"
+    const rows = await this.prisma.$queryRaw<{ distanceMeters: number; dropoffDistanceMeters: number | null }[]>`
+      SELECT
+        ST_Distance(t.task_geog, ${point})::float8 AS "distanceMeters",
+        CASE WHEN t.dropoff_geog IS NULL THEN NULL
+             ELSE ST_Distance(t.dropoff_geog, ${point})::float8 END AS "dropoffDistanceMeters"
       FROM tasks t
       WHERE t.id = ${taskId}::text
     `;
@@ -237,9 +256,12 @@ export class GeoRepository {
     const row = rows[0];
     if (!row) return null;
 
+    const dropoffDistanceMeters = params.includeDropoff ? row.dropoffDistanceMeters : null;
+    const nearest = dropoffDistanceMeters === null ? row.distanceMeters : Math.min(row.distanceMeters, dropoffDistanceMeters);
     return {
       distanceMeters: row.distanceMeters,
-      isWithinGeofence: row.distanceMeters <= geofence,
+      dropoffDistanceMeters,
+      isWithinGeofence: nearest <= geofence,
     };
   }
 

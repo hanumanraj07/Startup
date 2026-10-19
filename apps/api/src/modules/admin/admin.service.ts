@@ -471,6 +471,7 @@ export class AdminService {
       suggestedMinPaise: Number(c.suggestedMinPaise),
       suggestedMaxPaise: Number(c.suggestedMaxPaise),
       isActive: c.isActive,
+      locationMode: c.locationMode,
     }));
   }
 
@@ -485,6 +486,7 @@ export class AdminService {
           suggestedMinPaise: BigInt(input.suggestedMinPaise),
           suggestedMaxPaise: BigInt(input.suggestedMaxPaise),
           isActive: input.isActive,
+          locationMode: input.locationMode,
           // No category comes with proof requirements pre-defined by this
           // form — an admin adding a new task type sets those up in the
           // wizard's category config once real demand shows what evidence
@@ -532,6 +534,9 @@ export class AdminService {
         ...(input.suggestedMinPaise !== undefined && { suggestedMinPaise: BigInt(input.suggestedMinPaise) }),
         ...(input.suggestedMaxPaise !== undefined && { suggestedMaxPaise: BigInt(input.suggestedMaxPaise) }),
         ...(input.isActive !== undefined && { isActive: input.isActive }),
+        // Existing tasks keep the locations they were posted with; this only
+        // changes what the wizard asks for from now on.
+        ...(input.locationMode !== undefined && { locationMode: input.locationMode }),
       },
     });
 

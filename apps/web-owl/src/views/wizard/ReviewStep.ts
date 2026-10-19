@@ -3,6 +3,7 @@ import { formatPaise } from '@onsite/money';
 import { MoneyBreakdown } from '@/components/MoneyBreakdown';
 import type { ProofRequirement } from '@/lib/api-types';
 import { formatDateTime } from '@/lib/format';
+import { composeAddress } from '@/lib/wizard';
 import { btn } from '@/ui/classes';
 
 export interface DraftTask {
@@ -79,7 +80,12 @@ export class ReviewStep extends Component {
     return [
       { label: 'Category', value: w.category?.name ?? '' },
       { label: 'Title', value: w.title },
-      { label: 'Address', value: w.address },
+      ...(w.category?.locationMode === 'PICKUP_DROPOFF'
+        ? [
+            { label: 'Pickup', value: composeAddress(w.pickup) },
+            { label: 'Drop-off', value: composeAddress(w.dropoff) },
+          ]
+        : [{ label: 'Location', value: composeAddress(w.pickup) }]),
       { label: 'Deadline', value: w.deadlineLocal ? formatDateTime(w.deadlineLocal) : '' },
       { label: 'Proof required', value: requirements.map((r) => r.label).join(', ') },
     ];

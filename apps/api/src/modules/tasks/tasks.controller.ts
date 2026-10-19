@@ -6,11 +6,13 @@ import {
   cancelTaskSchema,
   createTaskSchema,
   declineTaskSchema,
+  leaveTaskSchema,
   myTasksSchema,
   nearbyTasksSchema,
   presignUploadSchema,
   recordProofSchema,
   rejectTaskSchema,
+  removeWorkerSchema,
   submitTaskSchema,
   updateTaskSchema,
   uuidSchema,
@@ -19,11 +21,13 @@ import {
   type CancelTaskInput,
   type CreateTaskInput,
   type DeclineTaskInput,
+  type LeaveTaskInput,
   type MyTasksInput,
   type NearbyTasksInput,
   type PresignUploadInput,
   type RecordProofInput,
   type RejectTaskInput,
+  type RemoveWorkerInput,
   type SubmitTaskInput,
   type UpdateTaskInput,
 } from '@onsite/validation';
@@ -113,8 +117,8 @@ export class TasksController {
   }
 
   @Post(':id/publish')
-  async publish(@Param('id') id: string, @CurrentUser() user: RequestUser) {
-    return this.tasks.publish(uuidSchema.parse(id), user.id);
+  async publish(@Param('id') id: string, @CurrentUser() user: RequestUser, @Ip() ip: string) {
+    return this.tasks.publish(uuidSchema.parse(id), user.id, ip);
   }
 
   @Post(':id/cancel')
@@ -140,6 +144,26 @@ export class TasksController {
   ) {
     await this.tasks.decline(uuidSchema.parse(id), user.id, body);
     return { success: true };
+  }
+
+  /** The assigned worker gives the task up; it goes back to matching. */
+  @Post(':id/leave')
+  async leave(
+    @Param('id') id: string,
+    @Body(zodPipe(leaveTaskSchema)) body: LeaveTaskInput,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.tasks.leave(uuidSchema.parse(id), user.id, body);
+  }
+
+  /** The requester removes the assigned worker before arrival; the task goes back to matching. */
+  @Post(':id/remove-worker')
+  async removeWorker(
+    @Param('id') id: string,
+    @Body(zodPipe(removeWorkerSchema)) body: RemoveWorkerInput,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.tasks.removeWorker(uuidSchema.parse(id), user.id, body);
   }
 
   // ─── Execution (assigned worker) ───────────────────────────────────

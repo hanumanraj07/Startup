@@ -48,7 +48,7 @@ function fakeTask() {
     budgetPaise: 50_000n,
     commissionPaise: 7_500n,
     workerPayoutPaise: 42_500n,
-    category: { slug: 'product-inspection', name: 'Product inspection' },
+    category: { slug: 'product-inspection', name: 'Product inspection', locationMode: 'SINGLE' },
     statusHistory: [{ toStatus: 'ASSIGNED', createdAt: new Date(), actorRole: 'WORKER', reason: null }],
     // The full requester row — every PII field a real User row carries.
     requester: {
@@ -121,6 +121,9 @@ describe('TasksService.getById — PII projection snapshot', () => {
         'createdAt',
         'statusHistory',
         'location',
+        // Pickup & delivery only (null otherwise): the requester's own drop-off.
+        'dropoff',
+        'locationMode',
         'money',
         'assignedWorker',
       ].sort(),
@@ -173,6 +176,11 @@ describe('TasksService.getById — PII projection snapshot', () => {
         'createdAt',
         'statusHistory',
         'location',
+        // The exact drop-off is revealed to the assigned worker, as the exact
+        // pickup already is — it is where they have to go. Approved
+        // 2026-10-18 (ai/memory.md); the open feed shows only the locality.
+        'dropoff',
+        'locationMode',
         'payoutPaise',
         'requester',
       ].sort(),

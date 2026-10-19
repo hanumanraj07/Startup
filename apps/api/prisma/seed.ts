@@ -53,6 +53,8 @@ const DEMO_PASSWORD = 'onsite-demo-password';
 
 // ─── Categories ──────────────────────────────────────────────────────────
 
+// "Pickup & delivery" is not here: the pickup_dropoff_tasks migration inserts
+// it (so production gets it without a seed), and a reset runs migrations first.
 const CATEGORIES = [
   {
     slug: 'product-inspection',

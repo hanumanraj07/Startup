@@ -60,8 +60,8 @@ They are separated so a burst of matching fan-out cannot slow request handling, 
 | Realtime | Socket.IO with the Redis adapter | Any instance serves any socket |
 | Storage | S3-compatible, presigned uploads | MinIO locally |
 | Payments | Razorpay Route | Behind a provider interface |
-| Geocoding | Google Places and Geocoding | Behind a provider interface |
-| Map display | MapLibre GL with OpenStreetMap tiles | Keeps the Google quota for geocoding |
+| Geocoding | OpenStreetMap via Photon (`modules/places`), proxied by the API | Founder decision 2026-10-19: OSM only, no key. `GEOCODING_PROVIDER=osm` (or `mock` for tests). Suggestions only; the point confirmed on the map is what is stored |
+| Map display | MapLibre GL with OpenStreetMap raster tiles, loaded on demand | Its own chunk, only on screens with a map. OSM's own tile servers are for light use: move to a tile provider (`VITE_MAP_TILE_URL`) before real traffic |
 
 ## Layout
 

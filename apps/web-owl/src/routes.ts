@@ -5,6 +5,7 @@ import { AdminDashboardView } from '@/views/admin/AdminDashboardView';
 import { AdminDisputeDetailView } from '@/views/admin/AdminDisputeDetailView';
 import { AdminDisputesView } from '@/views/admin/AdminDisputesView';
 import { AdminKycView } from '@/views/admin/AdminKycView';
+import { AdminModerationView } from '@/views/admin/AdminModerationView';
 import { AdminTaskDetailView } from '@/views/admin/AdminTaskDetailView';
 import { AdminTasksView } from '@/views/admin/AdminTasksView';
 import { AdminUsersView } from '@/views/admin/AdminUsersView';
@@ -83,4 +84,5 @@ export const routes: RouteDef[] = [
   route('admin-tasks', '/admin/tasks', 'Tasks', 'app', 'admin', AdminTasksView),
   route('admin-task-detail', '/admin/tasks/:id', 'Task', 'app', 'admin', AdminTaskDetailView),
   route('admin-categories', '/admin/categories', 'Categories & cities', 'app', 'admin', AdminCategoriesView),
+  route('admin-moderation', '/admin/moderation', 'Moderation', 'app', 'admin', AdminModerationView),
 ];

@@ -117,6 +117,23 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.server.to(roomFor(taskId)).emit('message:new', message);
   }
 
+  /**
+   * Takes a user's sockets out of a task's room — used when a worker leaves
+   * or is removed, so they stop receiving that task's chat and updates at
+   * once rather than whenever they next reconnect. fetchSockets goes through
+   * the Redis adapter, so this reaches sockets held by any API instance.
+   */
+  async removeUserFromTask(taskId: string, userId: string): Promise<void> {
+    try {
+      const sockets = await this.server.in(roomFor(taskId)).fetchSockets();
+      for (const socket of sockets) {
+        if (socket.data.userId === userId) socket.leave(roomFor(taskId));
+      }
+    } catch (error) {
+      this.logger.warn(`Could not remove user ${userId} from task room ${taskId}: ${String(error)}`);
+    }
+  }
+
   /** Broadcasts a task status change to its room — used for the live timeline (docs/09, docs/07-ui-design). */
   emitTaskStatus(taskId: string, status: string): void {
     this.server.to(roomFor(taskId)).emit('task:status', { taskId, status });

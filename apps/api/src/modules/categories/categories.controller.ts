@@ -11,6 +11,8 @@ interface CategoryView {
   suggestedMinPaise: number;
   suggestedMaxPaise: number;
   defaultProofRequirements: unknown;
+  /** SINGLE: one place. PICKUP_DROPOFF: collect at the task location, deliver to a drop-off. */
+  locationMode: 'SINGLE' | 'PICKUP_DROPOFF';
 }
 
 interface CityView {
@@ -52,6 +54,7 @@ export class CategoriesController {
         suggestedMinPaise: Number(c.suggestedMinPaise),
         suggestedMaxPaise: Number(c.suggestedMaxPaise),
         defaultProofRequirements: c.defaultProofRequirements,
+        locationMode: c.locationMode,
       })),
     };
   }

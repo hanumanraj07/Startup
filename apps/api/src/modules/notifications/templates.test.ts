@@ -5,6 +5,8 @@ import { renderNotification } from './templates';
 const SAMPLE_PAYLOADS: NotificationPayload[] = [
   { event: 'NEW_TASK_NEARBY', taskId: 't1', taskTitle: 'Inspect a laptop', payoutPaise: 42_500, distanceLabel: '2.1 km' },
   { event: 'WORKER_ASSIGNED', taskId: 't1', taskTitle: 'Inspect a laptop', workerName: 'Rahul S.' },
+  { event: 'WORKER_LEFT', taskId: 't1', taskTitle: 'Inspect a laptop', workerName: 'Rahul S.' },
+  { event: 'WORKER_REMOVED', taskId: 't1', taskTitle: 'Inspect a laptop' },
   { event: 'WORKER_EN_ROUTE', taskId: 't1', taskTitle: 'Inspect a laptop', workerName: 'Rahul S.' },
   { event: 'WORKER_ARRIVED', taskId: 't1', taskTitle: 'Inspect a laptop', workerName: 'Rahul S.' },
   { event: 'PROOF_SUBMITTED', taskId: 't1', taskTitle: 'Inspect a laptop' },
@@ -20,6 +22,7 @@ const SAMPLE_PAYLOADS: NotificationPayload[] = [
   { event: 'KYC_REJECTED', reason: 'Document photo was blurry' },
   { event: 'ACCOUNT_SUSPENDED', reason: 'Repeated policy violations' },
   { event: 'RATING_RECEIVED', taskId: 't1', taskTitle: 'Inspect a laptop', rating: 5 },
+  { event: 'MODERATION_REVIEWED', taskTitle: 'Inspect a laptop', overturned: true },
 ];
 
 describe('renderNotification', () => {
@@ -97,6 +100,7 @@ describe('EVENT_DEFINITIONS', () => {
         'KYC_APPROVED',
         'KYC_REJECTED',
         'ACCOUNT_SUSPENDED',
+        'MODERATION_REVIEWED',
       ].sort(),
     );
   });

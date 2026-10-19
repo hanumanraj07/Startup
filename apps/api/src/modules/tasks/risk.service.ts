@@ -55,6 +55,16 @@ export class RiskService {
       pattern: /\b(kill|murder|assassinat(e|ion)|kidnap(ping)?|abduct(ion)?|torture)\b/i,
       reason: 'violence or a threat against a person',
     },
+    // Watching, following or pressuring a person is the commonest way a
+    // "verification" task turns into harm against a third party.
+    {
+      pattern: /\b(stalk(ing)?|spy(ing)? on|harass(ing|ment)?|blackmail(ing)?|extort(ion|ing)?|intimidat(e|ing|ion)|threaten(ing)?)\b/i,
+      reason: 'harassment, stalking or intimidation of a person',
+    },
+    {
+      pattern: /\b(escort service|sexual services?|prostitut(e|ion))\b/i,
+      reason: 'sexual services',
+    },
     // The MVP scope explicitly excludes purchasing on the requester's behalf
     // and any task where the worker fronts money. See docs/01, "do NOT
     // purchase it" in the founding example. The gap between the verb and
@@ -86,8 +96,13 @@ export class RiskService {
    * callers actually want.
    */
   findProhibitedMatch(title: string, description: string): string | undefined {
-    const text = `${title}\n${description}`;
-    return this.prohibitedPatterns.find(({ pattern }) => pattern.test(text))?.reason;
+    // Checked twice: as written, and normalised so "k1ll", "k.i.l.l" and
+    // look-alike Unicode cannot step around a pattern. Benign phrases are
+    // removed from both first, so "glue gun" or "drug store" never trips the
+    // weapons or substances line.
+    const raw = stripBenignPhrases(`${title}\n${description}`.normalize('NFKC'));
+    const normalised = stripBenignPhrases(normaliseForScreening(`${title}\n${description}`));
+    return this.prohibitedPatterns.find(({ pattern }) => pattern.test(raw) || pattern.test(normalised))?.reason;
   }
 
   /** Throws if the task content matches a hard prohibition. */
@@ -153,4 +168,41 @@ export class RiskService {
     if (budgetPaise > 100_000) return 2; // above ₹1,000
     return 1;
   }
+}
+
+/**
+ * Phrases that contain a prohibited keyword but describe ordinary, legitimate
+ * things a worker might inspect. Removed before matching so the hard block
+ * stays precise. Keep this list short and specific: every entry is a hole in
+ * the filter, justified only by a real everyday use.
+ */
+const BENIGN_PHRASES: readonly RegExp[] = [
+  /\b(glue|spray|heat|nail|staple|toy|water|massage|paint|grease|caulking|nerf)[\s-]+guns?\b/gi,
+  /\bdrug[\s-]*stores?\b|\bdrug[\s-]+licen[cs]es?\b/gi,
+  /\bforged[\s-]+(steel|iron|alloy|aluminium|aluminum|wheels?|carbon|crankshaft|pistons?)\b/gi,
+  /\bbreak[\s-]+in[\s-]+(period|time)\b/gi,
+  /\blife[\s-]*hacks?\b/gi,
+  /\bkill[\s-]+switch(es)?\b/gi,
+];
+
+function stripBenignPhrases(text: string): string {
+  return BENIGN_PHRASES.reduce((acc, pattern) => acc.replace(pattern, ' '), text);
+}
+
+const LEET: Record<string, string> = { '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a', $: 's', '!': 'i' };
+
+/**
+ * Lowercases, folds look-alike Unicode (NFKC), drops zero-width characters,
+ * undoes common digit-for-letter swaps, and joins letters spaced out with
+ * dots, dashes or spaces ("k i l l", "k.i.l.l"). Used only for matching —
+ * never shown or stored.
+ */
+export function normaliseForScreening(text: string): string {
+  const folded = text
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\u200B-\u200D\u2060\uFEFF\u00AD]/g, '')
+    .replace(/[013457@$!]/g, (c) => LEET[c] ?? c);
+  // Three or more single letters separated by 1-3 separator characters.
+  return folded.replace(/(?<![a-z])[a-z](?:[\s._\-*·]{1,3}[a-z](?![a-z])){2,}/g, (run) => run.replace(/[^a-z]/g, ''));
 }

@@ -8,7 +8,7 @@
  * Runtime-neutral: no Node built-ins, no DOM assumptions.
  */
 import { z } from 'zod';
-import { CATEGORY_SLUG, PROOF_TYPE } from '@onsite/types';
+import { CATEGORY_SLUG, LOCATION_MODE, PROOF_TYPE } from '@onsite/types';
 
 // ─── Primitives ──────────────────────────────────────────────────────────
 
@@ -203,6 +203,12 @@ export const taskFieldsSchema = z.object({
   taskAddress: z.string().trim().min(5).max(500),
   taskPlaceName: z.string().trim().max(200).optional(),
   taskPlaceId: z.string().trim().max(200).optional(),
+  // Pickup & delivery categories only. Whether these are required or refused
+  // depends on the category, which only the server knows, so it is checked
+  // there; here they only have to be well-formed and come as a pair.
+  dropoffLocation: coordinatesSchema.optional(),
+  dropoffAddress: z.string().trim().min(5).max(500).optional(),
+  dropoffPlaceName: z.string().trim().max(200).optional(),
   budgetPaise: paiseSchema.min(MIN_TASK_BUDGET_PAISE).max(MAX_TASK_BUDGET_PAISE),
   deadlineAt: z.coerce.date(),
   proofRequirements: z.array(proofRequirementSchema).min(1).max(20),
@@ -210,6 +216,10 @@ export const taskFieldsSchema = z.object({
 });
 
 export const createTaskSchema = taskFieldsSchema
+  .refine((v) => (v.dropoffLocation === undefined) === (v.dropoffAddress === undefined), {
+    path: ['dropoffAddress'],
+    message: 'A drop-off needs both a point on the map and an address',
+  })
   .refine((v) => v.deadlineAt.getTime() > Date.now() + 30 * 60 * 1000, {
     path: ['deadlineAt'],
     message: 'Deadline must be at least 30 minutes from now',
@@ -226,10 +236,14 @@ export const cancelTaskSchema = z.object({
   reason: z.string().trim().min(5).max(500),
 });
 
+/**
+ * The feed takes no location and no radius: the server measures from the
+ * worker's saved base location and working radius. It used to accept both
+ * from the query string, so any client could browse tasks anywhere in India
+ * (the "my friend 50 km away saw my task" report, 2026-10-18). Unknown keys
+ * are stripped, so an old client still sending them is unaffected.
+ */
 export const nearbyTasksSchema = paginationSchema.extend({
-  latitude: z.coerce.number().min(-90).max(90).optional(),
-  longitude: z.coerce.number().min(-180).max(180).optional(),
-  radiusMeters: z.coerce.number().int().min(500).max(50_000).optional(),
   categorySlug: z.enum(CATEGORY_SLUG).optional(),
 });
 
@@ -290,6 +304,68 @@ export const blockerSchema = z.object({
   reason: z.enum(['CLOSED', 'REFUSED_ACCESS', 'NOT_FOUND', 'UNSAFE', 'OTHER']),
   description: z.string().trim().min(10).max(2_000),
   storageKeys: z.array(z.string().max(500)).max(5).optional(),
+});
+
+// ─── Releasing an assignment ─────────────────────────────────────────────
+
+/**
+ * A worker leaving a task they accepted, or a requester removing the worker
+ * before arrival. Either way the task goes back to matching; the reason is
+ * kept as reliability and dispute evidence. "Other" needs a short note so the
+ * record is never a bare shrug.
+ */
+export const LEAVE_TASK_REASON = [
+  'CANT_REACH_LOCATION',
+  'PERSONAL_EMERGENCY',
+  'TASK_NOT_AS_DESCRIBED',
+  'SAFETY_CONCERN',
+  'OTHER',
+] as const;
+
+export const REMOVE_WORKER_REASON = [
+  'NOT_RESPONDING',
+  'TOO_SLOW',
+  'SAFETY_CONCERN',
+  'OTHER',
+] as const;
+
+const needsNoteForOther = (v: { reason: string; note?: string }) =>
+  v.reason !== 'OTHER' || (v.note?.length ?? 0) >= 5;
+
+export const leaveTaskSchema = z
+  .object({
+    reason: z.enum(LEAVE_TASK_REASON),
+    note: z.string().trim().max(500).optional(),
+  })
+  .refine(needsNoteForOther, { path: ['note'], message: 'Tell us briefly why' });
+
+export const removeWorkerSchema = z
+  .object({
+    reason: z.enum(REMOVE_WORKER_REASON),
+    note: z.string().trim().max(500).optional(),
+  })
+  .refine(needsNoteForOther, { path: ['note'], message: 'Tell us briefly why' });
+
+// ─── Places (map picker) ─────────────────────────────────────────────────
+
+/** Free-text place search, optionally biased toward where the map is looking. */
+export const placeSearchSchema = z.object({
+  q: z.string().trim().min(2).max(120),
+  lat: z.coerce.number().min(-90).max(90).optional(),
+  lng: z.coerce.number().min(-180).max(180).optional(),
+});
+
+/** The address nearest a point on the map. */
+export const reverseGeocodeSchema = z.object({
+  lat: z.coerce.number().min(-90).max(90),
+  lng: z.coerce.number().min(-180).max(180),
+});
+
+// ─── Moderation ──────────────────────────────────────────────────────────
+
+/** A user asking a human to look again at a blocked task. */
+export const moderationAppealSchema = z.object({
+  note: z.string().trim().min(10, 'Explain briefly why this task is legitimate').max(1_000),
 });
 
 // ─── Review ──────────────────────────────────────────────────────────────
@@ -406,6 +482,16 @@ export const blockUserSchema = z.object({
 
 // ─── Admin ───────────────────────────────────────────────────────────────
 
+export const adminModerationListSchema = paginationSchema.extend({
+  status: z.enum(['PENDING', 'ALL']).default('PENDING'),
+});
+
+/** Uphold keeps the block; overturn lifts the posting restriction and lets that exact content through. */
+export const moderationDecisionSchema = z.object({
+  decision: z.enum(['UPHOLD', 'OVERTURN']),
+  note: z.string().trim().min(5, 'Record why').max(1_000),
+});
+
 export const kycDecisionSchema = z
   .object({
     decision: z.enum(['APPROVE', 'REJECT', 'RESUBMIT']),
@@ -431,6 +517,7 @@ export const createCategorySchema = z
     suggestedMinPaise: paiseSchema,
     suggestedMaxPaise: paiseSchema,
     isActive: z.boolean().default(true),
+    locationMode: z.enum(LOCATION_MODE).default('SINGLE'),
   })
   .refine((v) => v.suggestedMaxPaise >= v.suggestedMinPaise, {
     path: ['suggestedMaxPaise'],
@@ -445,6 +532,7 @@ export const updateCategorySchema = z
     suggestedMinPaise: paiseSchema.optional(),
     suggestedMaxPaise: paiseSchema.optional(),
     isActive: z.boolean().optional(),
+    locationMode: z.enum(LOCATION_MODE).optional(),
   })
   .refine((v) => v.suggestedMinPaise === undefined || v.suggestedMaxPaise === undefined || v.suggestedMaxPaise >= v.suggestedMinPaise, {
     path: ['suggestedMaxPaise'],
@@ -495,6 +583,13 @@ export type PayoutAccountInput = z.infer<typeof payoutAccountSchema>;
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 export type DeleteAccountInput = z.infer<typeof deleteAccountSchema>;
 export type CreatePaymentOrderInput = z.infer<typeof createPaymentOrderSchema>;
+export type PlaceSearchInput = z.infer<typeof placeSearchSchema>;
+export type ReverseGeocodeInput = z.infer<typeof reverseGeocodeSchema>;
+export type LeaveTaskInput = z.infer<typeof leaveTaskSchema>;
+export type RemoveWorkerInput = z.infer<typeof removeWorkerSchema>;
+export type ModerationAppealInput = z.infer<typeof moderationAppealSchema>;
+export type AdminModerationListInput = z.infer<typeof adminModerationListSchema>;
+export type ModerationDecisionInput = z.infer<typeof moderationDecisionSchema>;
 export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
 export type UpdateCategoryInput = z.infer<typeof updateCategorySchema>;
 export type CreateCityInput = z.infer<typeof createCitySchema>;

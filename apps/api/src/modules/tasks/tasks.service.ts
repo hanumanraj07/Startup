@@ -1,5 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { CreateTaskInput, DeclineTaskInput, NearbyTasksInput, UpdateTaskInput } from '@onsite/validation';
+import type { LocationMode, TaskStatus } from '@prisma/client';
+import type {
+  CreateTaskInput,
+  DeclineTaskInput,
+  LeaveTaskInput,
+  NearbyTasksInput,
+  RemoveWorkerInput,
+  UpdateTaskInput,
+} from '@onsite/validation';
 import { calculateSplit } from '@onsite/money';
 import { decodeCursor, encodeCursor } from '@onsite/utils';
 import { ACTIVE_WORK_STATUSES } from '@onsite/types';
@@ -9,17 +17,41 @@ import {
   ForbiddenError,
   NotFoundError,
 } from '../../common/errors';
-import { AuditService } from '../../common/audit.service';
 import { loadEnv } from '../../config/env';
 import { GeoRepository, isWithinIndiaBounds } from '../../repositories/geo.repository';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MatchingQueue } from '../../queue/matching.queue';
+import { ModerationService, type ModerationStage } from '../moderation/moderation.service';
 import { NotificationService } from '../notifications/notification.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { SafetyService } from '../safety/safety.service';
-import { assertTransitionAllowed, checkTransition } from './transitions';
+import { assertTransitionAllowed, checkTransition, REMOVABLE_BEFORE_ARRIVAL } from './transitions';
 import { RiskService } from './risk.service';
 import { PaymentsService } from '../payments/payments.service';
+
+/** How many times a requester may remove a worker from one task before only cancel or report remain. */
+const MAX_REMOVALS_PER_TASK = 3;
+
+/** Plain words for the timeline; the enum value itself is kept on the release record. */
+const RELEASE_REASON_LABEL: Record<string, string> = {
+  CANT_REACH_LOCATION: 'could not reach the location',
+  PERSONAL_EMERGENCY: 'personal emergency',
+  TASK_NOT_AS_DESCRIBED: 'task not as described',
+  SAFETY_CONCERN: 'safety concern',
+  NOT_RESPONDING: 'worker not responding',
+  TOO_SLOW: 'taking too long to arrive',
+  OTHER: 'other',
+};
+
+/** Below this the "drop-off" is the pickup, give or take GPS noise. */
+const MIN_DELIVERY_DISTANCE_M = 50;
+
+interface DropoffColumns {
+  dropoffLat: number | null;
+  dropoffLng: number | null;
+  dropoffAddress: string | null;
+  dropoffPlaceName: string | null;
+}
 
 export interface FeedItem {
   id: string;
@@ -30,6 +62,8 @@ export interface FeedItem {
   payoutPaise: number;
   deadlineAt: string;
   approximateAddress: string;
+  /** Pickup & delivery tasks only: roughly where it goes, and how far. The exact drop-off is revealed on acceptance. */
+  dropoff: { approximateAddress: string; tripDistanceMeters: number } | null;
   requester: { displayName: string; verificationLevel: number };
 }
 
@@ -46,34 +80,33 @@ export class TasksService {
     private readonly notifications: NotificationService,
     private readonly safety: SafetyService,
     private readonly realtime: RealtimeGateway,
-    private readonly audit: AuditService,
+    private readonly moderation: ModerationService,
   ) {}
 
   /**
-   * Runs the hard-prohibition check and, on a block, records it before
-   * rethrowing — a blocked attempt is exactly the kind of signal trust &
-   * safety needs visibility into (repeat offenders, escalating severity),
-   * not just a 400 the client silently absorbs. See ai/memory.md, 2026-09-24.
+   * Moderation for every task write: the posting cooldown, the keyword rules
+   * and, when configured, the OpenAI check. A block is recorded (moderation
+   * event + audit row) before it is thrown — a blocked attempt is a trust &
+   * safety signal, not just an error the client absorbs. See
+   * moderation.service.ts and ai/memory.md, 2026-09-24 and 2026-10-18.
    */
-  private async assertNotProhibitedAndAudit(
+  private async screenContent(
     requesterId: string,
+    stage: ModerationStage,
     title: string,
     description: string,
     actorIp: string | undefined,
     taskId?: string,
   ): Promise<void> {
-    const reason = this.risk.findProhibitedMatch(title, description);
-    if (reason) {
-      await this.audit.record({
-        actorUserId: requesterId,
-        actorIp,
-        action: 'PROHIBITED_TASK_BLOCKED',
-        entityType: 'Task',
-        entityId: taskId,
-        after: { reason, title, description },
-      });
-    }
-    this.risk.assertNotProhibited(title, description);
+    await this.moderation.screenTask({
+      userId: requesterId,
+      stage,
+      title,
+      description,
+      ruleReason: this.risk.findProhibitedMatch(title, description),
+      taskId,
+      actorIp,
+    });
   }
 
   // ─── Discovery ───────────────────────────────────────────────────────
@@ -84,8 +117,15 @@ export class TasksService {
    * calculates it and is never believed about it.
    */
   async findNearby(query: NearbyTasksInput, currentUserId: string, verificationLevel: number): Promise<FeedItem[]> {
-    const { latitude, longitude } = query;
-    if (latitude === undefined || longitude === undefined) return [];
+    // Measured from the worker's saved base and working radius, never from
+    // anything in the request: a client-supplied point and radius let anyone
+    // browse tasks anywhere in India. See nearbyTasksSchema's comment.
+    const profile = await this.prisma.workerProfile.findUnique({
+      where: { userId: currentUserId },
+      select: { baseLat: true, baseLng: true, workingRadiusMeters: true },
+    });
+    if (!profile) return [];
+    const { baseLat: latitude, baseLng: longitude, workingRadiusMeters } = profile;
 
     const categories = await this.prisma.category.findMany({
       where: { isActive: true, ...(query.categorySlug ? { slug: query.categorySlug } : {}) },
@@ -93,19 +133,27 @@ export class TasksService {
     });
     if (categories.length === 0) return [];
 
+    // Tasks this worker left or was removed from never come back to them.
+    const released = await this.prisma.taskRelease.findMany({
+      where: { workerId: currentUserId },
+      select: { taskId: true },
+    });
+
     const nearby = await this.geo.findNearbyTasks({
       workerLat: latitude,
       workerLng: longitude,
-      radiusMeters: query.radiusMeters ?? 10_000,
+      radiusMeters: workingRadiusMeters,
       verificationLevel,
       categoryIds: categories.map((c) => c.id),
       excludeRequesterIds: [currentUserId],
+      excludeTaskIds: released.map((r) => r.taskId),
       limit: query.limit,
       offset: 0,
     });
     if (nearby.length === 0) return [];
 
     const distanceById = new Map(nearby.map((t) => [t.id, t.distanceMeters]));
+    const tripById = new Map(nearby.map((t) => [t.id, t.tripDistanceMeters]));
 
     const tasks = await this.prisma.task.findMany({
       where: { id: { in: nearby.map((t) => t.id) } },
@@ -113,6 +161,7 @@ export class TasksService {
         id: true,
         title: true,
         taskAddress: true,
+        dropoffAddress: true,
         deadlineAt: true,
         workerPayoutPaise: true,
         category: { select: { slug: true, name: true } },
@@ -132,6 +181,9 @@ export class TasksService {
         payoutPaise: Number(t.workerPayoutPaise),
         deadlineAt: t.deadlineAt.toISOString(),
         approximateAddress: approximate(t.taskAddress),
+        dropoff: t.dropoffAddress
+          ? { approximateAddress: approximate(t.dropoffAddress), tripDistanceMeters: tripById.get(t.id) ?? 0 }
+          : null,
         requester: { displayName: t.requester.displayName, verificationLevel: t.requester.verificationLevel },
       }))
       .sort((a, b) => a.distanceMeters - b.distanceMeters);
@@ -160,7 +212,8 @@ export class TasksService {
 
     // Hard prohibitions block creation outright; risk scoring below only
     // gates publication. See docs/12-trust-safety.md.
-    await this.assertNotProhibitedAndAudit(requesterId, input.title, input.description, actorIp);
+    await this.screenContent(requesterId, 'CREATE', input.title, input.description, actorIp);
+    const dropoff = await this.resolveDropoff(category.locationMode, input.taskLocation, input, 'create');
     const riskResult = this.risk.scoreRisk({
       title: input.title,
       description: input.description,
@@ -190,6 +243,7 @@ export class TasksService {
         taskAddress: input.taskAddress,
         taskPlaceName: input.taskPlaceName,
         taskPlaceId: input.taskPlaceId,
+        ...dropoff,
         // PRIVATE snapshot. Never exposed, never used for matching.
         requesterLat: requester.homeLat,
         requesterLng: requester.homeLng,
@@ -222,14 +276,19 @@ export class TasksService {
       throw new BusinessRuleError('A task can only be edited while it is still a draft.');
     }
 
+    // Content edits are re-screened; every edit, content or not, waits out
+    // an active cooldown, so a blocked user cannot keep tweaking a draft.
     if (input.title || input.description) {
-      await this.assertNotProhibitedAndAudit(
+      await this.screenContent(
         requesterId,
+        'UPDATE',
         input.title ?? task.title,
         input.description ?? task.description,
         actorIp,
         taskId,
       );
+    } else {
+      await this.moderation.assertNotRestricted(requesterId);
     }
 
     let cityId = task.cityId;
@@ -255,12 +314,34 @@ export class TasksService {
     }
 
     let category = task.categoryId;
+    let locationMode: LocationMode | null = null;
     if (input.categorySlug) {
       const found = await this.prisma.category.findFirst({
         where: { slug: input.categorySlug, isActive: true },
       });
       if (!found) throw new NotFoundError('That category is not currently available.');
       category = found.id;
+      locationMode = found.locationMode;
+    }
+
+    // Re-check the drop-off whenever anything it depends on changes: the
+    // category (which decides whether there is one), the pickup point, or
+    // the drop-off itself.
+    let dropoff: DropoffColumns | undefined;
+    if (input.categorySlug !== undefined || input.taskLocation !== undefined || input.dropoffLocation !== undefined || input.dropoffAddress !== undefined) {
+      const mode = locationMode ?? (await this.prisma.category.findUniqueOrThrow({ where: { id: task.categoryId } })).locationMode;
+      const pickup = input.taskLocation ?? { latitude: task.taskLat, longitude: task.taskLng };
+      const merged =
+        input.dropoffLocation !== undefined || input.dropoffAddress !== undefined
+          ? input
+          : task.dropoffLat !== null && task.dropoffLng !== null && task.dropoffAddress !== null
+            ? {
+                dropoffLocation: { latitude: task.dropoffLat, longitude: task.dropoffLng },
+                dropoffAddress: task.dropoffAddress,
+                dropoffPlaceName: task.dropoffPlaceName ?? undefined,
+              }
+            : {};
+      dropoff = await this.resolveDropoff(mode, pickup, merged, 'update');
     }
 
     await this.prisma.task.update({
@@ -275,6 +356,7 @@ export class TasksService {
           taskLng: input.taskLocation.longitude,
         }),
         ...(input.taskAddress !== undefined && { taskAddress: input.taskAddress }),
+        ...dropoff,
         ...(input.deadlineAt !== undefined && { deadlineAt: input.deadlineAt }),
         ...(input.proofRequirements !== undefined && {
           proofRequirements: input.proofRequirements as object,
@@ -295,6 +377,55 @@ export class TasksService {
     return this.getById(taskId, requesterId);
   }
 
+  /**
+   * The drop-off columns for a task, checked against its category's mode.
+   * One-location categories never carry a drop-off (on create it is refused;
+   * on an edit that switches category it is cleared). Pickup & delivery
+   * categories need one, inside India, measurably apart from the pickup and
+   * within MAX_DELIVERY_DISTANCE_M of it — distance measured with PostGIS.
+   */
+  private async resolveDropoff(
+    mode: LocationMode,
+    pickup: { latitude: number; longitude: number },
+    input: { dropoffLocation?: { latitude: number; longitude: number }; dropoffAddress?: string; dropoffPlaceName?: string },
+    context: 'create' | 'update',
+  ): Promise<DropoffColumns> {
+    const none: DropoffColumns = { dropoffLat: null, dropoffLng: null, dropoffAddress: null, dropoffPlaceName: null };
+    if (mode === 'SINGLE') {
+      if (input.dropoffLocation && context === 'create') {
+        throw new BusinessRuleError('This kind of task happens at one place, so it cannot have a drop-off.');
+      }
+      return none;
+    }
+
+    const { dropoffLocation, dropoffAddress } = input;
+    if (!dropoffLocation || !dropoffAddress) {
+      throw new BusinessRuleError('Add where the item should be delivered: a point on the map and an address.');
+    }
+    if (!isWithinIndiaBounds(dropoffLocation.latitude, dropoffLocation.longitude)) {
+      throw new BusinessRuleError('The drop-off must be within India.');
+    }
+    const meters = await this.geo.distanceBetween(
+      { lat: pickup.latitude, lng: pickup.longitude },
+      { lat: dropoffLocation.latitude, lng: dropoffLocation.longitude },
+    );
+    if (!(meters >= MIN_DELIVERY_DISTANCE_M)) {
+      throw new BusinessRuleError('The drop-off is the same place as the pickup. Choose where it should be delivered.');
+    }
+    const max = loadEnv().MAX_DELIVERY_DISTANCE_M;
+    if (meters > max) {
+      throw new BusinessRuleError(
+        `Deliveries can be up to ${Math.round(max / 1000)} km from the pickup. This drop-off is ${(meters / 1000).toFixed(1)} km away.`,
+      );
+    }
+    return {
+      dropoffLat: dropoffLocation.latitude,
+      dropoffLng: dropoffLocation.longitude,
+      dropoffAddress,
+      dropoffPlaceName: input.dropoffPlaceName ?? null,
+    };
+  }
+
   // ─── Publication ─────────────────────────────────────────────────────
 
   /**
@@ -309,8 +440,12 @@ export class TasksService {
    * synchronously inline because no job runner existed yet. See
    * ai/memory.md.
    */
-  async publish(taskId: string, requesterId: string) {
+  async publish(taskId: string, requesterId: string, actorIp?: string) {
     const task = await this.requireOwnedTask(taskId, requesterId);
+
+    // Re-checked at the gate that makes a task visible: the rules may have
+    // tightened since the draft was written, and a cooldown applies here too.
+    await this.screenContent(requesterId, 'PUBLISH', task.title, task.description, actorIp, taskId);
 
     if (task.riskLevel === 'HIGH') {
       throw new BusinessRuleError(
@@ -481,6 +616,14 @@ export class TasksService {
       throw new ForbiddenError('You cannot accept this task.');
     }
 
+    // A worker who left this task, or was removed from it, does not get it
+    // back: the requester has already moved on, and re-accepting would let a
+    // worker reset a task's clock or dodge the leave penalty.
+    const released = await this.prisma.taskRelease.findFirst({ where: { taskId, workerId }, select: { id: true } });
+    if (released) {
+      throw new ForbiddenError('You have already been released from this task and cannot accept it again.');
+    }
+
     const profile = await this.prisma.workerProfile.findUnique({
       where: { userId: workerId },
       include: { categories: true },
@@ -594,6 +737,135 @@ export class TasksService {
     this.logger.log(`Task ${taskId} declined by worker ${workerId} (${input.reason}).`);
   }
 
+  // ─── Releasing an assignment ─────────────────────────────────────────
+
+  /**
+   * The assigned worker gives the task up, at any point before submitting.
+   * docs/09: "ASSIGNED … IN_PROGRESS → MATCHING (worker abandons, task
+   * re-offered)". The completion rate takes the hit; the requester's money
+   * stays held and the task goes straight back to matching.
+   */
+  async leave(taskId: string, workerId: string, input: LeaveTaskInput) {
+    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
+    if (!task || task.assignedWorkerId !== workerId) throw new NotFoundError('Task not found.');
+    assertTransitionAllowed(task.status, 'MATCHING', 'WORKER', { isAssignedWorker: true });
+
+    await this.releaseAssignment(task, workerId, 'WORKER', input.reason, input.note);
+
+    const worker = await this.prisma.user.findUnique({ where: { id: workerId }, select: { displayName: true } });
+    await this.notifySafely(task.requesterId, {
+      event: 'WORKER_LEFT',
+      taskId,
+      taskTitle: task.title,
+      workerName: worker?.displayName ?? 'Your worker',
+    });
+    return { status: 'MATCHING' as const };
+  }
+
+  /**
+   * The requester hands the task to someone else, before the worker has
+   * arrived. No money moves and the worker's completion rate is not
+   * penalised — it was not their decision. Capped per task so a requester
+   * cannot cycle through workers indefinitely; after that the options are
+   * cancelling or reporting an issue.
+   */
+  async removeWorker(taskId: string, requesterId: string, input: RemoveWorkerInput) {
+    const task = await this.requireOwnedTask(taskId, requesterId);
+    if (!task.assignedWorkerId) throw new BusinessRuleError('No worker is assigned to this task.');
+    if (!REMOVABLE_BEFORE_ARRIVAL.includes(task.status)) {
+      throw new BusinessRuleError(
+        'The worker has already arrived, so they can no longer be removed. If something is wrong, use Report an issue.',
+      );
+    }
+    assertTransitionAllowed(task.status, 'MATCHING', 'REQUESTER');
+
+    const removals = await this.prisma.taskRelease.count({ where: { taskId, initiatedBy: 'REQUESTER' } });
+    if (removals >= MAX_REMOVALS_PER_TASK) {
+      throw new BusinessRuleError(
+        `You have already removed ${MAX_REMOVALS_PER_TASK} workers from this task. Cancel it or report an issue instead.`,
+      );
+    }
+
+    const workerId = task.assignedWorkerId;
+    await this.releaseAssignment(task, requesterId, 'REQUESTER', input.reason, input.note);
+    await this.notifySafely(workerId, { event: 'WORKER_REMOVED', taskId, taskTitle: task.title });
+    return this.getById(taskId, requesterId);
+  }
+
+  /**
+   * The shared half of leave and remove. One transaction: the conditional
+   * update (so a worker leaving and a requester removing at the same moment,
+   * or either racing a status change, cannot both win), the release record,
+   * the history row, discarding the released worker's uploaded proof — the
+   * next worker starts clean and can never submit someone else's evidence —
+   * and the worker's stats. Then matching restarts from the first tier.
+   */
+  private async releaseAssignment(
+    task: { id: string; status: TaskStatus; assignedWorkerId: string | null },
+    actorUserId: string,
+    initiatedBy: 'WORKER' | 'REQUESTER',
+    reason: string,
+    note: string | undefined,
+  ): Promise<void> {
+    const workerId = task.assignedWorkerId;
+    if (!workerId) throw new BusinessRuleError('No worker is assigned to this task.');
+
+    await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.task.updateMany({
+        where: { id: task.id, status: task.status, assignedWorkerId: workerId },
+        data: { status: 'MATCHING', assignedWorkerId: null, assignedAt: null },
+      });
+      if (updated.count === 0) {
+        throw new ConflictError('This task changed a moment ago. Refresh to see its current state.');
+      }
+
+      await tx.taskRelease.create({
+        data: { taskId: task.id, workerId, initiatedBy, fromStatus: task.status, reason, note },
+      });
+      await tx.taskStatusHistory.create({
+        data: {
+          taskId: task.id,
+          fromStatus: task.status,
+          toStatus: 'MATCHING',
+          actorUserId,
+          actorRole: initiatedBy,
+          reason:
+            initiatedBy === 'WORKER'
+              ? `Worker left the task: ${RELEASE_REASON_LABEL[reason] ?? reason}${note ? ` (${note})` : ''}.`
+              : `Requester removed the worker: ${RELEASE_REASON_LABEL[reason] ?? reason}${note ? ` (${note})` : ''}.`,
+        },
+      });
+      await tx.taskProof.deleteMany({ where: { taskId: task.id, workerId } });
+
+      const profile = await tx.workerProfile.findUnique({ where: { userId: workerId } });
+      if (profile) {
+        // Leaving counts against the worker; being removed does not, so the
+        // acceptance that is being undone is taken back out of the ratio.
+        const tasksAccepted = initiatedBy === 'REQUESTER' ? Math.max(0, profile.tasksAccepted - 1) : profile.tasksAccepted;
+        const tasksAbandoned = profile.tasksAbandoned + (initiatedBy === 'WORKER' ? 1 : 0);
+        const completionRate =
+          tasksAccepted > 0 ? Math.round((profile.tasksCompleted / tasksAccepted) * 1000) / 10 : null;
+        await tx.workerProfile.update({
+          where: { userId: workerId },
+          data: { tasksAccepted, tasksAbandoned, completionRate },
+        });
+      }
+    });
+
+    this.realtime.emitTaskStatus(task.id, 'MATCHING');
+    await this.realtime.removeUserFromTask(task.id, workerId);
+    await this.matchingQueue.scheduleTier(task.id, 0, 0);
+    this.logger.log(`Task ${task.id}: worker ${workerId} released by ${initiatedBy.toLowerCase()} (${reason}); re-matching.`);
+  }
+
+  private async notifySafely(userId: string, payload: Parameters<NotificationService['notify']>[1]): Promise<void> {
+    try {
+      await this.notifications.notify(userId, payload);
+    } catch (error) {
+      this.logger.warn(`Notification dispatch failed (${payload.event}): ${String(error)}`);
+    }
+  }
+
   // ─── Retrieval, role-projected ───────────────────────────────────────
 
   async listMine(userId: string, limit: number, cursor?: string, perspective: 'requester' | 'worker' = 'requester') {
@@ -665,6 +937,7 @@ export class TasksService {
       description: task.description,
       categorySlug: task.category.slug,
       categoryName: task.category.name,
+      locationMode: task.category.locationMode,
       status: task.status,
       deadlineAt: task.deadlineAt.toISOString(),
       reviewDeadlineAt: task.reviewDeadlineAt?.toISOString() ?? null,
@@ -683,6 +956,7 @@ export class TasksService {
       return {
         ...base,
         location: { latitude: task.taskLat, longitude: task.taskLng, address: task.taskAddress },
+        dropoff: dropoffView(task),
         money: {
           budgetPaise: Number(task.budgetPaise),
           commissionPaise: Number(task.commissionPaise),
@@ -706,6 +980,7 @@ export class TasksService {
     return {
       ...base,
       location: { latitude: task.taskLat, longitude: task.taskLng, address: task.taskAddress },
+        dropoff: dropoffView(task),
       payoutPaise: Number(task.workerPayoutPaise),
       requester: {
         displayName: task.requester.displayName,
@@ -724,12 +999,24 @@ export class TasksService {
   }
 }
 
+/** The exact drop-off, for the requester and the assigned worker only. */
+function dropoffView(task: { dropoffLat: number | null; dropoffLng: number | null; dropoffAddress: string | null }) {
+  return task.dropoffLat !== null && task.dropoffLng !== null && task.dropoffAddress !== null
+    ? { latitude: task.dropoffLat, longitude: task.dropoffLng, address: task.dropoffAddress }
+    : null;
+}
+
 /**
  * Reduces a full street address to its locality, so a worker browsing the feed
  * learns roughly where a task is without learning exactly where until they
  * accept it.
  */
-function approximate(address: string): string {
-  const parts = address.split(',').map((p) => p.trim()).filter(Boolean);
-  return parts.length <= 2 ? address : parts.slice(-2).join(', ');
+export function approximate(address: string): string {
+  // A PIN code narrows an address to a few streets and says nothing a
+  // worker can picture, so it is dropped before taking the locality.
+  const parts = address
+    .split(',')
+    .map((p) => p.trim())
+    .filter((p) => p && !/^\d{6}$/.test(p));
+  return parts.length <= 2 ? parts.join(', ') : parts.slice(-2).join(', ');
 }

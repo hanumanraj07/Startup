@@ -163,9 +163,16 @@ export class ExecutionService {
         taskId,
         reportedLat: input.location.latitude,
         reportedLng: input.location.longitude,
+        includeDropoff: true,
       });
       if (measurement) {
-        distanceFromTaskMeters = measurement.distanceMeters;
+        // For a pickup & delivery task, the distance to whichever end the
+        // photo was taken at — a hand-over photo at the drop-off is not "far
+        // from the task".
+        distanceFromTaskMeters =
+          measurement.dropoffDistanceMeters === null
+            ? measurement.distanceMeters
+            : Math.min(measurement.distanceMeters, measurement.dropoffDistanceMeters);
         if (!measurement.isWithinGeofence) verificationFlags.push('gps_outside_geofence');
       }
     }
@@ -236,7 +243,8 @@ export class ExecutionService {
   async submit(taskId: string, workerId: string, note?: string) {
     const task = await this.requireAssignedTask(taskId, workerId);
 
-    const proofs = await this.prisma.taskProof.findMany({ where: { taskId } });
+    // Only this worker's own proof counts toward submission.
+    const proofs = await this.prisma.taskProof.findMany({ where: { taskId, workerId } });
     const missing = this.findMissingRequirements(task.proofRequirements, proofs);
 
     assertTransitionAllowed(task.status, 'SUBMITTED', 'WORKER', {

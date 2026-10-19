@@ -14,11 +14,20 @@ import {
   type WorkerTask,
 } from '@/lib/api-types';
 import { formatDateTime } from '@/lib/format';
-import { CHAT_VISIBLE_STATUSES, CHAT_WRITABLE_STATUSES, PROOF_VISIBLE_STATUSES, REPORTABLE_STATUSES } from '@/lib/task-status';
-import { routerState } from '@/router/router';
+import {
+  CHAT_VISIBLE_STATUSES,
+  CHAT_WRITABLE_STATUSES,
+  LEAVABLE_STATUSES,
+  PROOF_VISIBLE_STATUSES,
+  REPORTABLE_STATUSES,
+  WORKER_REMOVABLE_STATUSES,
+} from '@/lib/task-status';
+import { navigate, routerState } from '@/router/router';
 import { ApiError, api } from '@/services/api';
+import { toast } from '@/store/store';
 import { card, CARD_CONTENT } from '@/ui/classes';
 import { ChatPanel } from './task/ChatPanel';
+import { ReleaseAssignmentDialog } from './task/ReleaseAssignmentDialog';
 import { ReportIssueDialog } from './task/ReportIssueDialog';
 import { RequesterActions } from './task/RequesterActions';
 import { WorkerActions } from './task/WorkerActions';
@@ -57,8 +66,30 @@ export class TaskDetailView extends Component {
                 <span class="text-sm text-ink-400" t-out="task.categoryName"/>
               </div>
               <h1 class="text-2xl font-semibold tracking-tight text-ink-900" t-out="task.title"/>
-              <p class="flex items-center gap-1.5 text-sm text-ink-500">
+              <div t-if="task.dropoff" class="mt-1 flex flex-col gap-0 rounded-input border border-line-light p-1" role="group" aria-label="Route">
+                <div class="flex items-start gap-3 p-2">
+                  <span class="relative flex w-4 shrink-0 justify-center self-stretch" aria-hidden="true">
+                    <span class="mt-1 h-2.5 w-2.5 rounded-full bg-accent-600 ring-4 ring-tint-green"/>
+                    <span class="absolute bottom-[-12px] top-5 border-l-2 border-dashed border-ink-300"/>
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-ink-400">Pickup</p>
+                    <p class="text-sm text-ink-900" t-out="task.location.address"/>
+                  </div>
+                  <a t-if="workerTask" t-att-href="directionsUrl(task.location)" target="_blank" rel="noreferrer" t-att-class="directionsClass">Directions</a>
+                </div>
+                <div class="flex items-start gap-3 p-2">
+                  <span class="flex w-4 shrink-0 justify-center" aria-hidden="true"><span class="mt-1 h-2.5 w-2.5 rounded-[3px] bg-ink-900 ring-4 ring-paper-100"/></span>
+                  <div class="min-w-0 flex-1">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-ink-400">Drop-off</p>
+                    <p class="text-sm text-ink-900" t-out="task.dropoff.address"/>
+                  </div>
+                  <a t-if="workerTask" t-att-href="directionsUrl(task.dropoff)" target="_blank" rel="noreferrer" t-att-class="directionsClass">Directions</a>
+                </div>
+              </div>
+              <p t-else="" class="flex items-center gap-1.5 text-sm text-ink-500">
                 <Icon name="'map-pin'" size="16"/> <t t-out="task.location.address"/>
+                <a t-if="workerTask" t-att-href="directionsUrl(task.location)" target="_blank" rel="noreferrer" t-att-class="directionsClass + ' ml-auto'">Directions</a>
               </p>
               <p class="mt-1 whitespace-pre-wrap border-t border-line pt-4 text-[15px] text-ink-700" t-out="task.description"/>
             </div>
@@ -100,7 +131,12 @@ export class TaskDetailView extends Component {
           <RequesterActions t-if="ownerTask"
             taskId="task.id" status="task.status" proofs="state.proofs" onChanged="load"/>
 
-          <ReportIssueDialog t-if="reportable" taskId="task.id" onReported="load"/>
+          <div t-if="reportable or canLeave or canRemoveWorker" class="flex flex-wrap items-center gap-2">
+            <ReportIssueDialog t-if="reportable" taskId="task.id" onReported="load"/>
+            <ReleaseAssignmentDialog t-if="canLeave" taskId="task.id" mode="'leave'" onDone="onLeft"/>
+            <ReleaseAssignmentDialog t-if="canRemoveWorker" taskId="task.id" mode="'remove'"
+              workerName="ownerTask.assignedWorker.displayName" onDone="onWorkerRemoved"/>
+          </div>
 
           <div>
             <h2 class="mb-3 text-lg font-medium text-ink-900">Timeline</h2>
@@ -118,7 +154,18 @@ export class TaskDetailView extends Component {
         <ChatPanel t-if="chatVisible" taskId="task.id" closed="!chatWritable"/>
       </div>
     </Page>`;
-  static components = { ChatPanel, Icon, Link, MoneyBreakdown, Page, ReportIssueDialog, RequesterActions, StatusPill, WorkerActions };
+  static components = {
+    ChatPanel,
+    Icon,
+    Link,
+    MoneyBreakdown,
+    Page,
+    ReleaseAssignmentDialog,
+    ReportIssueDialog,
+    RequesterActions,
+    StatusPill,
+    WorkerActions,
+  };
   static override props = {};
 
   state = useState<{ task: TaskDetail | null; proofs: ProofView[]; error: string | null }>({
@@ -128,6 +175,7 @@ export class TaskDetailView extends Component {
   });
 
   cardClass = card();
+  directionsClass = 'shrink-0 rounded-full bg-paper-100 px-3 py-1.5 text-xs font-semibold text-ink-900 hover:bg-line';
 
   private readonly taskId = routerState.params['id'] ?? '';
 
@@ -143,7 +191,14 @@ export class TaskDetailView extends Component {
     if (this.taskId) {
       useTaskSocket(this.taskId, {
         onStatus: () => {
-          this.load().catch(() => undefined);
+          this.load().catch((err) => {
+            // The worker's view of a task disappears once they are released
+            // from it (removed by the requester, or left on another device).
+            if (err instanceof ApiError && err.status === 404 && this.workerTask) {
+              this.state.task = null;
+              this.state.error = 'You are no longer assigned to this task. It has gone back to other workers.';
+            }
+          });
         },
       });
     }
@@ -187,6 +242,30 @@ export class TaskDetailView extends Component {
 
   get reportable(): boolean {
     return this.state.task !== null && REPORTABLE_STATUSES.includes(this.state.task.status);
+  }
+
+  get canLeave(): boolean {
+    return this.workerTask !== null && LEAVABLE_STATUSES.includes(this.workerTask.status);
+  }
+
+  get canRemoveWorker(): boolean {
+    const task = this.ownerTask;
+    return task !== null && task.assignedWorker !== null && WORKER_REMOVABLE_STATUSES.includes(task.status);
+  }
+
+  onLeft = () => {
+    toast('You left the task', { description: 'It has gone back to other workers nearby.' });
+    navigate('/feed');
+  };
+
+  onWorkerRemoved = () => {
+    toast('Worker removed', { description: 'Your task is back in matching. Your payment is still held.', variant: 'success' });
+    this.load().catch(() => undefined);
+  };
+
+  /** Opens the phone's maps app (or Google Maps on the web) with directions to the point. Only the coordinates are passed. */
+  directionsUrl(point: { latitude: number; longitude: number }): string {
+    return `https://www.google.com/maps/dir/?api=1&destination=${point.latitude},${point.longitude}`;
   }
 
   when(event: { at: string }): string {

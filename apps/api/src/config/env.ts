@@ -68,7 +68,12 @@ const envSchema = z
     TCS_BPS: z.coerce.number().int().min(0).max(10_000).default(0),
     TDS_194O_BPS: z.coerce.number().int().min(0).max(10_000).default(0),
 
-    GEOCODING_PROVIDER: z.enum(['google', 'mock']).default('mock'),
+    // Place search and reverse geocoding for the map picker. OpenStreetMap
+    // only (founder decision, 2026-10-19): Photon, no key. A leftover
+    // "google" value from older env files is read as osm rather than refusing
+    // to boot; Google geocoding was never implemented.
+    GEOCODING_PROVIDER: z.preprocess((v) => (v === 'google' ? 'osm' : v), z.enum(['osm', 'mock']).default('osm')),
+    GEOCODING_OSM_URL: z.string().url().default('https://photon.komoot.io'),
     GOOGLE_MAPS_API_KEY: z.string().optional(),
 
     // Sign-in with Google. Only the client ID is needed server-side — ID
@@ -89,11 +94,25 @@ const envSchema = z
     SMS_API_KEY: z.string().optional(),
     SMS_SENDER_ID: z.string().optional(),
 
+    // Task moderation. Keyword rules always run; the OpenAI Moderation API
+    // is added on top only when a key is configured. See
+    // modules/moderation/moderation.service.ts.
+    OPENAI_API_KEY: z.string().optional(),
+    OPENAI_MODERATION_MODEL: z.string().default('omni-moderation-latest'),
+    MODERATION_COOLDOWN_SECONDS: z.coerce.number().int().min(0).max(86_400).default(300),
+
+    // A rotated refresh token presented again within this many seconds is
+    // treated as a concurrent duplicate (two tabs, a lost response), not as
+    // theft. See auth.service.ts refresh().
+    REFRESH_REUSE_GRACE_SECONDS: z.coerce.number().int().min(0).max(300).default(30),
+
     REVIEW_WINDOW_HOURS: z.coerce.number().int().min(1).max(168).default(24),
     DISPUTE_WINDOW_DAYS: z.coerce.number().int().min(1).max(90).default(7),
     MIN_TASK_BUDGET_PAISE: z.coerce.number().int().positive().default(30_000),
     MAX_TASK_BUDGET_PAISE: z.coerce.number().int().positive().default(5_000_000),
     MAX_CONCURRENT_TASKS_PER_WORKER: z.coerce.number().int().min(1).max(20).default(3),
+    // How far a pickup & delivery task may carry an item, pickup to drop-off.
+    MAX_DELIVERY_DISTANCE_M: z.coerce.number().int().min(1_000).max(500_000).default(50_000),
     DEFAULT_WORKER_RADIUS_M: z.coerce.number().int().min(500).max(50_000).default(10_000),
     MATCH_TIER_RADII_M: commaSeparatedInts('MATCH_TIER_RADII_M').default('3000,7000,15000,30000'),
     MATCH_TIER_WAIT_MINUTES: commaSeparatedInts('MATCH_TIER_WAIT_MINUTES').default('10,15,20'),
@@ -112,10 +131,7 @@ const envSchema = z
         'PAYMENT_PROVIDER=razorpay requires RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET and RAZORPAY_WEBHOOK_SECRET',
     },
   )
-  .refine((env) => env.GEOCODING_PROVIDER !== 'google' || Boolean(env.GOOGLE_MAPS_API_KEY), {
-    path: ['GEOCODING_PROVIDER'],
-    message: 'GEOCODING_PROVIDER=google requires GOOGLE_MAPS_API_KEY',
-  })
+
   // A production deployment must never silently run on the mock payment driver.
   .refine((env) => env.NODE_ENV !== 'production' || env.PAYMENT_PROVIDER !== 'mock', {
     path: ['PAYMENT_PROVIDER'],

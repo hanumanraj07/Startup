@@ -1,17 +1,21 @@
 import { Body, Controller, Get, Ip, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import {
+  adminModerationListSchema,
   createCategorySchema,
   createCitySchema,
   kycDecisionSchema,
+  moderationDecisionSchema,
   paginationSchema,
   resolveDisputeSchema,
   suspendUserSchema,
   updateCategorySchema,
   updateCitySchema,
   uuidSchema,
+  type AdminModerationListInput,
   type CreateCategoryInput,
   type CreateCityInput,
   type KycDecisionInput,
+  type ModerationDecisionInput,
   type ResolveDisputeInput,
   type SuspendUserInput,
   type UpdateCategoryInput,
@@ -20,6 +24,7 @@ import {
 import { zodPipe } from '../../common/zod-validation.pipe';
 import { CurrentUser, type RequestUser } from '../auth/decorators/current-user.decorator';
 import { DisputesService } from '../disputes/disputes.service';
+import { ModerationService } from '../moderation/moderation.service';
 import { AdminGuard } from './admin.guard';
 import { AdminService } from './admin.service';
 
@@ -35,7 +40,24 @@ export class AdminController {
   constructor(
     private readonly admin: AdminService,
     private readonly disputes: DisputesService,
+    private readonly moderation: ModerationService,
   ) {}
+
+  /** Blocked tasks and appeals. Default view is appeals waiting for a decision. */
+  @Get('moderation')
+  async listModeration(@Query(zodPipe(adminModerationListSchema)) query: AdminModerationListInput) {
+    return this.moderation.listForAdmin(query);
+  }
+
+  @Post('moderation/:id/decision')
+  async decideModeration(
+    @Param('id') id: string,
+    @Body(zodPipe(moderationDecisionSchema)) body: ModerationDecisionInput,
+    @CurrentUser() admin: RequestUser,
+    @Ip() ip: string,
+  ) {
+    return this.moderation.decide(uuidSchema.parse(id), admin.id, body, ip);
+  }
 
   @Get('kyc')
   async kycQueue(@Query(zodPipe(paginationSchema)) query: { limit: number; cursor?: string }) {

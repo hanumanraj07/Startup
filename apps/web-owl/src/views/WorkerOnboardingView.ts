@@ -1,7 +1,9 @@
 import { Component, onMounted, onWillUnmount, useState, xml } from '@odoo/owl';
 import { Icon } from '@/components/Icon';
+import { LocationPicker } from '@/components/LocationPicker';
 import { Page } from '@/components/Page';
-import type { CategoryView, CityView } from '@/lib/api-types';
+import type { CategoryView, PickedLocation, WorkerProfile } from '@/lib/api-types';
+import { nearestListedCity } from '@/lib/india-places';
 import { navigate } from '@/router/router';
 import { ApiError, api } from '@/services/api';
 import { refetchUser } from '@/services/session';
@@ -10,9 +12,10 @@ import { btn, card, CARD_CONTENT, CARD_DESCRIPTION, CARD_HEADER, CARD_TITLE, LAB
 
 interface OnboardingState {
   categories: CategoryView[] | null;
-  cities: CityView[] | null;
   loadError: string | null;
-  city: CityView | null;
+  /** Set when editing an existing worker profile rather than creating one. */
+  existing: WorkerProfile | null;
+  base: PickedLocation | null;
   radiusKm: number;
   selected: string[];
   submitting: boolean;
@@ -20,34 +23,35 @@ interface OnboardingState {
 }
 
 /**
- * Becoming a worker: a base city (the centre tasks are measured from), a
- * working radius and the categories the worker will accept. The server
- * decides everything else; this only asks.
+ * Becoming a worker, or changing your work area: the exact point tasks are
+ * measured from, a working radius and the categories you accept. The point is
+ * set on a map, not by picking a city — a base at a city centre is what let a
+ * worker living 60 km away see that city's tasks (2026-10-18). The base point
+ * stays private: requesters never see it.
  */
 export class WorkerOnboardingView extends Component {
   static override template = xml`
-    <Page breadcrumbs="[{ label: 'Become a worker' }]">
+    <Page breadcrumbs="[{ label: state.existing ? 'Your work area' : 'Become a worker' }]">
       <div class="mx-auto flex max-w-xl flex-col gap-4">
-        <p class="text-sm text-ink-500">Tell us where you work from and what you’re good at.</p>
+        <p class="text-sm text-ink-500" t-out="state.existing ? 'Change where you start from, how far you travel, and what you do.' : 'Tell us where you work from and what you’re good at.'"/>
 
         <p t-if="state.loadError" role="alert" class="text-sm text-dispute" t-out="state.loadError"/>
 
         <section t-att-class="cardClass">
           <div class="${CARD_HEADER}">
-            <h2 class="${CARD_TITLE}">Base location</h2>
-            <p class="${CARD_DESCRIPTION}">The center point tasks are measured from.</p>
+            <h2 class="${CARD_TITLE}">Where do you start from?</h2>
+            <p class="${CARD_DESCRIPTION}">
+              Usually your home or where you spend the day. Tasks are measured from this exact point, and it is never shown to requesters.
+            </p>
           </div>
           <div class="${CARD_CONTENT} flex flex-col gap-4">
-            <div class="flex flex-wrap gap-2">
-              <button t-foreach="state.cities or []" t-as="c" t-key="c.id" type="button"
-                t-att-class="cityClass(c)" t-att-aria-pressed="isCity(c) ? 'true' : 'false'"
-                t-on-click="() => selectCity(c)">
-                <Icon name="'map-pin'" size="16"/> <t t-out="c.name"/>
-              </button>
-            </div>
+            <LocationPicker t-if="state.loaded" id="'worker-base'" tone="'pickup'" value="state.base or undefined" onChange="setBase"
+              showDetails="false" searchPlaceholder="'Search your area, street or landmark'"/>
+            <div t-else="" class="skeleton h-[300px] rounded-card" aria-hidden="true"/>
             <div class="flex flex-col gap-1.5">
-              <label for="radius" class="${LABEL}">Working radius: <t t-out="state.radiusKm"/> km</label>
+              <label for="radius" class="${LABEL}">How far will you travel? <t t-out="state.radiusKm"/> km</label>
               <input id="radius" type="range" min="1" max="50" t-att-value="state.radiusKm" class="w-full accent-brand-600" t-on-input="onRadius"/>
+              <p class="text-xs text-ink-400">You will only see and be offered tasks within this distance of your starting point.</p>
             </div>
           </div>
         </section>
@@ -76,23 +80,24 @@ export class WorkerOnboardingView extends Component {
 
         <button type="button" t-att-class="submitClass" t-att-disabled="!canSubmit or state.submitting"
           t-att-aria-busy="state.submitting ? 'true' : null" t-on-click="submit">
-          <span t-if="state.submitting" class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/60 border-t-white" aria-hidden="true"/>
-          Start finding work
+          <span t-if="state.submitting" class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" aria-hidden="true"/>
+          <t t-out="state.existing ? 'Save changes' : 'Start finding work'"/>
         </button>
       </div>
     </Page>`;
-  static components = { Icon, Page };
+  static components = { Icon, LocationPicker, Page };
   static override props = {};
 
-  state = useState<OnboardingState>({
+  state = useState<OnboardingState & { loaded: boolean }>({
     categories: null,
-    cities: null,
     loadError: null,
-    city: null,
+    existing: null,
+    base: null,
     radiusKm: 10,
     selected: [],
     submitting: false,
     error: null,
+    loaded: false,
   });
 
   cardClass = card();
@@ -110,19 +115,11 @@ export class WorkerOnboardingView extends Component {
   }
 
   get canSubmit(): boolean {
-    return this.state.city !== null && this.state.selected.length > 0;
-  }
-
-  isCity(c: CityView): boolean {
-    return this.state.city?.id === c.id;
+    return this.state.base !== null && this.state.selected.length > 0;
   }
 
   isSelected(c: CategoryView): boolean {
     return this.state.selected.includes(c.slug);
-  }
-
-  cityClass(c: CityView): string {
-    return btn(this.isCity(c) ? 'primary' : 'secondary', 'sm');
   }
 
   categoryClass(c: CategoryView): string {
@@ -130,13 +127,13 @@ export class WorkerOnboardingView extends Component {
       ? 'border-ink-900 bg-brand-50 text-ink-900'
       : 'border-line bg-paper-0 text-ink-700 hover:bg-paper-100';
     return (
-      'relative flex items-center gap-2 rounded-input border p-3 text-left text-sm transition-colors duration-micro ease-onsite ' +
+      'relative flex min-h-[44px] items-center gap-2 rounded-input border p-3 text-left text-sm transition-colors duration-micro ease-onsite ' +
       `focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink-900 ${tone}`
     );
   }
 
-  selectCity = (c: CityView) => {
-    this.state.city = c;
+  setBase = (location: PickedLocation | null) => {
+    this.state.base = location;
   };
 
   toggleCategory = (c: CategoryView) => {
@@ -150,36 +147,58 @@ export class WorkerOnboardingView extends Component {
 
   private async load() {
     try {
-      const [categories, cities] = await Promise.all([
+      const [categories, existing] = await Promise.all([
         api.get<{ data: CategoryView[] }>('/categories'),
-        api.get<{ data: CityView[] }>('/cities'),
+        api.get<WorkerProfile>('/workers/me').catch((err: unknown) => {
+          if (err instanceof ApiError && err.status === 404) return null;
+          throw err;
+        }),
       ]);
       if (this.disposed) return;
       this.state.categories = categories.data;
-      this.state.cities = cities.data;
+      if (existing) {
+        this.state.existing = existing;
+        this.state.base = {
+          latitude: existing.baseLocation.latitude,
+          longitude: existing.baseLocation.longitude,
+          suggestedAddress: '',
+          details: '',
+        };
+        this.state.radiusKm = Math.round(existing.workingRadiusMeters / 1000);
+        this.state.selected = existing.categories.map((c) => c.slug);
+      }
     } catch {
-      if (!this.disposed) this.state.loadError = 'Could not load categories and cities. Refresh to try again.';
+      if (!this.disposed) this.state.loadError = 'Could not load your details. Refresh to try again.';
+    } finally {
+      if (!this.disposed) this.state.loaded = true;
     }
   }
 
   submit = async () => {
     const { state } = this;
-    const city = state.city;
-    if (!city || state.selected.length === 0) return;
+    const base = state.base;
+    if (!base || state.selected.length === 0) return;
     state.submitting = true;
     state.error = null;
+    const body = {
+      baseLocation: { latitude: base.latitude, longitude: base.longitude },
+      // A display label only ("within 10 km of Ahmedabad"); the point is what is measured from.
+      baseCity: nearestListedCity(base.latitude, base.longitude)?.city.name ?? 'India',
+      workingRadiusMeters: state.radiusKm * 1000,
+      categorySlugs: state.selected,
+    };
     try {
-      await api.post('/workers/me', {
-        baseLocation: { latitude: city.latitude, longitude: city.longitude },
-        baseCity: city.name,
-        workingRadiusMeters: state.radiusKm * 1000,
-        categorySlugs: state.selected,
-      });
-      await refetchUser();
-      toast('Worker profile created', { description: 'Browse nearby tasks whenever you’re ready.', variant: 'success' });
+      if (state.existing) {
+        await api.patch('/workers/me', body);
+        toast('Work area saved', { description: 'Your feed now uses your new starting point.', variant: 'success' });
+      } else {
+        await api.post('/workers/me', body);
+        await refetchUser();
+        toast('Worker profile created', { description: 'Browse nearby tasks whenever you’re ready.', variant: 'success' });
+      }
       navigate('/feed');
     } catch (error) {
-      state.error = error instanceof ApiError ? error.message : 'Could not create your worker profile. Try again.';
+      state.error = error instanceof ApiError ? error.message : 'Could not save your worker profile. Try again.';
     } finally {
       state.submitting = false;
     }

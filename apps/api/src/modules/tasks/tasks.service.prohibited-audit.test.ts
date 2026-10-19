@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TasksService } from './tasks.service';
 import { RiskService } from './risk.service';
-import { BusinessRuleError } from '../../common/errors';
+import { PostingRestrictedError, TaskBlockedError } from '../../common/errors';
+import { resetEnvCache } from '../../config/env';
+import { ModerationService } from '../moderation/moderation.service';
 
 /**
  * A blocked prohibited-content attempt is a trust & safety signal, not just
@@ -15,12 +17,55 @@ import { BusinessRuleError } from '../../common/errors';
 
 const REQUESTER_ID = 'req-1';
 
-function buildService(auditRecord: ReturnType<typeof vi.fn>) {
+const BASE_ENV = {
+  DATABASE_URL: 'postgresql://onsite:onsite@localhost:5432/onsite_app',
+  REDIS_URL: 'redis://localhost:6379',
+  JWT_ACCESS_SECRET: 'a'.repeat(32),
+  JWT_REFRESH_SECRET: 'b'.repeat(32),
+  STORAGE_ENDPOINT: 'http://localhost:9000',
+  STORAGE_BUCKET: 'onsite-media',
+  STORAGE_ACCESS_KEY: 'x',
+  STORAGE_SECRET_KEY: 'y',
+  MODERATION_COOLDOWN_SECONDS: '300',
+};
+
+beforeEach(() => {
+  resetEnvCache();
+  process.env = { ...process.env, ...BASE_ENV };
+  delete process.env.OPENAI_API_KEY;
+});
+
+/** An in-memory moderation_events table, enough for the cooldown to be real. */
+function fakeModerationEvents() {
+  const rows: { id: string; userId: string; restrictedUntil: Date; appealStatus: string; reason: string; contentHash: string }[] = [];
+  return {
+    rows,
+    findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+      const now = new Date();
+      return (
+        rows.find((r) =>
+          r.userId === where.userId &&
+          (where.contentHash ? r.contentHash === where.contentHash && r.appealStatus === where.appealStatus : r.restrictedUntil > now && r.appealStatus !== 'OVERTURNED'),
+        ) ?? null
+      );
+    }),
+    create: vi.fn(async ({ data }: { data: (typeof rows)[number] }) => {
+      const row = { ...data, id: `evt-${rows.length + 1}`, appealStatus: 'NONE' };
+      rows.push(row);
+      return row;
+    }),
+  };
+}
+
+function buildService(auditRecord: ReturnType<typeof vi.fn>, events = fakeModerationEvents()) {
   const prisma = {
     category: { findFirst: vi.fn().mockResolvedValue({ id: 'cat-1', slug: 'local-research' }) },
+    moderationEvent: events,
   };
   const geo = { findNearestCity: vi.fn().mockResolvedValue({ id: 'city-1' }) };
   const audit = { record: auditRecord };
+  const ai = { classify: vi.fn().mockResolvedValue(null) };
+  const moderation = new ModerationService(prisma as never, audit as never, ai as never, {} as never);
 
   return new TasksService(
     prisma as never,
@@ -31,7 +76,7 @@ function buildService(auditRecord: ReturnType<typeof vi.fn>) {
     {} as never,
     {} as never,
     {} as never,
-    audit as never,
+    moderation,
   );
 }
 
@@ -55,7 +100,7 @@ describe('TasksService — prohibited-content attempts are audited', () => {
         { ...baseInput, title: 'Urgent task', description: 'I need someone to kill my neighbor' },
         '203.0.113.5',
       ),
-    ).rejects.toThrow(BusinessRuleError);
+    ).rejects.toThrow(TaskBlockedError);
 
     expect(auditRecord).toHaveBeenCalledTimes(1);
     expect(auditRecord).toHaveBeenCalledWith(
@@ -70,6 +115,22 @@ describe('TasksService — prohibited-content attempts are audited', () => {
         }),
       }),
     );
+  });
+
+  it('restricts posting for the cooldown after a block, even for clean content', async () => {
+    const auditRecord = vi.fn().mockResolvedValue(undefined);
+    const service = buildService(auditRecord);
+
+    await expect(
+      service.create(REQUESTER_ID, { ...baseInput, title: 'Task', description: 'Spy on my neighbour and report back' }),
+    ).rejects.toThrow(TaskBlockedError);
+
+    // A clean resubmission inside the five minutes is refused server-side,
+    // before the content is even looked at.
+    await expect(
+      service.create(REQUESTER_ID, { ...baseInput, title: 'Inspect a laptop', description: 'Check stock and take photos.' }),
+    ).rejects.toThrow(PostingRestrictedError);
+    expect(auditRecord).toHaveBeenCalledTimes(1);
   });
 
   it('does not record anything for ordinary content', async () => {

@@ -131,13 +131,18 @@ export class ChatService {
     limit: number,
     cursor?: string,
   ): Promise<{ data: ChatMessageView[]; nextCursor: string | null }> {
-    await this.requirePartyToTask(taskId, currentUserId);
+    const task = await this.requirePartyToTask(taskId, currentUserId);
 
     const cursorData = cursor ? decodeCursor<{ createdAt: string; id: string }>(cursor) : null;
+    // If an earlier worker left or was removed, the current worker sees only
+    // the conversation from their own assignment onward — never a previous
+    // worker's messages. The requester keeps the whole history.
+    const workerSince = task.assignedWorkerId === currentUserId ? task.assignedAt : null;
 
     const messages = await this.prisma.message.findMany({
       where: {
         taskId,
+        ...(workerSince && { createdAt: { gte: workerSince } }),
         ...(cursorData && {
           OR: [
             { createdAt: { lt: new Date(cursorData.createdAt) } },

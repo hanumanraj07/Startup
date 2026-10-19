@@ -43,7 +43,12 @@ Applied in SQL. A worker must satisfy every one:
 | Not the requester | A requester cannot be matched to their own task |
 | Not blocked | Neither party has blocked the other |
 | Not already offered | No existing offer for this task and worker |
+| Not released | The worker has not left this task or been removed from it (`task_releases`) |
 | Not overloaded | Below the concurrent active task cap, default 3 |
+
+**Where distance is measured from (2026-10-18).** Always the worker's saved base point (`worker_profiles.base_geog`) and their `working_radius_m`, for both offers and the open feed. The feed used to take a point and radius from the query string, so any client could browse tasks anywhere; it now ignores both. The base point is set on a map during onboarding (and can be changed from the feed), not by picking a city: a base at a city centre is what let a worker living 60 km away see that city's tasks.
+
+**Pickup & delivery tasks** are matched on the pickup point (the task location). The drop-off is not a matching input; the feed shows its locality and the server-measured trip distance, and the exact drop-off is revealed to the assignee only.
 
 The last filter matters more than it looks. A worker holding five simultaneous tasks completes few of them well, and completion rate is the metric the whole product rests on.
 

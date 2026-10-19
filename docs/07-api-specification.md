@@ -98,9 +98,11 @@ Unassigned tasks show an approximate location to workers, not the exact address.
 
 | Method | Path | Auth | Notes |
 |---|---|---|---|
-| GET | `/tasks/nearby` | worker | The feed. PostGIS radius search, ranked. Requires availability. Paginated |
+| GET | `/tasks/nearby` | worker | The feed. PostGIS radius search from the worker's **saved** base point and working radius; takes no location or radius from the client. Pickup & delivery items carry the drop-off locality and trip distance only. Paginated |
 | POST | `/tasks/:id/accept` | worker | **Atomic.** Exactly one winner; the rest get `409 TASK_ALREADY_ASSIGNED`. Verification level enforced here |
 | POST | `/tasks/:id/decline` | worker | Records a decline and reason |
+| POST | `/tasks/:id/leave` | assigned worker | Gives the task up before submission. Task returns to `MATCHING`; uploaded proof is discarded; completion rate drops; the worker can never re-accept that task. Reason required (`OTHER` needs a note) |
+| POST | `/tasks/:id/remove-worker` | requester | Removes the assigned worker **before arrival only** (`ASSIGNED`, `WORKER_EN_ROUTE`). Task returns to `MATCHING`, no money moves, not counted against the worker. At most 3 per task |
 
 ## Execution
 
@@ -170,9 +172,13 @@ WebSocket namespace `/ws`, room per task, membership authorized on connection. S
 |---|---|---|
 | GET | `/categories` | public |
 | GET | `/cities` | public |
+| GET | `/places/search?q=&lat=&lng=` | user | Map picker search, OpenStreetMap via Photon, India only, optionally biased to a point. 60/min per user |
+| GET | `/places/reverse?lat=&lng=` | user | The address nearest a map point. 60/min per user |
 | GET | `/tasks/price-hint` | user |
 | POST | `/reports` | user |
 | POST | `/users/:id/block` | user |
+| GET | `/moderation/restriction` | user |
+| POST | `/moderation/events/:id/appeal` | user (owner of the event) |
 
 ## Admin
 
@@ -192,6 +198,8 @@ All require `platform_role = ADMIN`. All write actions produce an audit log entr
 | GET | `/admin/payments` | Oversight |
 | POST | `/admin/payouts/:id/retry` | Manual intervention, audited |
 | GET | `/admin/metrics` | Completion rate, time to match, dispute rate, GMV, active workers by city |
+| GET | `/admin/moderation` | Blocked tasks; `status=PENDING` (default) lists appeals waiting for a decision |
+| POST | `/admin/moderation/:id/decision` | Uphold or overturn, note required. Overturn lifts the posting pause and lets that exact content through for that user |
 
 ## Operational
 
