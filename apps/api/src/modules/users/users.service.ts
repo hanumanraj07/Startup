@@ -6,9 +6,9 @@ import { AuditService } from '../../common/audit.service';
 import { BusinessRuleError, ForbiddenError, NotFoundError } from '../../common/errors';
 import { EncryptionService } from '../../common/encryption.service';
 import { toPublicUser, toPublicWorker, toSelfUser } from '../../common/projections';
-import { payoutProvider } from '../../config/env';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PasswordService } from '../auth/password.service';
+import { VerificationService } from '../verification/verification.service';
 
 /**
  * Any task status that isn't one of these means the account has unfinished
@@ -43,6 +43,7 @@ export class UsersService {
     private readonly encryption: EncryptionService,
     private readonly passwords: PasswordService,
     private readonly audit: AuditService,
+    private readonly verification: VerificationService,
   ) {}
 
   async getSelf(userId: string) {
@@ -219,14 +220,13 @@ export class UsersService {
   }
 
   /**
-   * Adds a bank account or UPI ID for payouts. Only the last four digits of
-   * an account number are stored (the full number goes to the payout
-   * partner), the PAN is encrypted, and the addition is audited.
-   *
-   * Verification: with the mock payout provider the account is verified at
-   * once, standing in for the bank check. With no payout partner connected it
-   * stays unverified, and payouts wait. (P4 replaces this with a real
-   * verification: a penny drop that returns the holder's name.)
+   * Adds a bank account or UPI ID for payouts. Needs a verified identity
+   * first, because the account is checked against it: the verification
+   * provider confirms the account exists and that the name on it is the
+   * worker's (VerificationService.checkPayoutAccount), so earnings cannot be
+   * routed to someone else. The account number is shown masked and kept
+   * encrypted (for re-checks and the payout partner), the PAN is encrypted,
+   * and the addition is audited.
    */
   async addPayoutAccount(
     userId: string,
@@ -239,6 +239,10 @@ export class UsersService {
       panNumber: string;
     },
   ) {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { verificationLevel: true } });
+    if (user.verificationLevel < 2) {
+      throw new BusinessRuleError('Verify your identity first. Payout accounts are checked against it.');
+    }
     const active = await this.prisma.payoutAccount.findMany({ where: { userId, removedAt: null } });
     if (active.length >= MAX_PAYOUT_ACCOUNTS) {
       throw new BusinessRuleError(`You can keep up to ${MAX_PAYOUT_ACCOUNTS} payout accounts. Remove one first.`);
@@ -251,22 +255,22 @@ export class UsersService {
     );
     if (duplicate) throw new BusinessRuleError('That account is already added.');
 
-    const verified = payoutProvider() === 'mock';
-    const account = await this.prisma.payoutAccount.create({
+    const created = await this.prisma.payoutAccount.create({
       data: {
         userId,
         type: input.type,
         accountHolderName: input.type === 'BANK' ? input.accountHolderName : null,
         accountNumberMasked: masked,
+        accountNumberEncrypted: input.type === 'BANK' && input.accountNumber ? this.encryption.encrypt(input.accountNumber) : null,
         ifsc: input.type === 'BANK' ? input.ifsc : null,
         upiVpa: input.type === 'UPI' ? input.upiVpa : null,
         panNumberEncrypted: this.encryption.encrypt(input.panNumber),
-        isVerified: verified,
-        verifiedAt: verified ? new Date() : null,
-        // The first verified account becomes where payouts go.
-        isDefault: verified && !active.some((a) => a.isDefault && a.isVerified),
+        isVerified: false,
+        isDefault: false,
       },
     });
+    // The first verified account becomes where payouts go (set by the check).
+    const account = await this.verification.checkPayoutAccount(created, input.accountNumber ?? null);
 
     await this.audit.record({
       actorUserId: userId,
@@ -324,6 +328,12 @@ export class UsersService {
     return this.listPayoutAccounts(userId);
   }
 
+  /** "Check again" for an account that failed or could not be checked. */
+  async recheckPayoutAccount(userId: string, accountId: string) {
+    const account = await this.verification.recheckPayoutAccount(userId, accountId);
+    return this.toPayoutAccountView(account);
+  }
+
   private async requirePayoutAccount(userId: string, accountId: string) {
     const account = await this.prisma.payoutAccount.findFirst({ where: { id: accountId, userId, removedAt: null } });
     if (!account) throw new NotFoundError('Payout account not found.');
@@ -340,9 +350,14 @@ export class UsersService {
     isVerified: boolean;
     isDefault: boolean;
     verifiedAt: Date | null;
+    verificationStatus: string;
+    verificationFailureReason: string | null;
+    nameAtBank: string | null;
+    bankName: string | null;
     createdAt: Date;
   }) {
     // Never the PAN, encrypted or otherwise, and never a full account number.
+    // The name at the bank is the worker's own record, shown back to them.
     return {
       id: account.id,
       type: account.type,
@@ -353,6 +368,10 @@ export class UsersService {
       isVerified: account.isVerified,
       isDefault: account.isDefault,
       verifiedAt: account.verifiedAt?.toISOString() ?? null,
+      verificationStatus: account.verificationStatus,
+      verificationFailureReason: account.verificationFailureReason,
+      nameAtBank: account.nameAtBank,
+      bankName: account.bankName,
       createdAt: account.createdAt.toISOString(),
     };
   }

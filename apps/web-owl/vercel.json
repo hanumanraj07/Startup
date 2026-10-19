@@ -22,6 +22,7 @@
     { "source": "/notifications", "destination": "/app.html" },
     { "source": "/settings", "destination": "/app.html" },
     { "source": "/kyc", "destination": "/app.html" },
+    { "source": "/kyc/digilocker-test", "destination": "/app.html" },
     { "source": "/profile/:id", "destination": "/app.html" },
     { "source": "/worker/onboarding", "destination": "/app.html" },
     { "source": "/worker/earnings", "destination": "/app.html" },
@@ -50,7 +51,7 @@
       "headers": [{ "key": "X-Robots-Tag", "value": "noindex" }]
     },
     {
-      "source": "/(tasks|profile|worker|admin|pages)/(.*)",
+      "source": "/(tasks|profile|worker|admin|pages|kyc)/(.*)",
       "headers": [{ "key": "X-Robots-Tag", "value": "noindex" }]
     },
     {

@@ -303,7 +303,13 @@ See `ai/memory.md`, 2026-10-18, for the decisions and the scope reversals.
 - [ ] Production: run the migration; leave `PAYOUT_PROVIDER` unset (= `none`) until a payout partner is connected (P4)
 - [ ] Business: who bears the gateway fee on item money; is ₹100 the right floor
 
-**P4 — Verification** — third-party KYC provider (research current offerings first), bank account verification
+**P4 — Verification ◑ BUILT AND VERIFIED LOCALLY (mock provider), NOT PUSHED**
+- [x] Provider research: Razorpay has no public end-user PAN/Aadhaar API and its bank check needs RazorpayX; chose Cashfree Secure ID (DigiLocker, bank account verification, UPI penny drop), behind a driver interface
+- [x] Identity through DigiLocker: verified → level 2 at once; keeps only name + last 4 digits; retry, 5/day, manual upload fallback
+- [x] Bank / UPI accounts checked with a name match against the verified identity; failed, mismatch and unavailable outcomes with reasons; "Check again"
+- [x] Payouts only to a verified account of a level 2+ worker
+- [ ] Cashfree: merchant account with Secure ID, then set `VERIFICATION_PROVIDER=cashfree` and the client id/secret; first run against the sandbox with Cashfree's test data (the driver has only been tested with a stubbed fetch)
+- [ ] Legal: privacy notice naming the verification provider (DPDP Act), data-processing agreement
 
 **P5 — Polish** — mobile layout fix after accepting a task, larger proof delete button, "Other" category, searchable dropdowns everywhere
 

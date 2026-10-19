@@ -73,6 +73,17 @@ const envSchema = z
     // is `none` in production and `mock` elsewhere. See payoutProvider().
     PAYOUT_PROVIDER: z.enum(['mock', 'none']).optional(),
     PAYOUT_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(5),
+    // Who checks identities (DigiLocker) and bank or UPI accounts. Cashfree
+    // Secure ID was chosen after checking current offerings (ai/memory.md,
+    // P4): Razorpay has no public end-user PAN/Aadhaar API, and its
+    // fund-account validation needs RazorpayX and has no test mode. Unset, it
+    // is `none` in production (manual document review only, accounts stay
+    // unverified) and `mock` elsewhere. See verificationProvider().
+    VERIFICATION_PROVIDER: z.enum(['mock', 'cashfree', 'none']).optional(),
+    CASHFREE_VERIFICATION_CLIENT_ID: z.string().optional(),
+    CASHFREE_VERIFICATION_CLIENT_SECRET: z.string().optional(),
+    CASHFREE_VERIFICATION_BASE_URL: z.string().url().default('https://sandbox.cashfree.com/verification'),
+    CASHFREE_VERIFICATION_API_VERSION: z.string().default('2024-12-01'),
 
     // Place search and reverse geocoding for the map picker. OpenStreetMap
     // only (founder decision, 2026-10-19): Photon, no key. A leftover
@@ -151,6 +162,19 @@ const envSchema = z
     path: ['PAYMENT_PROVIDER'],
     message: 'The mock payment provider must not be used in production',
   })
+  .refine(
+    (env) =>
+      env.VERIFICATION_PROVIDER !== 'cashfree' ||
+      Boolean(env.CASHFREE_VERIFICATION_CLIENT_ID && env.CASHFREE_VERIFICATION_CLIENT_SECRET),
+    {
+      path: ['VERIFICATION_PROVIDER'],
+      message: 'VERIFICATION_PROVIDER=cashfree requires CASHFREE_VERIFICATION_CLIENT_ID and CASHFREE_VERIFICATION_CLIENT_SECRET',
+    },
+  )
+  .refine((env) => env.NODE_ENV !== 'production' || env.VERIFICATION_PROVIDER !== 'mock', {
+    path: ['VERIFICATION_PROVIDER'],
+    message: 'The mock verification provider must not be used in production',
+  })
   .refine((env) => env.NODE_ENV !== 'production' || env.PAYOUT_PROVIDER !== 'mock', {
     path: ['PAYOUT_PROVIDER'],
     message: 'The mock payout provider must not be used in production',
@@ -164,6 +188,11 @@ const envSchema = z
   );
 
 export type Env = z.infer<typeof envSchema>;
+
+/** The identity and bank verification provider in effect: `none` by default in production. */
+export function verificationProvider(env: Env = loadEnv()): 'mock' | 'cashfree' | 'none' {
+  return env.VERIFICATION_PROVIDER ?? (env.NODE_ENV === 'production' ? 'none' : 'mock');
+}
 
 /** The payout provider in effect: `none` by default in production, so no deploy breaks for want of the setting. */
 export function payoutProvider(env: Env = loadEnv()): 'mock' | 'none' {

@@ -63,6 +63,8 @@ Rules, not aspirations. Each is checkable, and several are enforced by tests.
 
 - TLS everywhere. HSTS enabled.
 - KYC document numbers and PAN **encrypted at rest**, decryptable only in the admin review path.
+- Payout account numbers **encrypted at rest**, decrypted only to re-run a bank check or to register the account with the payout partner; responses carry the last four digits only.
+- Automated identity verification keeps the minimum: the name on the government record and the last four digits. The provider's raw responses (address, date of birth, photo, XML) are never stored or logged.
 - Bank account numbers stored masked; full values live with the gateway, not here.
 - Cross-party PII is blocked by explicit projections, and **asserted by tests over whole response bodies** so a column added later cannot leak quietly.
 - Chat is redacted server-side for phone numbers, email addresses and UPI identifiers.

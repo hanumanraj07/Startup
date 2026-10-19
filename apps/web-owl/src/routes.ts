@@ -14,6 +14,7 @@ import { EarningsView } from '@/views/EarningsView';
 import { FeedView } from '@/views/FeedView';
 import { ForgotPasswordView } from '@/views/ForgotPasswordView';
 import { KycView } from '@/views/KycView';
+import { DigilockerTestView } from '@/views/kyc/DigilockerTestView';
 import { LandingView } from '@/views/LandingView';
 import { LicensesView } from '@/views/LicensesView';
 import { NewTaskView } from '@/views/NewTaskView';
@@ -72,6 +73,8 @@ export const routes: RouteDef[] = [
   route('notifications', '/notifications', 'Notifications', 'app', 'user', NotificationsView),
   route('settings', '/settings', 'Settings', 'app', 'user', SettingsView),
   route('kyc', '/kyc', 'Identity verification', 'app', 'user', KycView),
+  // The mock verification provider's consent screen; the API refuses it with a real provider.
+  route('kyc-digilocker-test', '/kyc/digilocker-test', 'DigiLocker (test)', 'app', 'user', DigilockerTestView),
   route('profile', '/profile/:id', 'Profile', 'app', 'user', ProfileView),
   route('worker-onboarding', '/worker/onboarding', 'Become a worker', 'app', 'user', WorkerOnboardingView),
   route('worker-earnings', '/worker/earnings', 'Earnings', 'app', 'user', EarningsView),

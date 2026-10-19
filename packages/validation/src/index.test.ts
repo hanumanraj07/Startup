@@ -229,15 +229,24 @@ describe('payoutAccountSchema', () => {
         accountNumber: '123456789012',
         ifsc: 'HDFC0001234',
         panNumber: 'ABCDE1234F',
+        verificationConsent: true,
       }).success,
     ).toBe(true);
   });
 
   it('accepts a UPI account', () => {
     expect(
-      payoutAccountSchema.safeParse({ type: 'UPI', upiVpa: 'rahul@ybl', panNumber: 'ABCDE1234F' })
+      payoutAccountSchema.safeParse({ type: 'UPI', upiVpa: 'rahul@ybl', panNumber: 'ABCDE1234F', verificationConsent: true })
         .success,
     ).toBe(true);
+  });
+
+  it('requires consent to the account check', () => {
+    expect(payoutAccountSchema.safeParse({ type: 'UPI', upiVpa: 'rahul@ybl', panNumber: 'ABCDE1234F' }).success).toBe(false);
+    expect(
+      payoutAccountSchema.safeParse({ type: 'UPI', upiVpa: 'rahul@ybl', panNumber: 'ABCDE1234F', verificationConsent: false })
+        .success,
+    ).toBe(false);
   });
 
   it('rejects a bank account missing its IFSC', () => {
@@ -251,7 +260,13 @@ describe('payoutAccountSchema', () => {
   });
 
   it('rejects a bank account without the holder name, or with letters in the number', () => {
-    const bank = { type: 'BANK', accountNumber: '123456789012', ifsc: 'HDFC0001234', panNumber: 'ABCDE1234F' };
+    const bank = {
+      type: 'BANK',
+      accountNumber: '123456789012',
+      ifsc: 'HDFC0001234',
+      panNumber: 'ABCDE1234F',
+      verificationConsent: true,
+    };
     expect(payoutAccountSchema.safeParse(bank).success).toBe(false);
     expect(
       payoutAccountSchema.safeParse({ ...bank, accountHolderName: 'Rahul Sharma', accountNumber: '12345ABC9012' }).success,
@@ -263,7 +278,7 @@ describe('payoutAccountSchema', () => {
 
   it('rejects a malformed PAN', () => {
     expect(
-      payoutAccountSchema.safeParse({ type: 'UPI', upiVpa: 'rahul@ybl', panNumber: 'BAD' }).success,
+      payoutAccountSchema.safeParse({ type: 'UPI', upiVpa: 'rahul@ybl', panNumber: 'BAD', verificationConsent: true }).success,
     ).toBe(false);
   });
 });

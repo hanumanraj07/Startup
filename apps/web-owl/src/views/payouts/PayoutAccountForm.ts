@@ -44,6 +44,12 @@ export class PayoutAccountForm extends Component {
         hint="'Needed for tax records on what you earn. Stored encrypted and never shown again.'" error="state.errors.panNumber"
         value="state.values.panNumber" onInput="(v) => set('panNumber', v)"/>
 
+      <label class="flex items-start gap-3 rounded-input bg-paper-100 px-3 py-3 text-sm text-ink-700">
+        <input type="checkbox" class="mt-0.5 h-5 w-5 shrink-0 accent-[#0c831f]" t-att-checked="state.consent" t-on-change="toggleConsent"/>
+        <span>Check this account now. We may send ₹1 to it to confirm it exists and that the name on it is yours (it’s yours to keep).</span>
+      </label>
+      <p t-if="state.consentError" role="alert" class="-mt-2 text-sm text-dispute" t-out="state.consentError"/>
+
       <p t-if="state.error" role="alert" class="text-sm text-dispute" t-out="state.error"/>
       <div class="flex flex-wrap gap-2">
         <button type="submit" t-att-class="submitClass" t-att-disabled="state.busy" t-att-aria-busy="state.busy ? 'true' : null">
@@ -68,13 +74,22 @@ export class PayoutAccountForm extends Component {
     errors: Partial<Record<Field, string>>;
     busy: boolean;
     error: string | null;
+    consent: boolean;
+    consentError: string | null;
   }>({
     kind: 'BANK',
     values: { accountHolderName: '', accountNumber: '', confirmAccountNumber: '', ifsc: '', upiVpa: '', panNumber: '' },
     errors: {},
     busy: false,
     error: null,
+    consent: false,
+    consentError: null,
   });
+
+  toggleConsent = (ev: Event) => {
+    this.state.consent = (ev.target as HTMLInputElement).checked;
+    if (this.state.consent) this.state.consentError = null;
+  };
 
   setKind = (kind: string) => {
     this.state.kind = kind as Kind;
@@ -98,17 +113,20 @@ export class PayoutAccountForm extends Component {
             accountNumber: v.accountNumber.replace(/\s+/g, ''),
             ifsc: v.ifsc.trim().toUpperCase(),
             panNumber: v.panNumber.trim().toUpperCase(),
+            verificationConsent: this.state.consent,
           }
-        : { type: 'UPI', upiVpa: v.upiVpa.trim(), panNumber: v.panNumber.trim().toUpperCase() };
+        : { type: 'UPI', upiVpa: v.upiVpa.trim(), panNumber: v.panNumber.trim().toUpperCase(), verificationConsent: this.state.consent };
 
     const errors: Partial<Record<Field, string>> = {};
     const parsed = payoutAccountSchema.safeParse(body);
     if (!parsed.success) {
       for (const issue of parsed.error.issues) {
+        if (issue.path[0] === 'verificationConsent') continue;
         const field = (issue.path[0] as Field | undefined) ?? (this.state.kind === 'BANK' ? 'accountHolderName' : 'upiVpa');
         errors[field] ??= issue.message;
       }
     }
+    this.state.consentError = this.state.consent ? null : 'Agree to the account check to continue';
     if (this.state.kind === 'BANK') {
       if (!body.accountHolderName) errors.accountHolderName ??= 'Enter the name on the account';
       if (!body.ifsc) errors.ifsc ??= 'Enter a valid IFSC code';
@@ -118,7 +136,7 @@ export class PayoutAccountForm extends Component {
       }
     }
     this.state.errors = errors;
-    return Object.keys(errors).length === 0 ? (body as unknown as Record<string, string>) : null;
+    return Object.keys(errors).length === 0 && this.state.consent ? (body as unknown as Record<string, string>) : null;
   }
 
   async submit() {

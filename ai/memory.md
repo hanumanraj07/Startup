@@ -6,6 +6,25 @@ Newest entries at the top. Every entry states the decision, the reasoning, and w
 
 ---
 
+## 2026-10-19 — P4: identity through DigiLocker (Cashfree Secure ID), bank and UPI accounts checked against that identity, payouts gated on both
+
+**Provider research first, as the founder asked (2026-10-19).**
+- **Razorpay** has no public API for verifying an end user's PAN or Aadhaar; its KYC pages are about onboarding merchants (CKYC, DigiLocker for the business owner, video KYC). Its bank check, RazorpayX **Fund Account Validation**, needs a RazorpayX (Lite) account and does not work in test mode. So "the payment gateway does KYC" is not true here, exactly as the founder warned.
+- **Cashfree Secure ID** (Verification API) has, documented and with a sandbox: **DigiLocker** (hosted consent link, `POST /digilocker`, status `GET /digilocker`, documents `GET /digilocker/document/AADHAAR`), **bank account verification** (`POST /bank-account/sync`, returns `name_at_bank` and a name-match verdict), and **UPI penny drop** (`POST /upi/penny-drop`, needs recorded consent). It is independent of the payment gateway, so payments stay on Razorpay.
+- Not chosen now, but credible: Digio, IDfy, Signzy, HyperVerge (all do DigiLocker/PAN/bank). The provider sits behind an interface (`modules/verification`), so switching is one driver.
+
+**Decided.**
+- **Identity = DigiLocker, consent-based.** The worker signs in to DigiLocker and shares Aadhaar; we keep **only the name and the last four digits**, never the number, address, date of birth or photo. A verified identity is **level 2** (docs/12), automatically, with an audit entry and the existing KYC_APPROVED notification. Five attempts per 24 hours, then the manual upload (unchanged, admin-reviewed) is the route. A user can stop at any point; a denial or expiry is shown with a retry.
+- **Payout accounts are checked against that identity.** Adding one needs level 2. The provider confirms the account exists and returns the holder's name; it must match the verified name (provider verdict, or our own `compareNames`: same words in any order, or the shorter name contained in the longer with initials allowed). Outcomes: VERIFIED, FAILED (with the bank's reason), NAME_MISMATCH ("payouts can only go to an account in your own name"), or PENDING when the provider could not be reached (never a made-up verdict). The worker consents explicitly to the check, which may send ₹1. The account number is now kept encrypted (for "Check again" and the future payout partner); only the last four digits are ever shown.
+- **Restriction of financial features:** payouts are sent only to a VERIFIED default account of a level 2+ worker (`PayoutsService`); earnings stay owed and visible until then. Accepting tasks above ₹1,000 already required level 2.
+- **`VERIFICATION_PROVIDER`** = `mock` | `cashfree` | `none`; unset is `none` in production (manual review only; accounts stay unchecked), `mock` elsewhere. `cashfree` needs `CASHFREE_VERIFICATION_CLIENT_ID/SECRET`; `CASHFREE_VERIFICATION_BASE_URL` defaults to the sandbox. The mock's DigiLocker is an in-app page clearly labelled "Test mode"; the API refuses its consent route with any real provider.
+
+**Before switching on Cashfree in production:** a Cashfree merchant account with Secure ID enabled, a DPDP-compliant privacy notice naming the provider, and a data-processing agreement. The driver was written against Cashfree's documentation and tested with a stubbed `fetch`; it has **not** been run against the live sandbox (no credentials here). The first sandbox run should use Cashfree's published test accounts (e.g. 026291800001191 / YESB0000262) and VPAs (success@upi, invalid@upi).
+
+**Rejected.** Collecting Aadhaar numbers ourselves (OKYC via OTP): more data than needed and more liability. Face match/liveness: not needed while identity is DigiLocker-backed; revisit for higher-value tiers. Auto-approving manual uploads with OCR: the manual path stays human.
+
+---
+
 ## 2026-10-19 — P3: the requester sets the price, items are bought and settled without commission, commission is hidden, and workers get paid out
 
 **Decided (founder's list, items 9, 12 and 16).**

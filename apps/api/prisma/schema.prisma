@@ -94,6 +94,28 @@ enum PayoutAccountType {
   UPI
 }
 
+/// The outcome of checking a payout account with the verification provider.
+enum PayoutAccountVerification {
+  PENDING
+  VERIFIED
+  FAILED
+  NAME_MISMATCH
+}
+
+/// Who checked an identity or a bank account. MOCK only outside production.
+enum VerificationProviderName {
+  MOCK
+  CASHFREE
+}
+
+enum IdentityVerificationStatus {
+  PENDING
+  VERIFIED
+  CONSENT_DENIED
+  EXPIRED
+  FAILED
+}
+
 enum OfferResponse {
   ACCEPTED
   DECLINED
@@ -243,6 +265,7 @@ model User {
 
   workerProfile     WorkerProfile?
   kycSubmissions    KycSubmission[]
+  identityVerifications IdentityVerification[]
   payoutAccounts    PayoutAccount[]
   refreshTokens     RefreshToken[]
   otpCodes          OtpCode[]
@@ -344,6 +367,32 @@ model KycSubmission {
   @@map("kyc_submissions")
 }
 
+/// Automated identity verification through a provider (DigiLocker, via
+/// Cashfree Secure ID). Kept deliberately small: the name the government
+/// record carries (to match bank accounts against) and the last four digits
+/// of the document, never the full number, address, date of birth or photo.
+model IdentityVerification {
+  id     String @id @default(uuid(7))
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  provider          VerificationProviderName
+  method            String                     @default("DIGILOCKER")
+  providerReference String?                    @map("provider_reference")
+  status            IdentityVerificationStatus @default(PENDING)
+  verifiedName      String?                    @map("verified_name")
+  documentLast4     String?                    @map("document_last4")
+  failureReason     String?                    @map("failure_reason")
+
+  /// The provider's consent link stops working after this.
+  expiresAt   DateTime  @map("expires_at")
+  completedAt DateTime? @map("completed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@map("identity_verifications")
+}
+
 model PayoutAccount {
   id     String @id @default(uuid(7))
   userId String @map("user_id")
@@ -351,8 +400,10 @@ model PayoutAccount {
 
   type PayoutAccountType
   accountHolderName   String? @map("account_holder_name")
-  // Masked. The full value lives with the payment gateway, not here.
   accountNumberMasked String? @map("account_number_masked")
+  /// Encrypted at rest, never returned by any API. Needed to re-run a bank
+  /// check and, later, to register the account with the payout partner.
+  accountNumberEncrypted String? @map("account_number_encrypted")
   ifsc                String?
   upiVpa              String? @map("upi_vpa")
   panNumberEncrypted  String  @map("pan_number_encrypted")
@@ -362,6 +413,12 @@ model PayoutAccount {
   isVerified           Boolean @default(false) @map("is_verified")
   isDefault            Boolean @default(false) @map("is_default")
   verifiedAt           DateTime? @map("verified_at")
+  verificationStatus   PayoutAccountVerification @default(PENDING) @map("verification_status")
+  /// The holder's name as the bank or UPI app reports it. The worker's own data.
+  nameAtBank           String?  @map("name_at_bank")
+  bankName             String?  @map("bank_name")
+  verificationReference String? @map("verification_reference")
+  verificationFailureReason String? @map("verification_failure_reason")
   /// Removed by the worker. Kept, not deleted, because past payouts point at it.
   removedAt            DateTime? @map("removed_at")
 

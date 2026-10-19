@@ -26,6 +26,7 @@ import { TasksModule } from './modules/tasks/tasks.module';
 import { TrustModule } from './modules/trust/trust.module';
 import { QueueModule } from './queue/queue.module';
 import { UsersModule } from './modules/users/users.module';
+import { VerificationModule } from './modules/verification/verification.module';
 import { WorkersModule } from './modules/workers/workers.module';
 import { PrismaModule } from './prisma/prisma.module';
 
@@ -83,6 +84,7 @@ import { PrismaModule } from './prisma/prisma.module';
     // module requires a valid access token unless marked @Public().
     AuthModule,
     UsersModule,
+    VerificationModule,
     WorkersModule,
   ],
   providers: [

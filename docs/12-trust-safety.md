@@ -31,7 +31,9 @@ Handling rules, which are not negotiable:
 - Rejection always carries a reason, and resubmission is allowed.
 - Every KYC decision writes an audit log entry naming the deciding admin.
 
-Automated verification through DigiLocker or a KYC API is post-MVP. Manual review is slower but correct, and at launch volume one person can do it.
+**Automated verification (built 2026-10-19, P4).** The quick route is **DigiLocker through Cashfree Secure ID**: the worker consents in DigiLocker to share their Aadhaar, and is verified to level 2 at once. Only the name on the record and the last four digits are kept: never the Aadhaar number, address, date of birth or photo. Five attempts a day, then the manual route. The **manual upload above remains** the fallback and the only route when no provider is configured (`VERIFICATION_PROVIDER=none`, the production default until a provider contract is in place).
+
+**Payout accounts are checked against the verified identity.** Adding a bank account or UPI ID needs level 2. The provider confirms the account exists and returns the holder's name, which must match the verified name; an account in anyone else's name is refused ("payouts can only go to an account in your own name"), which closes the mule-account route. Payouts go only to a checked account of a level 2+ worker. See `ai/memory.md` (P4) for the provider research and the reasons Razorpay was not used for this.
 
 ## Trust score
 

@@ -33,6 +33,12 @@ const STATUS: Record<PayoutRow['status'], { label: string; tone: string }> = {
   FAILED: { label: 'Failed', tone: 'bg-dispute/10 text-dispute' },
   REVERSED: { label: 'Reversed', tone: 'bg-dispute/10 text-dispute' },
 };
+const ACCOUNT_STATUS: Record<PayoutAccountView['verificationStatus'], { label: string; tone: string }> = {
+  VERIFIED: { label: 'Verified', tone: 'bg-verified/10 text-verified' },
+  PENDING: { label: 'Not checked yet', tone: 'bg-progress/10 text-progress' },
+  FAILED: { label: 'Could not verify', tone: 'bg-dispute/10 text-dispute' },
+  NAME_MISMATCH: { label: 'Name does not match', tone: 'bg-dispute/10 text-dispute' },
+};
 const BAR = 'skeleton rounded-md';
 
 /**
@@ -96,7 +102,7 @@ export class EarningsView extends Component {
           <section aria-labelledby="accounts-title" class="flex flex-col gap-3">
             <div class="flex items-center justify-between gap-3">
               <h2 id="accounts-title" class="text-lg font-medium text-ink-900">Payout accounts</h2>
-              <button t-if="!state.adding and state.accounts.length &lt; 3" type="button" t-att-class="addClass" t-on-click="startAdding">
+              <button t-if="state.summary.identityVerified and !state.adding and state.accounts.length &lt; 3" type="button" t-att-class="addClass" t-on-click="startAdding">
                 <Icon name="'plus'" size="16"/> Add
               </button>
             </div>
@@ -105,7 +111,18 @@ export class EarningsView extends Component {
               <PayoutAccountForm onAdded="onAdded" onCancel="stopAdding"/>
             </div>
 
-            <div t-if="state.accounts.length === 0 and !state.adding" t-att-class="formCardClass">
+            <div t-if="!state.summary.identityVerified" t-att-class="formCardClass">
+              <div class="flex items-start gap-3">
+                <Icon name="'shield-check'" size="22" class="'mt-0.5 shrink-0 text-progress'"/>
+                <div>
+                  <p class="font-medium text-ink-900">Verify your identity to get paid</p>
+                  <p class="mt-1 text-sm text-ink-700">Payouts go only to an account in your own verified name. It takes about a minute with DigiLocker. What you earn is kept safe until then.</p>
+                </div>
+              </div>
+              <Link to="'/kyc'" class="primaryClass + ' mt-3'">Verify identity</Link>
+            </div>
+
+            <div t-elif="state.accounts.length === 0 and !state.adding" t-att-class="formCardClass">
               <p class="text-sm text-ink-700">Add a bank account or UPI ID to receive what you earn. It is checked before any money is sent to it.</p>
               <button type="button" t-att-class="primaryClass + ' mt-3'" t-on-click="startAdding">Add a payout account</button>
             </div>
@@ -119,13 +136,14 @@ export class EarningsView extends Component {
                   <div class="min-w-0">
                     <p class="truncate font-medium text-ink-900" t-out="accountTitle(a)"/>
                     <p class="truncate text-sm text-ink-500" t-out="accountDetail(a)"/>
+                    <p t-if="a.verificationFailureReason and !a.isVerified" class="mt-1 text-sm text-dispute" t-out="a.verificationFailureReason"/>
                   </div>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
                   <span t-if="a.isDefault" class="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-semibold text-ink-900">Payouts go here</span>
-                  <span t-att-class="a.isVerified ? 'rounded-full bg-verified/10 px-2.5 py-1 text-xs font-medium text-verified' : 'rounded-full bg-progress/10 px-2.5 py-1 text-xs font-medium text-progress'"
-                    t-out="a.isVerified ? 'Verified' : 'Verification pending'"/>
+                  <span t-att-class="accountPillClass(a)" t-out="accountStatusLabel(a)"/>
                   <button t-if="a.isVerified and !a.isDefault" type="button" t-att-class="smallClass" t-att-disabled="state.busy" t-on-click="() => makeDefault(a)">Use for payouts</button>
+                  <button t-if="!a.isVerified and a.verificationStatus !== 'NAME_MISMATCH'" type="button" t-att-class="smallClass" t-att-disabled="state.busy" t-on-click="() => recheck(a)">Check again</button>
                   <button type="button" t-att-class="removeClass" t-att-disabled="state.busy" t-att-aria-label="'Remove ' + accountTitle(a)" t-on-click="() => remove(a)">
                     <Icon name="'trash'" size="16"/>
                   </button>
@@ -210,11 +228,12 @@ export class EarningsView extends Component {
 
   get canPayOut(): boolean {
     const s = this.state.summary;
-    return Boolean(s && s.provider !== 'none' && s.account && s.availablePaise > 0);
+    return Boolean(s && s.provider !== 'none' && s.identityVerified && s.account && s.availablePaise > 0);
   }
 
   get destinationText(): string {
     const s = this.state.summary;
+    if (s && !s.identityVerified) return 'Verify your identity to receive payouts';
     if (!s?.account) return 'No verified payout account yet';
     return `Payouts go to ${s.account.label}`;
   }
@@ -246,7 +265,18 @@ export class EarningsView extends Component {
   }
 
   accountDetail(a: PayoutAccountView): string {
-    return a.type === 'BANK' ? [a.accountHolderName, a.ifsc].filter(Boolean).join(' · ') : 'UPI';
+    const atBank = a.nameAtBank ? `Name at bank: ${a.nameAtBank}` : null;
+    return a.type === 'BANK'
+      ? [atBank ?? a.accountHolderName, a.bankName ?? a.ifsc].filter(Boolean).join(' · ')
+      : [atBank, a.bankName].filter(Boolean).join(' · ') || 'UPI';
+  }
+
+  accountStatusLabel(a: PayoutAccountView): string {
+    return ACCOUNT_STATUS[a.verificationStatus].label;
+  }
+
+  accountPillClass(a: PayoutAccountView): string {
+    return `rounded-full px-2.5 py-1 text-xs font-medium ${ACCOUNT_STATUS[a.verificationStatus].tone}`;
   }
 
   detail(p: PayoutRow): string {
@@ -278,25 +308,38 @@ export class EarningsView extends Component {
 
   onAdded = async (account: PayoutAccountView) => {
     this.state.adding = false;
-    toast(account.isVerified ? 'Payout account added and verified' : 'Payout account added', {
-      description: account.isVerified ? 'What you earn is sent here.' : 'It is checked before any money is sent to it.',
-      variant: 'success',
-    });
+    if (account.isVerified) {
+      toast('Account verified', { description: `Name at bank: ${account.nameAtBank ?? 'confirmed'}. What you earn is sent here.`, variant: 'success' });
+    } else {
+      toast('Account added, not verified', { description: account.verificationFailureReason ?? 'See the reason below.', variant: 'error' });
+    }
     await this.load();
   };
 
-  async makeDefault(a: PayoutAccountView) {
+  // Arrow properties, not methods: OWL calls handlers referenced inside an
+  // inline arrow (`() => recheck(a)`) without binding `this`.
+  recheck = async (a: PayoutAccountView) => {
+    await this.act(async () => {
+      const updated = await api.post<PayoutAccountView>(`/users/me/payout-accounts/${a.id}/verify`);
+      toast(updated.isVerified ? 'Account verified' : 'Still not verified', {
+        description: updated.isVerified ? 'What you earn is sent here.' : (updated.verificationFailureReason ?? undefined),
+        variant: updated.isVerified ? 'success' : 'error',
+      });
+    });
+  };
+
+  makeDefault = async (a: PayoutAccountView) => {
     await this.act(async () => {
       this.state.accounts = await api.patch<PayoutAccountView[]>(`/users/me/payout-accounts/${a.id}/default`);
     });
-  }
+  };
 
-  async remove(a: PayoutAccountView) {
+  remove = async (a: PayoutAccountView) => {
     if (!window.confirm(`Remove ${this.accountTitle(a)}? Payouts will stop going to it.`)) return;
     await this.act(async () => {
       this.state.accounts = await api.delete<PayoutAccountView[]>(`/users/me/payout-accounts/${a.id}`);
     });
-  }
+  };
 
   payOut = async () => {
     await this.act(async () => {

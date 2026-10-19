@@ -48,6 +48,8 @@ export interface PayoutSummary {
   /** Lifetime item reimbursements. Not earnings. */
   reimbursedPaise: number;
   failedCount: number;
+  /** Payouts wait for a verified identity (level 2+) as well as a verified account. */
+  identityVerified: boolean;
   /** The account payouts go to, or null when there is none that is verified. */
   account: { id: string; type: 'BANK' | 'UPI'; label: string } | null;
 }
@@ -117,6 +119,10 @@ export class PayoutsService {
   async settleMine(workerId: string): Promise<PayoutSummary> {
     if (payoutProvider() === 'none') {
       throw new BusinessRuleError('Payouts are not switched on yet. Your earnings are safe and will be sent once they are.');
+    }
+    const worker = await this.prisma.user.findUniqueOrThrow({ where: { id: workerId }, select: { verificationLevel: true } });
+    if (worker.verificationLevel < 2) {
+      throw new BusinessRuleError('Verify your identity first. Your earnings are safe and will be sent once you have.');
     }
     if (!(await this.payoutAccount(workerId))) {
       throw new BusinessRuleError('Add and verify a bank account or UPI ID first.');
@@ -225,7 +231,10 @@ export class PayoutsService {
       where: {
         status: { in: ['PENDING', 'FAILED'] },
         attempts: { lt: env.PAYOUT_MAX_ATTEMPTS },
-        worker: { payoutAccounts: { some: { removedAt: null, isVerified: true, isDefault: true } } },
+        worker: {
+          verificationLevel: { gte: 2 },
+          payoutAccounts: { some: { removedAt: null, isVerified: true, isDefault: true } },
+        },
       },
       select: { id: true, status: true, attempts: true, updatedAt: true },
       take: 100,
@@ -243,7 +252,7 @@ export class PayoutsService {
   }
 
   async summary(workerId: string): Promise<PayoutSummary> {
-    const [groups, account] = await Promise.all([
+    const [groups, account, worker] = await Promise.all([
       this.prisma.payout.groupBy({
         by: ['status'],
         where: { workerId },
@@ -251,6 +260,7 @@ export class PayoutsService {
         _count: { _all: true },
       }),
       this.payoutAccount(workerId),
+      this.prisma.user.findUniqueOrThrow({ where: { id: workerId }, select: { verificationLevel: true } }),
     ]);
 
     const sum = (statuses: string[]) =>
@@ -267,6 +277,7 @@ export class PayoutsService {
       earnedPaise: total - reimbursed,
       reimbursedPaise: reimbursed,
       failedCount: groups.find((g) => g.status === 'FAILED')?._count._all ?? 0,
+      identityVerified: worker.verificationLevel >= 2,
       account: account
         ? {
             id: account.id,
@@ -323,10 +334,20 @@ export class PayoutsService {
     };
   }
 
-  /** The verified default account payouts go to, if any. */
+  /**
+   * The verified default account payouts go to, if any. Money is sent only
+   * to a checked account of a worker whose identity is verified (level 2+):
+   * the restriction docs/12 puts on financial features until KYC is done.
+   */
   private payoutAccount(workerId: string) {
     return this.prisma.payoutAccount.findFirst({
-      where: { userId: workerId, removedAt: null, isVerified: true, isDefault: true },
+      where: {
+        userId: workerId,
+        removedAt: null,
+        isVerified: true,
+        isDefault: true,
+        user: { verificationLevel: { gte: 2 } },
+      },
     });
   }
 

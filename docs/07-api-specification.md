@@ -55,6 +55,11 @@ REST over HTTPS. JSON. Base path `/api/v1`.
 | GET | `/users/:id/public` | user | **Public projection only.** No phone, email, address, coordinates, KYC or bank data |
 | POST | `/users/me/kyc` | user | Submit documents. Returns pending |
 | GET | `/users/me/kyc` | user | Own status and rejection reason |
+| GET | `/users/me/verification` | user | Level, whether identity is verified, the latest automated check (status, verified name, last 4 digits, reason), provider, attempts left today |
+| POST | `/users/me/verification/identity` | user | Starts a DigiLocker consent session; returns the provider's URL. 5 per hour and 5 per 24 h |
+| POST | `/users/me/verification/identity/:id/refresh` | user | Asks the provider where the session stands; records the outcome once final (verified → level 2) |
+| POST | `/users/me/verification/identity/:id/test-consent` | user | **Mock provider only** (404 otherwise): the test consent screen |
+| POST | `/users/me/payout-accounts/:id/verify` | user | "Check again": re-runs the bank or UPI check. 5 per hour |
 | POST | `/users/me/payout-accounts` | user | Bank (holder name, 9–18 digit number, IFSC) or UPI ID, plus PAN (encrypted). Only the last four digits are stored. At most 3. 10 per hour. Audited |
 | GET | `/users/me/payout-accounts` | user | Masked identifiers only, never the PAN. Removed accounts are not listed |
 | PATCH | `/users/me/payout-accounts/:id/default` | user | Where payouts go. Verified accounts only |

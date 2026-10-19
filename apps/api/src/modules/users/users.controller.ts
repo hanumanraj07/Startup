@@ -120,6 +120,13 @@ export class UsersController {
     return this.users.setDefaultPayoutAccount(user.id, uuidSchema.parse(id));
   }
 
+  /** "Check again": re-runs the bank or UPI check. Limited, as each check may cost a penny drop. */
+  @Throttle({ user: { limit: 5, ttl: 3_600_000 } })
+  @Post('me/payout-accounts/:id/verify')
+  async recheckPayoutAccount(@Param('id') id: string, @CurrentUser() user: RequestUser) {
+    return this.users.recheckPayoutAccount(user.id, uuidSchema.parse(id));
+  }
+
   @Delete('me/payout-accounts/:id')
   async removePayoutAccount(@Param('id') id: string, @CurrentUser() user: RequestUser) {
     return this.users.removePayoutAccount(user.id, uuidSchema.parse(id));

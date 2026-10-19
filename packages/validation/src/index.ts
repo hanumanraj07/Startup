@@ -132,6 +132,16 @@ export const kycSubmissionSchema = z.object({
   selfieKey: z.string().min(1).max(500),
 });
 
+/**
+ * The mock verification provider's consent screen (development only; the API
+ * refuses it with a real provider). The name stands in for what DigiLocker
+ * would return.
+ */
+export const identityTestConsentSchema = z.object({
+  allow: z.boolean(),
+  name: z.string().trim().min(3, 'Enter the name as on the ID').max(120),
+});
+
 export const kycPresignSchema = z.object({
   kind: z.enum(['front', 'back', 'selfie']),
   contentType: z.enum(['image/jpeg', 'image/png', 'image/webp']),
@@ -165,6 +175,9 @@ export const payoutAccountSchema = z
       .trim()
       .toUpperCase()
       .regex(/^[A-Z]{5}\d{4}[A-Z]$/, 'Enter a valid PAN'),
+    // The provider's check may send ₹1 to the account, and UPI checks need
+    // recorded consent, so the worker agrees to it explicitly.
+    verificationConsent: z.literal(true, { errorMap: () => ({ message: 'Agree to the account check to continue' }) }),
   })
   .refine((v) => (v.type === 'BANK' ? Boolean(v.accountNumber && v.ifsc && v.accountHolderName) : Boolean(v.upiVpa)), {
     message: 'Provide the account holder, account number and IFSC, or a UPI ID',
@@ -606,6 +619,7 @@ export type WorkerProfileInput = z.infer<typeof workerProfileSchema>;
 export type KycSubmissionInput = z.infer<typeof kycSubmissionSchema>;
 export type KycPresignInput = z.infer<typeof kycPresignSchema>;
 export type PayoutAccountInput = z.infer<typeof payoutAccountSchema>;
+export type IdentityTestConsentInput = z.infer<typeof identityTestConsentSchema>;
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 export type DeleteAccountInput = z.infer<typeof deleteAccountSchema>;
 export type CreatePaymentOrderInput = z.infer<typeof createPaymentOrderSchema>;

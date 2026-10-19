@@ -191,7 +191,32 @@ export interface PayoutAccountView {
   isVerified: boolean;
   isDefault: boolean;
   verifiedAt: string | null;
+  /** The bank or UPI check: VERIFIED is the only state payouts go to. */
+  verificationStatus: 'PENDING' | 'VERIFIED' | 'FAILED' | 'NAME_MISMATCH';
+  verificationFailureReason: string | null;
+  /** The holder's name as the bank reports it (the worker's own record). */
+  nameAtBank: string | null;
+  bankName: string | null;
   createdAt: string;
+}
+
+/** GET /users/me/verification */
+export interface VerificationStatus {
+  provider: 'mock' | 'cashfree' | 'none';
+  verificationLevel: number;
+  identityVerified: boolean;
+  identity: {
+    id: string;
+    status: 'PENDING' | 'VERIFIED' | 'CONSENT_DENIED' | 'EXPIRED' | 'FAILED';
+    method: string;
+    verifiedName: string | null;
+    documentLast4: string | null;
+    failureReason: string | null;
+    expiresAt: string;
+    completedAt: string | null;
+  } | null;
+  manualStatus: string | null;
+  attemptsLeftToday: number;
 }
 
 /** GET /payouts/summary */
@@ -203,6 +228,8 @@ export interface PayoutSummary {
   earnedPaise: number;
   reimbursedPaise: number;
   failedCount: number;
+  /** Payouts also wait for a verified identity (level 2+). */
+  identityVerified: boolean;
   account: { id: string; type: 'BANK' | 'UPI'; label: string } | null;
 }
 

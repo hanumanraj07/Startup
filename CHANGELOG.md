@@ -4,6 +4,12 @@ Notable changes to OnSite. Format follows [Keep a Changelog](https://keepachange
 
 ## [Unreleased]
 
+### Added — 2026-10-19 · P4: verification
+
+- **Verify your identity with DigiLocker** in about a minute, instead of waiting for a document review. We keep only your name and the last four digits of your Aadhaar. Uploading documents is still available.
+- **Bank accounts and UPI IDs are checked** before any money is sent: the account must exist and be in your own verified name. Clear reasons when a check fails, and "Check again".
+- Payouts wait until both your identity and your account are verified; your earnings stay safe until then.
+
 ### Added — 2026-10-19 · P3: pricing and payouts
 
 - **Set your own price.** The requester types what they will pay for the task (from ₹100); category price ranges are gone.
