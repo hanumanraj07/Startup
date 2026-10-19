@@ -55,13 +55,13 @@ export function renderNotification(payload: NotificationPayload): RenderedNotifi
       };
     case 'TASK_APPROVED':
       return {
-        title: 'Payment released',
-        body: `"${payload.taskTitle}" was approved. ${formatPaise(payload.payoutPaise)} has been released to the worker.`,
+        title: 'Task approved',
+        body: `"${payload.taskTitle}" was approved. You earned ${formatPaise(payload.payoutPaise)}, on its way to your payout account.`,
       };
     case 'TASK_AUTO_APPROVED':
       return {
         title: 'Task auto-approved',
-        body: `"${payload.taskTitle}" was auto-approved after the 24-hour review window. ${formatPaise(payload.payoutPaise)} has been released.`,
+        body: `"${payload.taskTitle}" was auto-approved after the 24-hour review window. You earned ${formatPaise(payload.payoutPaise)}, on its way to your payout account.`,
       };
     case 'TASK_REJECTED':
       return {
@@ -71,7 +71,12 @@ export function renderNotification(payload: NotificationPayload): RenderedNotifi
     case 'PAYMENT_RELEASED':
       return {
         title: 'You have been paid',
-        body: `${formatPaise(payload.payoutPaise)} has been released for "${payload.taskTitle}".`,
+        body: `${formatPaise(payload.payoutPaise)} for "${payload.taskTitle}" has been sent to your payout account.`,
+      };
+    case 'PAYOUT_FAILED':
+      return {
+        title: 'Payout did not go through',
+        body: `${formatPaise(payload.payoutPaise)} for "${payload.taskTitle}" could not be sent: ${payload.reason}`,
       };
     case 'TASK_EXPIRED_REFUNDED':
       return {

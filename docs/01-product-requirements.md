@@ -77,7 +77,7 @@ Everything else is out of scope at launch. Not because it lacks value, but becau
 ## What is explicitly not being built
 
 - Any task category outside the six above
-- Cash handling, purchasing on the requester's behalf, or any task where the worker fronts money
+- Cash handling, or any task where the worker hands over or lends money. (Buying an item on a pickup & delivery task is in scope since 2026-10-19, through a capped item budget held in escrow; see `docs/11-payment-flow.md`.)
 - Tasks involving valuables in transit
 - Anything on the prohibited list in `docs/12-trust-safety.md`
 

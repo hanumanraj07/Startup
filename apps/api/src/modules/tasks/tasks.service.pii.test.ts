@@ -48,6 +48,8 @@ function fakeTask() {
     budgetPaise: 50_000n,
     commissionPaise: 7_500n,
     workerPayoutPaise: 42_500n,
+    itemBudgetPaise: 0n,
+    itemSpentPaise: null,
     category: { slug: 'product-inspection', name: 'Product inspection', locationMode: 'SINGLE' },
     statusHistory: [{ toStatus: 'ASSIGNED', createdAt: new Date(), actorRole: 'WORKER', reason: null }],
     // The full requester row — every PII field a real User row carries.
@@ -138,9 +140,15 @@ describe('TasksService.getById — PII projection snapshot', () => {
     // Cast needed: getById's two role branches return different shapes, and
     // this test already established (via the exact key-set assertion above)
     // that the owner branch, with its `assignedWorker` key, is what came back.
-    const owned = result as { assignedWorker: Record<string, unknown> };
+    const owned = result as { assignedWorker: Record<string, unknown>; money: Record<string, unknown> };
     expect(Object.keys(owned.assignedWorker).sort()).toEqual(
       ['id', 'displayName', 'verificationLevel', 'ratingAvg', 'tasksCompleted'].sort(),
+    );
+
+    // What the requester pays, never how it divides (founder decision
+    // 2026-10-19): no commission, and no worker earnings to derive it from.
+    expect(Object.keys(owned.money).sort()).toEqual(
+      ['taskPaymentPaise', 'itemBudgetPaise', 'totalPaise', 'itemSpentPaise', 'itemRefundPaise'].sort(),
     );
 
     const serialized = JSON.stringify(result);
@@ -148,6 +156,8 @@ describe('TasksService.getById — PII projection snapshot', () => {
     expect(serialized).not.toContain('+919000000100'); // worker phone
     expect(serialized).not.toContain('argon2id'); // no password hash, from either party
     expect(serialized).not.toContain('22.57'); // worker's base coordinates (workerProfile.baseLat)
+    expect(serialized).not.toContain('7500'); // the commission, in paise
+    expect(serialized).not.toContain('42500'); // the worker's net earnings, which would reveal it
   });
 
   it("the assigned worker's view exposes exactly the expected keys, and no requester PII, and never the budget or commission", async () => {
@@ -190,6 +200,8 @@ describe('TasksService.getById — PII projection snapshot', () => {
         'dropoff',
         'locationMode',
         'payoutPaise',
+        // An item budget to spend and get back, or null. Never earnings.
+        'item',
         'requester',
       ].sort(),
     );

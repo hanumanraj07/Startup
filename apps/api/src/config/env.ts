@@ -67,6 +67,12 @@ const envSchema = z
     GST_ON_COMMISSION_BPS: z.coerce.number().int().min(0).max(10_000).default(0),
     TCS_BPS: z.coerce.number().int().min(0).max(10_000).default(0),
     TDS_194O_BPS: z.coerce.number().int().min(0).max(10_000).default(0),
+    // Who sends workers their money. `mock` settles instantly (an account
+    // number ending 0000 fails, to exercise the failure path); `none` keeps
+    // payouts owed and visible until a payout partner is connected. Unset, it
+    // is `none` in production and `mock` elsewhere. See payoutProvider().
+    PAYOUT_PROVIDER: z.enum(['mock', 'none']).optional(),
+    PAYOUT_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(5),
 
     // Place search and reverse geocoding for the map picker. OpenStreetMap
     // only (founder decision, 2026-10-19): Photon, no key. A leftover
@@ -108,7 +114,7 @@ const envSchema = z
 
     REVIEW_WINDOW_HOURS: z.coerce.number().int().min(1).max(168).default(24),
     DISPUTE_WINDOW_DAYS: z.coerce.number().int().min(1).max(90).default(7),
-    MIN_TASK_BUDGET_PAISE: z.coerce.number().int().positive().default(30_000),
+    MIN_TASK_BUDGET_PAISE: z.coerce.number().int().positive().default(10_000),
     MAX_TASK_BUDGET_PAISE: z.coerce.number().int().positive().default(5_000_000),
     MAX_CONCURRENT_TASKS_PER_WORKER: z.coerce.number().int().min(1).max(20).default(3),
     // How long a worker has to answer an incoming task request; the next,
@@ -145,6 +151,10 @@ const envSchema = z
     path: ['PAYMENT_PROVIDER'],
     message: 'The mock payment provider must not be used in production',
   })
+  .refine((env) => env.NODE_ENV !== 'production' || env.PAYOUT_PROVIDER !== 'mock', {
+    path: ['PAYOUT_PROVIDER'],
+    message: 'The mock payout provider must not be used in production',
+  })
   .refine(
     (env) => env.MATCH_TIER_WAIT_MINUTES.length === env.MATCH_TIER_RADII_M.length - 1,
     {
@@ -154,6 +164,11 @@ const envSchema = z
   );
 
 export type Env = z.infer<typeof envSchema>;
+
+/** The payout provider in effect: `none` by default in production, so no deploy breaks for want of the setting. */
+export function payoutProvider(env: Env = loadEnv()): 'mock' | 'none' {
+  return env.PAYOUT_PROVIDER ?? (env.NODE_ENV === 'production' ? 'none' : 'mock');
+}
 
 let cached: Env | null = null;
 

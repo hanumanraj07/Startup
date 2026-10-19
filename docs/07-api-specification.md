@@ -55,8 +55,10 @@ REST over HTTPS. JSON. Base path `/api/v1`.
 | GET | `/users/:id/public` | user | **Public projection only.** No phone, email, address, coordinates, KYC or bank data |
 | POST | `/users/me/kyc` | user | Submit documents. Returns pending |
 | GET | `/users/me/kyc` | user | Own status and rejection reason |
-| POST | `/users/me/payout-accounts` | user | Bank or UPI plus PAN |
-| GET | `/users/me/payout-accounts` | user | Masked identifiers only |
+| POST | `/users/me/payout-accounts` | user | Bank (holder name, 9–18 digit number, IFSC) or UPI ID, plus PAN (encrypted). Only the last four digits are stored. At most 3. 10 per hour. Audited |
+| GET | `/users/me/payout-accounts` | user | Masked identifiers only, never the PAN. Removed accounts are not listed |
+| PATCH | `/users/me/payout-accounts/:id/default` | user | Where payouts go. Verified accounts only |
+| DELETE | `/users/me/payout-accounts/:id` | user | Soft removal (past payouts point at it). Refused while a payout to it is in flight. Audited |
 
 ## Worker profile
 
@@ -72,7 +74,7 @@ REST over HTTPS. JSON. Base path `/api/v1`.
 
 | Method | Path | Auth | Notes |
 |---|---|---|---|
-| POST | `/tasks` | user | Creates a **draft**. Server computes commission and payout. Client-supplied fee values are ignored. Prohibited screening and risk scoring run here |
+| POST | `/tasks` | user | Creates a **draft**. Server computes commission and payout. Client-supplied fee values are ignored. Prohibited screening and risk scoring run here. `budgetPaise` is the task payment the requester chose (₹100–₹50,000); `itemBudgetPaise` (pickup & delivery only, up to ₹10,000) adds an item to buy, and a receipt-photo requirement |
 | GET | `/tasks/mine` | requester | Own tasks |
 | GET | `/tasks/:id` | party | Projection differs by role. See below |
 | PATCH | `/tasks/:id` | requester | Draft only |
@@ -86,7 +88,7 @@ REST over HTTPS. JSON. Base path `/api/v1`.
 |---|---|---|---|
 | Title, description, category, deadline | yes | yes | yes |
 | Task location, exact | yes | yes | approximate only |
-| Budget and payout | yes | payout only | payout only |
+| Money | what they pay: task payment, item budget, total, item cost and refund (never commission or payout) | their earnings (`payoutPaise`) and the item budget apart (never the task payment or commission) | earnings and item budget |
 | Requester identity | own | display name, rating, level | display name, rating |
 | Requester email, phone, home address, `requester_geog` | never in any response | never | never |
 | Worker identity | display name, rating, level, history | own | not present |
@@ -115,7 +117,7 @@ Unassigned tasks show an approximate location to workers, not the exact address.
 | POST | `/tasks/:id/proofs` | assigned worker | Records metadata after upload. Server computes distance and sets verification flags |
 | GET | `/tasks/:id/proofs` | party | Presigned GET URLs, short-lived. Never permanent public links |
 | DELETE | `/tasks/:id/proofs/:proofId` | assigned worker | Before submission only |
-| POST | `/tasks/:id/submit` | assigned worker | **Validates every required proof is present.** Sets `review_deadline_at = now() + 24h` |
+| POST | `/tasks/:id/submit` | assigned worker | **Validates every required proof is present.** Sets `review_deadline_at = now() + 24h`. With an item budget, `itemSpentPaise` (the receipt total) is required and may not exceed the budget |
 | POST | `/tasks/:id/blocker` | assigned worker | Report an inability to complete, with evidence |
 | GET | `/tasks/:id/live-location` | party | The worker's latest shared position while sharing is on (`WORKER_EN_ROUTE`, and `IN_PROGRESS` for pickup & delivery), else null. Server-measured distance to the current destination |
 
@@ -134,7 +136,9 @@ Unassigned tasks show an approximate location to workers, not the exact address.
 | POST | `/payments/orders` | requester | Creates a gateway order for a draft task. **Amount computed server-side from the task**, never taken from the client. Idempotency key required |
 | GET | `/payments/:id` | requester | Server-side truth, not a client claim |
 | POST | `/payments/webhook` | **public, signature-verified** | Razorpay callback. Signature verified before anything else. Deduplicated on event id. Replay-safe |
-| GET | `/payouts/mine` | worker | Payout history |
+| GET | `/payouts/mine` | worker | Payout history: amount, earnings and item reimbursement apart, status, failure reason, reference, masked destination |
+| GET | `/payouts/summary` | worker | Ready to pay out, on the way, paid; lifetime earnings and reimbursements; the account payouts go to; provider |
+| POST | `/payouts/settle` | worker | "Pay out": sends everything owed to the verified default account, retrying failures at once. 10 per hour |
 | GET | `/payments/mine` | requester | Payment history |
 
 **The webhook is the only thing that moves payment state forward.** A browser returning from a gateway redirect triggers a refresh, never a state change.

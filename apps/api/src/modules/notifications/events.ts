@@ -40,6 +40,7 @@ export type NotificationEvent =
   | 'TASK_AUTO_APPROVED'
   | 'TASK_REJECTED'
   | 'PAYMENT_RELEASED'
+  | 'PAYOUT_FAILED'
   | 'TASK_EXPIRED_REFUNDED'
   | 'NEW_MESSAGE'
   | 'DISPUTE_RAISED'
@@ -71,6 +72,7 @@ export const EVENT_DEFINITIONS: Record<NotificationEvent, EventDefinition> = {
   TASK_AUTO_APPROVED: { category: 'PAYMENTS', channels: ['PUSH', 'EMAIL', 'IN_APP'], nonDisableable: true },
   TASK_REJECTED: { category: 'TASK_ACTIVITY', channels: ['PUSH', 'EMAIL', 'IN_APP'] },
   PAYMENT_RELEASED: { category: 'PAYMENTS', channels: ['PUSH', 'EMAIL', 'IN_APP'], nonDisableable: true },
+  PAYOUT_FAILED: { category: 'PAYMENTS', channels: ['PUSH', 'EMAIL', 'IN_APP'], nonDisableable: true },
   TASK_EXPIRED_REFUNDED: { category: 'PAYMENTS', channels: ['PUSH', 'EMAIL', 'IN_APP'], nonDisableable: true },
   NEW_MESSAGE: { category: 'MESSAGES', channels: ['PUSH', 'IN_APP'] },
   // Dispute and account-security events per docs/13's Preferences section:
@@ -101,6 +103,7 @@ export type NotificationPayload =
   | { event: 'TASK_AUTO_APPROVED'; taskId: string; taskTitle: string; payoutPaise: number }
   | { event: 'TASK_REJECTED'; taskId: string; taskTitle: string; reason: string }
   | { event: 'PAYMENT_RELEASED'; taskId: string; taskTitle: string; payoutPaise: number }
+  | { event: 'PAYOUT_FAILED'; taskId: string; taskTitle: string; payoutPaise: number; reason: string }
   | { event: 'TASK_EXPIRED_REFUNDED'; taskId: string; taskTitle: string; refundPaise: number }
   | { event: 'NEW_MESSAGE'; taskId: string; senderName: string; preview: string }
   | { event: 'DISPUTE_RAISED'; taskId: string; taskTitle: string; raisedByName: string }

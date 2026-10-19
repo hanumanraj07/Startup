@@ -5,7 +5,8 @@ import {
   canAdvance,
   composeAddress,
   defaultProofFor,
-  estimateSplit,
+  effectiveItemBudget,
+  estimateMoney,
   FALLBACK_PROOF,
   minDeadlineLocal,
   parseBudgetPaise,
@@ -31,6 +32,8 @@ const valid: WizardInput = {
   description: 'Check the laptop is in stock and photograph the sealed box. Do not buy it.',
   deadlineLocal: '2026-10-12T18:00',
   budgetPaise: 50_000,
+  buyItem: false,
+  itemBudgetPaise: null,
   proofRequirements: [photo],
 };
 
@@ -51,26 +54,35 @@ describe('parseBudgetPaise', () => {
   });
 });
 
-describe('estimateSplit', () => {
-  it('is null with no budget or below the minimum', () => {
-    expect(estimateSplit(null)).toBeNull();
-    expect(estimateSplit(29_999)).toBeNull();
+describe('estimateMoney', () => {
+  it('is null with no task payment or below the minimum', () => {
+    expect(estimateMoney(null)).toBeNull();
+    expect(estimateMoney(9_999)).toBeNull();
   });
 
-  function splitFor(budgetPaise: number) {
-    const split = estimateSplit(budgetPaise);
-    if (!split) throw new Error(`expected a split for ${budgetPaise}`);
-    return split;
-  }
-
-  it('splits the budget into commission and payout that add back up', () => {
-    const split = splitFor(50_000);
-    expect(split.budgetPaise).toBe(50_000);
-    expect(split.commissionPaise + split.workerPayoutPaise).toBe(50_000);
+  it("shows the requester's total — task payment plus item budget — and never a commission", () => {
+    const money = estimateMoney(20_000, 100_000);
+    expect(money).toEqual({
+      taskPaymentPaise: 20_000,
+      itemBudgetPaise: 100_000,
+      totalPaise: 120_000,
+      itemSpentPaise: null,
+      itemRefundPaise: null,
+    });
+    expect(JSON.stringify(money)).not.toMatch(/commission|payout/i);
   });
 
-  it('caps the illustrated budget at the maximum', () => {
-    expect(splitFor(99_999_999).budgetPaise).toBe(5_000_000);
+  it('caps the illustrated amounts at the maximums', () => {
+    expect(estimateMoney(99_999_999)?.taskPaymentPaise).toBe(5_000_000);
+    expect(estimateMoney(20_000, 99_999_999)?.itemBudgetPaise).toBe(1_000_000);
+  });
+});
+
+describe('effectiveItemBudget', () => {
+  it('is only ever nonzero on a delivery where the user asked for something to be bought', () => {
+    expect(effectiveItemBudget('PICKUP_DROPOFF', true, 100_000)).toBe(100_000);
+    expect(effectiveItemBudget('PICKUP_DROPOFF', false, 100_000)).toBe(0);
+    expect(effectiveItemBudget('SINGLE', true, 100_000)).toBe(0);
   });
 });
 
@@ -124,11 +136,24 @@ describe('canAdvance', () => {
     expect(canAdvance(2, { ...valid, description: 'too short to explain a task' })).toBe(false);
     expect(canAdvance(2, { ...valid, deadlineLocal: '' })).toBe(false);
     expect(canAdvance(2, { ...valid, budgetPaise: null })).toBe(false);
-    expect(canAdvance(2, { ...valid, budgetPaise: 29_999 })).toBe(false);
-    expect(canAdvance(2, { ...valid, budgetPaise: 30_000 })).toBe(true);
+    expect(canAdvance(2, { ...valid, budgetPaise: 9_999 })).toBe(false);
+    expect(canAdvance(2, { ...valid, budgetPaise: 10_000 })).toBe(true);
+    // The founder's example: ₹200 for the task.
+    expect(canAdvance(2, { ...valid, budgetPaise: 20_000 })).toBe(true);
     expect(canAdvance(2, { ...valid, budgetPaise: 5_000_000 })).toBe(true);
     expect(canAdvance(2, { ...valid, budgetPaise: 5_000_001 })).toBe(false);
     expect(canAdvance(2, valid)).toBe(true);
+  });
+
+  it('needs a positive item budget within the cap when a delivery should buy something', () => {
+    const delivery = { ...valid, locationMode: 'PICKUP_DROPOFF' as const, dropoff: home, buyItem: true };
+    expect(canAdvance(2, { ...delivery, itemBudgetPaise: null })).toBe(false);
+    expect(canAdvance(2, { ...delivery, itemBudgetPaise: 0 })).toBe(false);
+    expect(canAdvance(2, { ...delivery, itemBudgetPaise: 1_000_001 })).toBe(false);
+    expect(canAdvance(2, { ...delivery, itemBudgetPaise: 100_000 })).toBe(true);
+    // Not asked for, or not a delivery: the field does not matter.
+    expect(canAdvance(2, { ...delivery, buyItem: false, itemBudgetPaise: null })).toBe(true);
+    expect(canAdvance(2, { ...valid, buyItem: true, itemBudgetPaise: null })).toBe(true);
   });
 
   it('needs at least one proof requirement, every one labelled, on step 3', () => {
@@ -197,6 +222,23 @@ describe('pickup & delivery payload', () => {
     });
     expect(payload.dropoffLocation).toEqual({ latitude: 22.5526, longitude: 88.3527 });
     expect(payload.dropoffAddress).toBe('Flat 4B, Park Street, Kolkata');
+    expect(payload).not.toHaveProperty('itemBudgetPaise');
+  });
+
+  it('sends an item budget only when there is one', () => {
+    const payload = buildDraftPayload({
+      title: 'Buy and deliver a charger',
+      description: 'Buy a 65W charger and deliver it.',
+      categorySlug: 'pickup-delivery',
+      pickup: shop,
+      dropoff: home,
+      budgetPaise: 20_000,
+      itemBudgetPaise: 100_000,
+      deadlineLocal: '2026-10-12T18:00',
+      proofRequirements: [photo],
+    });
+    expect(payload.itemBudgetPaise).toBe(100_000);
+    expect(payload.budgetPaise).toBe(20_000);
   });
 });
 

@@ -202,7 +202,7 @@ Nothing tagged POST-MVP or FUTURE gets built without an explicit decision to mov
 
 Stated plainly, because each is a plausible-sounding addition that would harm the launch:
 
-- **Cash handling or purchasing on a requester's behalf.** Changes the liability model entirely.
+- **Cash handling.** Changes the liability model entirely. (Buying an item through a capped, escrowed item budget on a pickup & delivery task is in scope since 2026-10-19.)
 - **Task categories beyond the launch six.** Every new category brings unfamiliar fraud and safety modes.
 - **Worker bidding.** Adds a negotiation round trip to a marketplace with no liquidity.
 - **Machine-learned matching.** There is no data to learn from yet. A transparent scoring formula is debuggable; a model is not.

@@ -13,7 +13,7 @@ const BUTTON_BASE =
   'transition-[background-color,color,box-shadow,transform] duration-micro ease-onsite active:scale-[0.98] ' +
   'disabled:pointer-events-none disabled:opacity-50 ' +
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink-900 focus-visible:ring-offset-2 ' +
-  'focus-visible:ring-offset-paper-0 min-h-[var(--tap-min,44px)] px-5';
+  'focus-visible:ring-offset-paper-0 min-h-[var(--tap-min,44px)]';
 
 const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
   primary: 'bg-brand-solid text-ink-900 hover:bg-brand-500 hover:shadow-card',
@@ -24,11 +24,14 @@ const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
   destructive: 'bg-dispute text-white hover:opacity-90',
 };
 
+// Horizontal padding lives here, never in BUTTON_BASE: two px-* classes on
+// one element resolve by stylesheet order, not by which came last, so a base
+// px-5 used to override px-0 and squeeze an icon button's icon to 4px wide.
 const BUTTON_SIZES: Record<ButtonSize, string> = {
-  default: '',
+  default: 'px-5',
   sm: 'min-h-[36px] px-4',
   lg: 'min-h-[52px] px-7 text-base',
-  icon: 'min-h-[var(--tap-min,44px)] w-[var(--tap-min,44px)] px-0',
+  icon: 'min-h-[var(--tap-min,44px)] w-[var(--tap-min,44px)] shrink-0 px-0',
 };
 
 export function btn(variant: ButtonVariant = 'primary', size: ButtonSize = 'default', extra = ''): string {

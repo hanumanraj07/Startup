@@ -9,8 +9,9 @@ import { BusinessRuleError } from '../../common/errors';
  *
  *  - Prohibited content is a hard line. A match blocks creation outright,
  *    because these are not judgment calls: illegal activity, weapons,
- *    purchasing on the requester's behalf, and so on are excluded from the
- *    launch scope entirely, not merely risky.
+ *    handing a stranger cash, and so on are excluded entirely, not merely
+ *    risky. (Buying an item for the requester is allowed since 2026-10-19,
+ *    through the item budget on pickup & delivery tasks, never as cash.)
  *
  *  - Risk scoring (LOW / MEDIUM / HIGH) is a matter of degree. Screening
  *    "escalates to manual review rather than silent rejection" — a HIGH
@@ -65,19 +66,13 @@ export class RiskService {
       pattern: /\b(escort service|sexual services?|prostitut(e|ion))\b/i,
       reason: 'sexual services',
     },
-    // The MVP scope explicitly excludes purchasing on the requester's behalf
-    // and any task where the worker fronts money. See docs/01, "do NOT
-    // purchase it" in the founding example. The gap between the verb and
-    // "for me" is bounded rather than matched greedily, so this catches
-    // natural phrasing like "buy this laptop for me" without scanning across
-    // an entire unrelated paragraph for a coincidental "for me" later on.
+    // Buying an item for the requester is in scope since 2026-10-19 (founder
+    // decision): it goes through the item budget, held in escrow and
+    // reimbursed against a receipt. What stays out is a worker handing the
+    // requester money, which is a loan to a stranger and a laundering route.
     {
-      pattern: /\b(buy|purchase|pay for)\b[\s\S]{0,40}\b(for me|on my behalf)\b/i,
-      reason: 'purchasing on the requester\'s behalf is out of scope at launch',
-    },
-    {
-      pattern: /\b(advance|front)\s+(me\s+)?(the\s+)?(cash|money|payment)\b/i,
-      reason: 'a worker fronting money is out of scope at launch',
+      pattern: /\b(advance|front|lend)\s+(me\s+)?(the\s+|some\s+)?(cash|money|payment)\b/i,
+      reason: 'asking a worker to hand over or lend you money',
     },
   ];
 

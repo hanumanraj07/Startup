@@ -1,14 +1,14 @@
 import { Component, onMounted, onWillUnmount, useState, xml } from '@odoo/owl';
-import type { TaskSplit } from '@onsite/money';
 import { ModerationNotice, moderationNoticeFrom, type ModerationNoticeData } from '@/components/ModerationNotice';
 import { Page } from '@/components/Page';
 import { StepProgress } from '@/components/StepProgress';
-import type { CategoryView, PickedLocation, ProofRequirement } from '@/lib/api-types';
+import type { CategoryView, PickedLocation, ProofRequirement, RequesterMoney } from '@/lib/api-types';
 import {
   buildDraftPayload,
   canAdvance,
   defaultProofFor,
-  estimateSplit,
+  effectiveItemBudget,
+  estimateMoney,
   LAST_STEP,
   parseBudgetPaise,
   STEPS,
@@ -30,7 +30,7 @@ interface PaymentOrderView {
   razorpay?: { orderId: string; keyId: string | null };
 }
 
-type TextField = 'title' | 'description' | 'deadlineLocal' | 'budgetRupees';
+type TextField = 'title' | 'description' | 'deadlineLocal' | 'budgetRupees' | 'itemRupees';
 
 interface WizardState {
   step: number;
@@ -46,6 +46,9 @@ interface WizardState {
   description: string;
   deadlineLocal: string;
   budgetRupees: string;
+  /** Pickup & delivery only: have the worker buy something, up to this much. */
+  buyItem: boolean;
+  itemRupees: string;
   proofRequirements: ProofRequirement[];
   draft: DraftTask | null;
   submitting: boolean;
@@ -85,7 +88,7 @@ export class NewTaskView extends Component {
               onSelect="selectCategory"/>
             <LocationStep t-elif="state.step === 1"
               wizard="state" mode="locationMode" onPickup="setPickup" onDropoff="setDropoff"/>
-            <DetailsStep t-elif="state.step === 2" wizard="state" onField="setField" estimate="estimate"/>
+            <DetailsStep t-elif="state.step === 2" wizard="state" onField="setField" onBuyItem="setBuyItem" estimate="estimate"/>
             <ProofStep t-elif="state.step === 3"
               requirements="state.proofRequirements"
               onUpdate="updateProof" onRemove="removeProof" onAdd="addProof"/>
@@ -119,6 +122,8 @@ export class NewTaskView extends Component {
     description: '',
     deadlineLocal: '',
     budgetRupees: '',
+    buyItem: false,
+    itemRupees: '',
     proofRequirements: [],
     draft: null,
     submitting: false,
@@ -153,8 +158,13 @@ export class NewTaskView extends Component {
     return parseBudgetPaise(this.state.budgetRupees);
   }
 
-  get estimate(): TaskSplit | undefined {
-    return estimateSplit(this.budgetPaise) ?? undefined;
+  /** Zero unless this is a delivery and the user asked for something to be bought. */
+  private get itemBudgetPaise(): number {
+    return effectiveItemBudget(this.locationMode, this.state.buyItem, parseBudgetPaise(this.state.itemRupees));
+  }
+
+  get estimate(): RequesterMoney | undefined {
+    return estimateMoney(this.budgetPaise, this.itemBudgetPaise) ?? undefined;
   }
 
   get draft(): DraftTask | undefined {
@@ -184,6 +194,8 @@ export class NewTaskView extends Component {
       description: s.description,
       deadlineLocal: s.deadlineLocal,
       budgetPaise: this.budgetPaise,
+      buyItem: s.buyItem,
+      itemBudgetPaise: parseBudgetPaise(s.itemRupees),
       proofRequirements: s.proofRequirements,
     });
   }
@@ -220,8 +232,15 @@ export class NewTaskView extends Component {
   selectCategory = (category: CategoryView) => {
     this.state.category = category;
     this.state.proofRequirements = defaultProofFor(category);
-    // A one-place category never carries a drop-off.
-    if (category.locationMode === 'SINGLE') this.state.dropoff = null;
+    // A one-place category never carries a drop-off, or an item to buy.
+    if (category.locationMode === 'SINGLE') {
+      this.state.dropoff = null;
+      this.state.buyItem = false;
+    }
+  };
+
+  setBuyItem = (on: boolean) => {
+    this.state.buyItem = on;
   };
 
   setPickup = (location: PickedLocation | null) => {
@@ -309,6 +328,7 @@ export class NewTaskView extends Component {
           pickup,
           dropoff,
           budgetPaise,
+          itemBudgetPaise: this.itemBudgetPaise,
           deadlineLocal: state.deadlineLocal,
           proofRequirements: state.proofRequirements,
         }),
@@ -340,7 +360,7 @@ export class NewTaskView extends Component {
         const outcome = await openRazorpayCheckout({
           keyId: order.razorpay.keyId,
           orderId: order.razorpay.orderId,
-          amountPaise: draft.money.budgetPaise,
+          amountPaise: draft.money.totalPaise,
           description: draft.title,
           prefillEmail: this.store.user?.email,
         });

@@ -49,6 +49,8 @@ export interface RawFeedItem {
   distanceMeters: number;
   distanceLabel: string;
   payoutPaise: number;
+  /** The most the worker would spend on an item and get back, or 0. Not earnings. */
+  itemBudgetPaise: number;
   deadlineAt: string;
   approximateAddress: string;
   /** Pickup & delivery tasks: roughly where it goes and how far. The exact drop-off is shown once accepted. */
@@ -69,7 +71,8 @@ export interface TaskListItem {
   title: string;
   categorySlug: string;
   status: TaskStatus;
-  budgetPaise: number;
+  /** The requester's total to pay, or the worker's earnings: each side sees only its own figure. */
+  amountPaise: number;
   deadlineAt: string;
   createdAt: string;
 }
@@ -117,9 +120,22 @@ export interface PickedLocation {
   details: string;
 }
 
-/** GET /tasks/:id as the task's owner (requester) sees it: the money breakdown, never a worker payout alone. */
+/**
+ * What a requester pays: the task payment they set, any item budget, and the
+ * total. Once the worker reports the item's cost, what it cost and what comes
+ * back. The commission and the worker's net earnings are never sent.
+ */
+export interface RequesterMoney {
+  taskPaymentPaise: number;
+  itemBudgetPaise: number;
+  totalPaise: number;
+  itemSpentPaise: number | null;
+  itemRefundPaise: number | null;
+}
+
+/** GET /tasks/:id as the task's owner (requester) sees it. */
 export interface OwnerTask extends TaskBase {
-  money: { budgetPaise: number; commissionPaise: number; workerPayoutPaise: number };
+  money: RequesterMoney;
   assignedWorker: { id: string; displayName: string; ratingAvg: number | null; tasksCompleted: number } | null;
   /** While a worker is being found: how many were sent the request, and how far out the search reaches. */
   matching: { workersNotified: number; radiusMeters: number } | null;
@@ -128,6 +144,8 @@ export interface OwnerTask extends TaskBase {
 /** GET /tasks/:id as the assigned worker sees it: only their payout, never the budget or commission. */
 export interface WorkerTask extends TaskBase {
   payoutPaise: number;
+  /** An item to buy and be reimbursed for, or null. Never part of earnings. */
+  item: { budgetPaise: number; spentPaise: number | null } | null;
   requester: { displayName: string; verificationLevel: number };
 }
 
@@ -158,4 +176,48 @@ export interface ChatMessage {
   redactionFlags: string[];
   createdAt: string;
   readAt: string | null;
+}
+
+// ─── Payouts ────────────────────────────────────────────────────────────
+
+/** One of GET /users/me/payout-accounts. Never the PAN, never a full account number. */
+export interface PayoutAccountView {
+  id: string;
+  type: 'BANK' | 'UPI';
+  accountHolderName: string | null;
+  accountNumberMasked: string | null;
+  ifsc: string | null;
+  upiVpa: string | null;
+  isVerified: boolean;
+  isDefault: boolean;
+  verifiedAt: string | null;
+  createdAt: string;
+}
+
+/** GET /payouts/summary */
+export interface PayoutSummary {
+  provider: 'mock' | 'none';
+  availablePaise: number;
+  processingPaise: number;
+  paidPaise: number;
+  earnedPaise: number;
+  reimbursedPaise: number;
+  failedCount: number;
+  account: { id: string; type: 'BANK' | 'UPI'; label: string } | null;
+}
+
+/** One row of GET /payouts/mine. */
+export interface PayoutRow {
+  id: string;
+  taskId: string;
+  taskTitle: string;
+  amountPaise: number;
+  earningsPaise: number;
+  reimbursementPaise: number;
+  status: 'PENDING' | 'PROCESSING' | 'PROCESSED' | 'FAILED' | 'REVERSED';
+  failureReason: string | null;
+  reference: string | null;
+  destination: string | null;
+  processedAt: string | null;
+  createdAt: string;
 }

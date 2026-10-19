@@ -132,3 +132,37 @@ describe('approximate — the locality the open feed shows', () => {
     expect(approximate('Central Kolkata')).toBe('Central Kolkata');
   });
 });
+
+describe('TasksService.create — buying an item', () => {
+  const delivery = { ...input, dropoffLocation, dropoffAddress: 'Manek Chowk, Old City, Ahmedabad' };
+
+  it('holds the item budget apart from the task payment and adds the receipt requirement', async () => {
+    const { service, taskCreate } = build('PICKUP_DROPOFF');
+    await service.create('req-1', { ...delivery, budgetPaise: 20_000, itemBudgetPaise: 100_000 });
+    const data = (taskCreate.mock.calls[0]?.[0] as { data: Record<string, unknown> }).data;
+    // Commission on the ₹200 task payment only, never on the ₹1,000 item.
+    expect(data.budgetPaise).toBe(20_000);
+    expect(data.commissionPaise).toBe(3_000);
+    expect(data.workerPayoutPaise).toBe(17_000);
+    expect(data.itemBudgetPaise).toBe(100_000);
+    expect(data.proofRequirements).toEqual(
+      expect.arrayContaining([expect.objectContaining({ fieldKey: 'item_receipt', type: 'PHOTO', required: true })]),
+    );
+    // The verification level follows everything at stake: ₹1,200 needs level 2.
+    expect(data.minVerificationLevel).toBe(2);
+  });
+
+  it('refuses an item budget on a one-place category, where there is nowhere to deliver it', async () => {
+    const { service, taskCreate } = build('SINGLE');
+    await expect(service.create('req-1', { ...input, itemBudgetPaise: 50_000 })).rejects.toThrow(BusinessRuleError);
+    expect(taskCreate).not.toHaveBeenCalled();
+  });
+
+  it('adds no receipt requirement when nothing is bought', async () => {
+    const { service, taskCreate } = build('PICKUP_DROPOFF');
+    await service.create('req-1', delivery);
+    const data = (taskCreate.mock.calls[0]?.[0] as { data: Record<string, unknown> }).data;
+    expect(data.itemBudgetPaise).toBe(0);
+    expect(data.proofRequirements).toHaveLength(1);
+  });
+});

@@ -14,6 +14,13 @@ const SAMPLE_PAYLOADS: NotificationPayload[] = [
   { event: 'TASK_AUTO_APPROVED', taskId: 't1', taskTitle: 'Inspect a laptop', payoutPaise: 42_500 },
   { event: 'TASK_REJECTED', taskId: 't1', taskTitle: 'Inspect a laptop', reason: 'Photo was blurry' },
   { event: 'PAYMENT_RELEASED', taskId: 't1', taskTitle: 'Inspect a laptop', payoutPaise: 42_500 },
+  {
+    event: 'PAYOUT_FAILED',
+    taskId: 't1',
+    taskTitle: 'Inspect a laptop',
+    payoutPaise: 42_500,
+    reason: 'The bank declined the transfer.',
+  },
   { event: 'TASK_EXPIRED_REFUNDED', taskId: 't1', taskTitle: 'Inspect a laptop', refundPaise: 50_000 },
   { event: 'NEW_MESSAGE', taskId: 't1', senderName: 'Rahul S.', preview: 'On my way now' },
   { event: 'DISPUTE_RAISED', taskId: 't1', taskTitle: 'Inspect a laptop', raisedByName: 'Hanuman R.' },
@@ -92,6 +99,7 @@ describe('EVENT_DEFINITIONS', () => {
     expect(nonDisableable.sort()).toEqual(
       [
         'PAYMENT_RELEASED',
+        'PAYOUT_FAILED',
         'TASK_APPROVED',
         'TASK_AUTO_APPROVED',
         'TASK_EXPIRED_REFUNDED',

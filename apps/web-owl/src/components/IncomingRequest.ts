@@ -17,6 +17,8 @@ export interface OfferView {
   categorySlug: string;
   categoryName: string;
   payoutPaise: number;
+  /** Money the worker would front for an item and get back, or 0. Not earnings. */
+  itemBudgetPaise: number;
   distanceMeters: number;
   approximateAddress: string;
   dropoff: { approximateAddress: string; tripDistanceMeters: number } | null;
@@ -82,6 +84,10 @@ export class IncomingRequest extends Component {
         <p t-if="current.dropoff" class="mt-2 flex items-center gap-2 rounded-input bg-paper-50 px-3 py-2 text-sm text-ink-700">
           <Icon name="'package'" size="14"/>
           <span>Deliver <span class="tabular font-semibold" t-out="trip"/> to <t t-out="current.dropoff.approximateAddress"/></span>
+        </p>
+        <p t-if="current.itemBudgetPaise > 0" class="mt-2 flex items-center gap-2 rounded-input bg-tint-orange px-3 py-2 text-sm text-[#7a3d00]">
+          <Icon name="'shopping-bag'" size="14" class="'shrink-0'"/>
+          <span class="min-w-0">Buy an item, up to <span class="tabular font-semibold" t-out="itemBudget"/>. You pay first and get it back.</span>
         </p>
         <p class="mt-3 flex items-center gap-1.5 text-sm text-ink-500">
           <Icon name="'shield-check'" size="14"/> <t t-out="current.requester.displayName"/> · level <t t-out="current.requester.verificationLevel"/>
@@ -170,6 +176,10 @@ export class IncomingRequest extends Component {
 
   get distance(): string {
     return this.current ? formatDistance(this.current.distanceMeters) : '';
+  }
+
+  get itemBudget(): string {
+    return this.current ? formatPaise(this.current.itemBudgetPaise ?? 0) : '';
   }
 
   get trip(): string {

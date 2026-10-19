@@ -44,6 +44,10 @@ export class TaskCard extends Component {
           Deliver <span class="tabular font-semibold" t-out="tripLabel"/> to <t t-out="props.task.dropoff.approximateAddress"/>
         </span>
       </p>
+      <p t-if="props.task.itemBudgetPaise > 0" class="mt-2 flex items-center gap-2 rounded-input bg-tint-orange px-3 py-2 text-sm text-[#7a3d00]">
+        <Icon name="'shopping-bag'" size="14" class="'shrink-0'"/>
+        <span class="min-w-0">Buy an item, up to <span class="tabular font-semibold" t-out="itemBudget"/>. You pay first and get it back.</span>
+      </p>
 
       <div class="mt-4 flex items-center justify-between gap-3 border-t border-line-light pt-3">
         <span class="flex min-w-0 items-center gap-1.5 text-sm text-ink-500">
@@ -72,6 +76,11 @@ export class TaskCard extends Component {
 
   get payout(): string {
     return formatPaise((this.props.task as FeedTask).payoutPaise);
+  }
+
+  /** An item budget is money the worker fronts and gets back, never part of the payout chip. */
+  get itemBudget(): string {
+    return formatPaise((this.props.task as FeedTask).itemBudgetPaise ?? 0);
   }
 
   /** Pickup to drop-off, as measured by the server. */

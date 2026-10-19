@@ -8,7 +8,7 @@ import type {
   RemoveWorkerInput,
   UpdateTaskInput,
 } from '@onsite/validation';
-import { calculateSplit } from '@onsite/money';
+import { calculateItemSettlement, calculateSplit, requesterTotal } from '@onsite/money';
 import { decodeCursor, encodeCursor } from '@onsite/utils';
 import { ACTIVE_WORK_STATUSES } from '@onsite/types';
 import {
@@ -50,6 +50,18 @@ const RELEASE_REASON_LABEL: Record<string, string> = {
 /** Below this the "drop-off" is the pickup, give or take GPS noise. */
 const MIN_DELIVERY_DISTANCE_M = 50;
 
+/**
+ * Added to every task with an item budget, so the worker cannot submit
+ * without the receipt the reimbursement is checked against.
+ */
+export const ITEM_RECEIPT_REQUIREMENT = {
+  type: 'PHOTO',
+  fieldKey: 'item_receipt',
+  label: 'Receipt for the item',
+  required: true,
+  minCount: 1,
+} as const;
+
 interface DropoffColumns {
   dropoffLat: number | null;
   dropoffLng: number | null;
@@ -64,6 +76,8 @@ export interface FeedItem {
   categoryName: string;
   distanceMeters: number;
   payoutPaise: number;
+  /** The most the worker would spend on an item and get back, or 0. Not earnings. */
+  itemBudgetPaise: number;
   deadlineAt: string;
   approximateAddress: string;
   /** Pickup & delivery tasks only: roughly where it goes, and how far. The exact drop-off is revealed on acceptance. */
@@ -171,6 +185,7 @@ export class TasksService {
         dropoffAddress: true,
         deadlineAt: true,
         workerPayoutPaise: true,
+        itemBudgetPaise: true,
         category: { select: { slug: true, name: true } },
         // Public projection only. No email, phone, home address or
         // requester coordinates. See docs/12-trust-safety.md.
@@ -186,6 +201,7 @@ export class TasksService {
         categoryName: t.category.name,
         distanceMeters: distanceById.get(t.id) ?? 0,
         payoutPaise: Number(t.workerPayoutPaise),
+        itemBudgetPaise: Number(t.itemBudgetPaise),
         deadlineAt: t.deadlineAt.toISOString(),
         approximateAddress: approximateAddress(t.taskAddress),
         dropoff: t.dropoffAddress
@@ -221,10 +237,13 @@ export class TasksService {
     // gates publication. See docs/12-trust-safety.md.
     await this.screenContent(requesterId, 'CREATE', input.title, input.description, actorIp);
     const dropoff = await this.resolveDropoff(category.locationMode, input.taskLocation, input, 'create');
+    const itemBudgetPaise = resolveItemBudget(category.locationMode, input.itemBudgetPaise ?? 0);
+    // Risk and the verification level follow everything at stake, item included.
+    const atStakePaise = requesterTotal(input.budgetPaise, itemBudgetPaise);
     const riskResult = this.risk.scoreRisk({
       title: input.title,
       description: input.description,
-      budgetPaise: input.budgetPaise,
+      budgetPaise: atStakePaise,
       deadlineAt: input.deadlineAt,
     });
 
@@ -261,9 +280,10 @@ export class TasksService {
         tcsPaise: split.tcsPaise,
         tdsPaise: split.tdsPaise,
         workerPayoutPaise: split.workerPayoutPaise,
+        itemBudgetPaise,
         deadlineAt: input.deadlineAt,
-        proofRequirements: input.proofRequirements as object,
-        minVerificationLevel: this.risk.minVerificationLevelForBudget(input.budgetPaise),
+        proofRequirements: withItemReceipt(input.proofRequirements, itemBudgetPaise) as object,
+        minVerificationLevel: this.risk.minVerificationLevelForBudget(atStakePaise),
         riskLevel: riskResult.level,
         riskFlags: riskResult.flags,
         attachmentKeys: input.attachmentKeys ?? [],
@@ -351,6 +371,28 @@ export class TasksService {
       dropoff = await this.resolveDropoff(mode, pickup, merged, 'update');
     }
 
+    // The item budget follows the category: switching to a one-place
+    // category drops it, since a bought item has nowhere to be delivered.
+    let itemBudgetPaise = Number(task.itemBudgetPaise);
+    if (input.itemBudgetPaise !== undefined || input.categorySlug !== undefined) {
+      const mode = locationMode ?? (await this.prisma.category.findUniqueOrThrow({ where: { id: task.categoryId } })).locationMode;
+      itemBudgetPaise =
+        input.itemBudgetPaise !== undefined
+          ? resolveItemBudget(mode, input.itemBudgetPaise)
+          : mode === 'SINGLE'
+            ? 0
+            : itemBudgetPaise;
+    }
+    const itemChanged = itemBudgetPaise !== Number(task.itemBudgetPaise);
+    const proofRequirements =
+      input.proofRequirements !== undefined || itemChanged
+        ? withItemReceipt(
+            (input.proofRequirements ?? (task.proofRequirements as unknown as ProofRequirementJson[])) as ProofRequirementJson[],
+            itemBudgetPaise,
+          )
+        : undefined;
+    const atStakePaise = requesterTotal(money?.budgetPaise ?? Number(task.budgetPaise), itemBudgetPaise);
+
     await this.prisma.task.update({
       where: { id: taskId },
       data: {
@@ -365,9 +407,9 @@ export class TasksService {
         ...(input.taskAddress !== undefined && { taskAddress: input.taskAddress }),
         ...dropoff,
         ...(input.deadlineAt !== undefined && { deadlineAt: input.deadlineAt }),
-        ...(input.proofRequirements !== undefined && {
-          proofRequirements: input.proofRequirements as object,
-        }),
+        ...(proofRequirements !== undefined && { proofRequirements: proofRequirements as object }),
+        ...(itemChanged && { itemBudgetPaise }),
+        ...((money || itemChanged) && { minVerificationLevel: this.risk.minVerificationLevelForBudget(atStakePaise) }),
         ...(money && {
           budgetPaise: money.budgetPaise,
           commissionRateBps: money.commissionRateBps,
@@ -376,7 +418,6 @@ export class TasksService {
           tcsPaise: money.tcsPaise,
           tdsPaise: money.tdsPaise,
           workerPayoutPaise: money.workerPayoutPaise,
-          minVerificationLevel: this.risk.minVerificationLevelForBudget(money.budgetPaise),
         }),
       },
     });
@@ -917,7 +958,13 @@ export class TasksService {
         title: t.title,
         categorySlug: t.category.slug,
         status: t.status,
-        budgetPaise: Number(t.budgetPaise),
+        // Each side sees only its own figure: the requester what they pay
+        // in total, the worker what they earn. Never the gross task payment
+        // to a worker, which with their earnings would reveal the commission.
+        amountPaise:
+          perspective === 'worker'
+            ? Number(t.workerPayoutPaise)
+            : requesterTotal(Number(t.budgetPaise), Number(t.itemBudgetPaise)),
         deadlineAt: t.deadlineAt.toISOString(),
         createdAt: t.createdAt.toISOString(),
       })),
@@ -986,11 +1033,10 @@ export class TasksService {
                 radiusMeters: task.currentRadiusMeters,
               }
             : null,
-        money: {
-          budgetPaise: Number(task.budgetPaise),
-          commissionPaise: Number(task.commissionPaise),
-          workerPayoutPaise: Number(task.workerPayoutPaise),
-        },
+        // What the requester pays, never how it divides: the platform's
+        // commission and the worker's net earnings stay internal (founder
+        // decision 2026-10-19, docs/11-payment-flow.md).
+        money: requesterMoney(task),
         assignedWorker: task.assignedWorker
           ? {
               id: task.assignedWorker.id,
@@ -1005,12 +1051,14 @@ export class TasksService {
 
     // Assigned worker's view: exact location once assigned, only the payout
     // (never the budget or commission), and the requester's public identity
-    // only. See docs/07-api-specification.md.
+    // only. See docs/07-api-specification.md. An item budget is shown apart
+    // from earnings: it is money the worker spends and gets back.
     return {
       ...base,
       location: { latitude: task.taskLat, longitude: task.taskLng, address: task.taskAddress },
-        dropoff: dropoffView(task),
+      dropoff: dropoffView(task),
       payoutPaise: Number(task.workerPayoutPaise),
+      item: itemView(task),
       requester: {
         displayName: task.requester.displayName,
         verificationLevel: task.requester.verificationLevel,
@@ -1026,6 +1074,56 @@ export class TasksService {
     if (task.requesterId !== requesterId) throw new NotFoundError('Task not found.');
     return task;
   }
+}
+
+type ProofRequirementJson = { type: string; fieldKey?: string; label: string; required: boolean; minCount?: number };
+
+/**
+ * An item budget only makes sense when there is somewhere to deliver the
+ * item, so it is refused on one-place categories rather than silently held.
+ */
+function resolveItemBudget(mode: LocationMode, itemBudgetPaise: number): number {
+  if (itemBudgetPaise > 0 && mode === 'SINGLE') {
+    throw new BusinessRuleError(
+      'Buying an item is only possible on a pickup & delivery task, so the item can be brought to you.',
+    );
+  }
+  return itemBudgetPaise;
+}
+
+/** The task's proof list with the receipt requirement present exactly when there is an item budget. */
+function withItemReceipt<T extends { fieldKey?: string }>(requirements: readonly T[], itemBudgetPaise: number): (T | typeof ITEM_RECEIPT_REQUIREMENT)[] {
+  const rest = requirements.filter((r) => r.fieldKey !== ITEM_RECEIPT_REQUIREMENT.fieldKey);
+  return itemBudgetPaise > 0 ? [...rest, { ...ITEM_RECEIPT_REQUIREMENT }] : rest;
+}
+
+/**
+ * The requester's money: the task payment they set, the item budget, and the
+ * total charged. Once the worker reports the item's cost, what it cost and
+ * what comes back. Commission and worker earnings are deliberately absent.
+ */
+function requesterMoney(task: { budgetPaise: bigint; itemBudgetPaise: bigint; itemSpentPaise: bigint | null }) {
+  const taskPaymentPaise = Number(task.budgetPaise);
+  const itemBudgetPaise = Number(task.itemBudgetPaise);
+  const settlement =
+    task.itemSpentPaise !== null ? calculateItemSettlement(itemBudgetPaise, Number(task.itemSpentPaise)) : null;
+  return {
+    taskPaymentPaise,
+    itemBudgetPaise,
+    totalPaise: requesterTotal(taskPaymentPaise, itemBudgetPaise),
+    itemSpentPaise: settlement?.itemSpentPaise ?? null,
+    itemRefundPaise: settlement?.refundPaise ?? null,
+  };
+}
+
+/** The item budget as the assigned worker sees it, or null when nothing is bought. */
+function itemView(task: { itemBudgetPaise: bigint; itemSpentPaise: bigint | null }) {
+  return Number(task.itemBudgetPaise) > 0
+    ? {
+        budgetPaise: Number(task.itemBudgetPaise),
+        spentPaise: task.itemSpentPaise !== null ? Number(task.itemSpentPaise) : null,
+      }
+    : null;
 }
 
 /** The exact drop-off, for the requester and the assigned worker only. */

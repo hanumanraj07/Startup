@@ -14,6 +14,8 @@ export interface OfferView {
   categorySlug: string;
   categoryName: string;
   payoutPaise: number;
+  /** The most the worker would spend on an item and get back, or 0. Not earnings. */
+  itemBudgetPaise: number;
   distanceMeters: number;
   approximateAddress: string;
   dropoff: { approximateAddress: string; tripDistanceMeters: number } | null;
@@ -168,6 +170,7 @@ export class OffersService {
         dropoffAddress: true,
         deadlineAt: true,
         workerPayoutPaise: true,
+        itemBudgetPaise: true,
         category: { select: { slug: true, name: true } },
         // Public projection only, as in the feed. See docs/12-trust-safety.md.
         requester: { select: { displayName: true, verificationLevel: true } },
@@ -199,6 +202,7 @@ export class OffersService {
         categorySlug: task.category.slug,
         categoryName: task.category.name,
         payoutPaise: Number(task.workerPayoutPaise),
+        itemBudgetPaise: Number(task.itemBudgetPaise),
         distanceMeters: Math.round(o.distanceMeters),
         approximateAddress: approximateAddress(task.taskAddress),
         dropoff,

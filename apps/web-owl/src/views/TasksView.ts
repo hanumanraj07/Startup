@@ -118,7 +118,7 @@ export class TasksView extends Component {
   }
 
   budget(task: TaskListItem): string {
-    return formatPaise(task.budgetPaise);
+    return formatPaise(task.amountPaise);
   }
 
   /** The whole row is clickable; a click on the title link is already handled by the link itself. */

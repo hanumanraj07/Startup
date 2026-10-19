@@ -118,6 +118,13 @@ export class LedgerService {
    *   TCS_PAYABLE         +tcs          (only written if nonzero)
    *   TDS_PAYABLE         +tds          (only written if nonzero)
    *   WORKER_PAYABLE      +workerPayout
+   *   WORKER_PAYABLE      +itemReimburse (only if nonzero: an item bought for the requester)
+   *   REFUND              +itemRefund    (only if nonzero: the unspent item budget)
+   *
+   * `budgetPaise` here is everything held, task payment plus item budget.
+   * Commission was calculated on the task payment alone; the item money only
+   * passes through, so the group balances exactly when the item settlement
+   * reconstructs the item budget (packages/money calculateItemSettlement).
    *
    * This credits WORKER_PAYABLE; it does not transfer money to a bank
    * account or UPI handle. That transfer, and the payout job that performs
@@ -133,7 +140,9 @@ export class LedgerService {
     tcsPaise: number;
     tdsPaise: number;
     workerPayoutPaise: number;
-  }): Promise<void> {
+    itemReimbursePaise?: number;
+    itemRefundPaise?: number;
+  }, tx?: Prisma.TransactionClient): Promise<void> {
     const entries: Parameters<LedgerService['writeEntries']>[0] = [
       {
         taskId: params.taskId,
@@ -191,8 +200,70 @@ export class LedgerService {
         description: 'Tax deducted at source',
       });
     }
+    this.pushItemEntries(entries, params);
 
-    await this.writeEntries(entries);
+    await this.writeEntries(entries, tx);
+  }
+
+  /** The item reimbursement and unspent-budget refund, each written only when nonzero. */
+  private pushItemEntries(
+    entries: Parameters<LedgerService['writeEntries']>[0],
+    params: { taskId: string; paymentId: string; itemReimbursePaise?: number; itemRefundPaise?: number },
+  ): void {
+    if (params.itemReimbursePaise) {
+      entries.push({
+        taskId: params.taskId,
+        paymentId: params.paymentId,
+        account: 'WORKER_PAYABLE',
+        entryType: 'RELEASE',
+        amountPaise: params.itemReimbursePaise,
+        description: 'Item cost reimbursed to the worker, no commission',
+      });
+    }
+    if (params.itemRefundPaise) {
+      entries.push({
+        taskId: params.taskId,
+        paymentId: params.paymentId,
+        account: 'REFUND',
+        entryType: 'REFUND',
+        amountPaise: params.itemRefundPaise,
+        description: 'Unspent item budget refunded to requester',
+      });
+    }
+  }
+
+  /**
+   * Payout processed: what the worker was owed leaves the platform for their
+   * bank account or UPI handle.
+   *
+   *   WORKER_PAYABLE  -amount
+   *   WORKER_SETTLED  +amount
+   */
+  async recordPayout(
+    params: { taskId: string; payoutId: string; amountPaise: number },
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    await this.writeEntries(
+      [
+        {
+          taskId: params.taskId,
+          payoutId: params.payoutId,
+          account: 'WORKER_PAYABLE',
+          entryType: 'PAYOUT',
+          amountPaise: -params.amountPaise,
+          description: 'Paid out to the worker',
+        },
+        {
+          taskId: params.taskId,
+          payoutId: params.payoutId,
+          account: 'WORKER_SETTLED',
+          entryType: 'PAYOUT',
+          amountPaise: params.amountPaise,
+          description: 'Settled to the worker payout account',
+        },
+      ],
+      tx,
+    );
   }
 
   /**
@@ -203,17 +274,25 @@ export class LedgerService {
    * computed by packages/money's `calculateDisputeSplit`, which is what
    * guarantees they sum back to the held amount.
    *
-   *   ESCROW           -(workerPaise + refundPaise)
+   *   ESCROW           -(everything held)
    *   WORKER_PAYABLE   +workerPaise   (only written if nonzero)
    *   REFUND           +refundPaise   (only written if nonzero)
+   *   WORKER_PAYABLE   +itemReimburse (only if nonzero)
+   *   REFUND           +itemRefund    (only if nonzero)
+   *
+   * With an item, the percentage divides the task payment only; the item the
+   * worker bought is reimbursed in full and its unspent budget refunded.
    */
   async recordDisputeSplit(params: {
     taskId: string;
     paymentId: string;
     workerPaise: number;
     refundPaise: number;
+    itemReimbursePaise?: number;
+    itemRefundPaise?: number;
   }): Promise<void> {
-    const total = params.workerPaise + params.refundPaise;
+    const total =
+      params.workerPaise + params.refundPaise + (params.itemReimbursePaise ?? 0) + (params.itemRefundPaise ?? 0);
     const entries: Parameters<LedgerService['writeEntries']>[0] = [];
 
     if (total > 0) {
@@ -246,6 +325,7 @@ export class LedgerService {
         description: 'Requester refund share of a split dispute resolution',
       });
     }
+    this.pushItemEntries(entries, params);
 
     await this.writeEntries(entries);
   }

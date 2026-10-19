@@ -29,6 +29,31 @@ Release
 
 The single most important ordering rule: **funds are captured before a task is published.** A task no worker can be paid for must never appear in a feed.
 
+## What each side sees (founder decision, 2026-10-19)
+
+**The requester sets the task payment** themselves; there are no per-category price ranges, only a platform floor of ₹100 (`MIN_TASK_BUDGET_PAISE`) and ceiling of ₹50,000. **The commission is never shown to requesters or workers.** The requester sees what they pay: the task payment, any item budget, and the total. The worker sees what they earn, and any item money apart from it. Neither API projection contains the commission or the other side's figure; admins see the full split.
+
+## Buying an item (pickup & delivery only, 2026-10-19)
+
+A pickup & delivery task may include an **item budget**: the most the worker may spend buying something for the requester, up to ₹10,000 (`MAX_ITEM_BUDGET_PAISE`).
+
+1. The requester pays **task payment + item budget**, captured together in escrow as one payment.
+2. The worker pays at the shop with their own money and keeps the receipt. A receipt photo is a required proof, added automatically.
+3. At submission the worker reports what the item cost, never more than the budget.
+4. On approval: commission is taken **on the task payment only**; the worker is owed their earnings **plus** the reported cost; the unspent budget is refunded to the requester.
+
+For the founder's example (₹1,000 item budget, ₹200 task payment, item cost ₹950, 15% commission):
+
+| Account | Amount |
+|---|---|
+| `ESCROW` | −120000 |
+| `PLATFORM_COMMISSION` | +3000 |
+| `WORKER_PAYABLE` (earnings) | +17000 |
+| `WORKER_PAYABLE` (item reimbursement) | +95000 |
+| `REFUND` (unspent item budget) | +5000 |
+
+The arithmetic is `calculateSplit` on the task payment and `calculateItemSettlement` on the item, both in `packages/money`. On a split dispute the percentage divides the task payment; the item is reimbursed in full and its unspent budget refunded. A cancellation or expiry before assignment refunds everything, item budget included.
+
 ## Representation
 
 - All amounts are `bigint` paise. ₹500 is `50000`. Never a float, never rupees in storage.
@@ -106,6 +131,10 @@ Statutory deduction accounts, `GST_PAYABLE`, `TCS_PAYABLE` and `TDS_PAYABLE`, ex
 **5. Release.** On approval or 24-hour auto-approval, within one database transaction: the task moves to `COMPLETED`, the payment to `RELEASED`, release ledger entries are written, and a `payout.process` job is queued. Queuing inside the transaction means a rollback cannot leave a payout job for a release that did not happen.
 
 **6. Payout.** The worker transfer is initiated with its own idempotency key. On success the task reaches `PAYMENT_RELEASED`. On failure it is retried with backoff, and a sweeper catches payouts stuck in `PROCESSING`.
+
+How this is built (`payments/payouts.service.ts`, 2026-10-19): a `payouts` row is created `PENDING` at release, with the item reimbursement recorded apart from earnings (`reimbursement_paise`). It is sent to the worker's **verified default** payout account (bank account or UPI ID): immediately after release, and by the worker-process sweep every minute for accounts verified later, failed transfers (backoff 5 / 30 / 60 minutes, up to `PAYOUT_MAX_ATTEMPTS`) and transfers left in `PROCESSING` for 15 minutes. A transfer is claimed with a conditional update before anything is sent, so two processes cannot send the same payout. Only a confirmed transfer writes `WORKER_PAYABLE → WORKER_SETTLED` and moves the task to `PAYMENT_RELEASED`. Workers can also tap "Pay out", which retries failures at once.
+
+`PAYOUT_PROVIDER`: `mock` settles instantly (an account number ending 0000 is declined, to exercise failures); `none` keeps payouts owed and visible until a payout partner is connected, and is the default in production. The real partner (RazorpayX Payouts or Route linked accounts) and bank-account verification are P4 work.
 
 ## Idempotency
 

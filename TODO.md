@@ -293,7 +293,15 @@ See `ai/memory.md`, 2026-10-18, for the decisions and the scope reversals.
 - [ ] Production: deploy the worker process alongside the API (it runs matching waves, expiry and sweeps), run the migration
 - [ ] Later: background tracking needs a native app; the web app tracks only with the screen open
 
-**P3 — Payments** — requester-set price, separate product purchase cost with commission on the task payment only, commission hidden from both parties, worker payouts and history
+**P3 — Payments ◑ BUILT AND VERIFIED LOCALLY, NOT PUSHED**
+- [x] Requester sets the task payment (no category ranges; floor ₹100)
+- [x] Item budget on pickup & delivery tasks: escrowed with the task payment, receipt required, worker reports the cost, reimbursed without commission, unspent part refunded
+- [x] Commission hidden from requesters and workers (API projections and every screen); admins still see it
+- [x] Payout accounts (bank or UPI): add with checks, choose where payouts go, remove
+- [x] Payouts sent on release, retried with backoff, swept; "Pay out" button; history with failure reasons and references; earnings shown apart from item reimbursements
+- [x] Dispute decided for the worker now creates the payout (it used to only credit the ledger)
+- [ ] Production: run the migration; leave `PAYOUT_PROVIDER` unset (= `none`) until a payout partner is connected (P4)
+- [ ] Business: who bears the gateway fee on item money; is ₹100 the right floor
 
 **P4 — Verification** — third-party KYC provider (research current offerings first), bank account verification
 

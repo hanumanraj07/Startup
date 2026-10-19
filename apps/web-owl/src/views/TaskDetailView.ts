@@ -4,7 +4,7 @@ import { formatDistance } from '@onsite/utils';
 import { Icon } from '@/components/Icon';
 import { Link } from '@/components/Link';
 import { LiveTripMap } from '@/components/LiveTripMap';
-import { MoneyBreakdown } from '@/components/MoneyBreakdown';
+import { MoneyBreakdown, WorkerEarnings } from '@/components/MoneyBreakdown';
 import { Page, type Crumb } from '@/components/Page';
 import { ProgressSteps } from '@/components/ProgressSteps';
 import { StatusPill } from '@/components/StatusPill';
@@ -133,7 +133,7 @@ export class TaskDetailView extends Component {
 
           <WorkerActions t-if="workerTask"
             taskId="task.id" status="task.status" proofRequirements="task.proofRequirements"
-            proofs="state.proofs" onChanged="load" locationMode="task.locationMode"/>
+            proofs="state.proofs" onChanged="load" locationMode="task.locationMode" item="workerTask.item or undefined"/>
           <RequesterActions t-if="ownerTask"
             taskId="task.id" status="task.status" proofs="state.proofs" onChanged="load"/>
 
@@ -202,16 +202,8 @@ export class TaskDetailView extends Component {
           </div>
 
           <div t-elif="state.tab === 'payment'" class="flex flex-col gap-3">
-            <MoneyBreakdown t-if="ownerTask"
-              budgetPaise="ownerTask.money.budgetPaise"
-              commissionPaise="ownerTask.money.commissionPaise"
-              workerPayoutPaise="ownerTask.money.workerPayoutPaise"/>
-            <div t-if="workerTask" class="rounded-card border border-line bg-paper-100 p-4">
-              <div class="flex items-center justify-between text-[15px]">
-                <span class="text-ink-900">You receive</span>
-                <span class="tabular font-semibold text-verified" t-out="payout"/>
-              </div>
-            </div>
+            <MoneyBreakdown t-if="ownerTask" money="ownerTask.money" paid="isPaid"/>
+            <WorkerEarnings t-if="workerTask" payoutPaise="workerTask.payoutPaise" item="workerTask.item or undefined"/>
             <p class="rounded-input border border-line-light bg-paper-0 px-4 py-3 text-sm text-ink-700" t-out="paymentStatus"/>
           </div>
 
@@ -237,6 +229,7 @@ export class TaskDetailView extends Component {
     Link,
     LiveTripMap,
     MoneyBreakdown,
+    WorkerEarnings,
     Page,
     ProgressSteps,
     ReleaseAssignmentDialog,
@@ -484,17 +477,20 @@ export class TaskDetailView extends Component {
     return `mt-1.5 h-2 w-2 shrink-0 rounded-full ${this.state.sharing.status === 'sharing' ? 'bg-accent-500' : 'bg-progress'}`;
   }
 
-  get payout(): string {
-    return this.workerTask ? formatPaise(this.workerTask.payoutPaise) : '';
+  /** Whether the requester's money has been taken: anything past a draft. */
+  get isPaid(): boolean {
+    return this.state.task?.status !== 'DRAFT';
   }
 
   get paymentStatus(): string {
     const status = this.state.task?.status;
     const worker = Boolean(this.workerTask);
-    if (status === 'PAYMENT_RELEASED') return worker ? 'Paid to your payout account.' : 'Released to the worker.';
-    if (status === 'COMPLETED') return worker ? 'Approved. Your payout is being sent.' : 'Approved. Releasing to the worker.';
+    const refund = this.ownerTask?.money.itemRefundPaise ?? 0;
+    const refundNote = refund > 0 ? ` The unspent ${formatPaise(refund)} of the item budget is refunded to you.` : '';
+    if (status === 'PAYMENT_RELEASED') return worker ? 'Paid to your payout account.' : `Released to the worker.${refundNote}`;
+    if (status === 'COMPLETED') return worker ? 'Approved. Your payout is being sent.' : `Approved. Releasing to the worker.${refundNote}`;
     if (status === 'DISPUTED') return 'Frozen while the dispute is reviewed.';
-    if (status === 'CANCELLED' || status === 'EXPIRED') return worker ? 'This task was not paid out.' : 'Refunded to you.';
+    if (status === 'CANCELLED' || status === 'EXPIRED') return worker ? 'This task was not paid out.' : 'Refunded to you in full.';
     return worker ? 'Held safely by OnSite. You are paid when the requester approves, or automatically 24 hours after you submit.' : 'Held safely by OnSite until you approve the work.';
   }
 

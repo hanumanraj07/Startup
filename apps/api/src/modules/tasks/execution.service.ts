@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { ArriveInput, BlockerInput, PresignUploadInput, RecordProofInput } from '@onsite/validation';
+import { formatPaise } from '@onsite/money';
 import { BusinessRuleError, ForbiddenError, NotFoundError } from '../../common/errors';
 import { loadEnv } from '../../config/env';
 import { GeoRepository } from '../../repositories/geo.repository';
@@ -245,8 +246,23 @@ export class ExecutionService {
    * `proofRequirements` must actually be present, counted by type and, for
    * structured fields, by key. A worker cannot submit an empty task.
    */
-  async submit(taskId: string, workerId: string, note?: string) {
+  async submit(taskId: string, workerId: string, note?: string, itemSpentPaise?: number) {
     const task = await this.requireAssignedTask(taskId, workerId);
+
+    // A task with an item budget is reimbursed on what the item actually
+    // cost, so the worker must say, and it can never exceed what the
+    // requester agreed to. The receipt photo is a proof requirement.
+    const itemBudgetPaise = Number(task.itemBudgetPaise);
+    if (itemBudgetPaise > 0) {
+      if (itemSpentPaise === undefined) {
+        throw new BusinessRuleError('Enter what the item cost, as on the receipt.');
+      }
+      if (itemSpentPaise > itemBudgetPaise) {
+        throw new BusinessRuleError(
+          `The item cost more than the ${formatPaise(itemBudgetPaise)} the requester set aside. Ask them in chat before buying anything above it.`,
+        );
+      }
+    }
 
     // Only this worker's own proof counts toward submission.
     const proofs = await this.prisma.taskProof.findMany({ where: { taskId, workerId } });
@@ -270,7 +286,12 @@ export class ExecutionService {
         : []),
       this.prisma.task.update({
         where: { id: taskId },
-        data: { status: 'SUBMITTED', submittedAt: new Date(), reviewDeadlineAt },
+        data: {
+          status: 'SUBMITTED',
+          submittedAt: new Date(),
+          reviewDeadlineAt,
+          ...(itemBudgetPaise > 0 && { itemSpentPaise }),
+        },
       }),
       this.prisma.taskStatusHistory.create({
         data: {

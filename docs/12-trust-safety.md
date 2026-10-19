@@ -68,7 +68,7 @@ Never permitted, regardless of payment:
 - Sexual or exploitative content
 - Anything requiring a professional licence the worker does not hold
 
-**Also excluded at launch, though not unlawful:** purchasing on the requester's behalf and any task where the worker fronts money. The founding example ends with "do NOT purchase it" deliberately. A worker carrying ₹80,000 of someone else's money is a fundamentally different and harder business.
+**Buying an item for the requester is allowed since 2026-10-19** (founder decision), but only through the **item budget** on a pickup & delivery task: held in escrow with the task payment, capped at ₹10,000, spent by the worker at the shop and reimbursed on approval against a receipt photo and a reported cost that can never exceed the budget. See `docs/11-payment-flow.md`. **Still excluded:** cash handling of any kind, a worker handing the requester money or lending it (blocked by the screening rules), and items above the cap. A worker carrying ₹80,000 of someone else's money is still a different and harder business.
 
 ### How screening works (decided 2026-10-18, see `ai/memory.md`)
 

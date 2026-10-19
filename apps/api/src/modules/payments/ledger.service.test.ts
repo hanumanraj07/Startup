@@ -114,3 +114,59 @@ describe('LedgerService.recordDisputeSplit', () => {
     expect(written.reduce((s, e) => s + e.amountPaise, 0n)).toBe(0n);
   });
 });
+
+describe('LedgerService.recordRelease — buying an item', () => {
+  it('balances commission on the task payment, the reimbursement and the unspent refund', async () => {
+    const { client, createMany } = fakePrisma();
+    const service = new LedgerService(client);
+
+    // ₹200 task payment + ₹1,000 item budget held; the item cost ₹950.
+    await service.recordRelease({
+      taskId: 't1',
+      paymentId: 'p1',
+      budgetPaise: 120_000,
+      commissionPaise: 3_000,
+      gstPaise: 0,
+      tcsPaise: 0,
+      tdsPaise: 0,
+      workerPayoutPaise: 17_000,
+      itemReimbursePaise: 95_000,
+      itemRefundPaise: 5_000,
+    });
+
+    const data = (createMany.mock.calls[0]?.[0] as { data: unknown }).data as { account: string; amountPaise: bigint }[];
+    expect(data.reduce((sum, e) => sum + e.amountPaise, 0n)).toBe(0n);
+    expect(data.filter((e) => e.account === 'WORKER_PAYABLE').map((e) => e.amountPaise)).toEqual([17_000n, 95_000n]);
+    expect(data.find((e) => e.account === 'REFUND')?.amountPaise).toBe(5_000n);
+  });
+
+  it('refuses a release whose item figures do not add up to what was held', async () => {
+    const { client, createMany } = fakePrisma();
+    const service = new LedgerService(client);
+    await expect(
+      service.recordRelease({
+        taskId: 't1',
+        paymentId: 'p1',
+        budgetPaise: 120_000,
+        commissionPaise: 3_000,
+        gstPaise: 0,
+        tcsPaise: 0,
+        tdsPaise: 0,
+        workerPayoutPaise: 17_000,
+        itemReimbursePaise: 95_000,
+      }),
+    ).rejects.toThrow(/do not balance/);
+    expect(createMany).not.toHaveBeenCalled();
+  });
+
+  it('records a payout as payable to settled', async () => {
+    const { client, createMany } = fakePrisma();
+    const service = new LedgerService(client);
+    await service.recordPayout({ taskId: 't1', payoutId: 'po1', amountPaise: 112_000 });
+    const data = (createMany.mock.calls[0]?.[0] as { data: unknown }).data as { account: string; amountPaise: bigint }[];
+    expect(data.map((e) => [e.account, e.amountPaise])).toEqual([
+      ['WORKER_PAYABLE', -112_000n],
+      ['WORKER_SETTLED', 112_000n],
+    ]);
+  });
+});

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { OffersService } from '../matching/offers.service';
+import { PayoutsService } from '../payments/payouts.service';
 import { ReviewService } from './review.service';
 import { TasksService } from './tasks.service';
 
@@ -38,6 +39,7 @@ export class SweeperService {
     private readonly review: ReviewService,
     private readonly tasks: TasksService,
     private readonly offers: OffersService,
+    private readonly payouts: PayoutsService,
   ) {}
 
   start(intervalMs: number): void {
@@ -46,6 +48,7 @@ export class SweeperService {
       void this.runReviewDeadlineSweep();
       void this.runTaskExpirySweep();
       void this.runOfferExpirySweep();
+      void this.runPayoutSweep();
     }, intervalMs);
     // Never let a scheduled tick keep the process alive on its own if
     // everything else has shut down.
@@ -95,6 +98,20 @@ export class SweeperService {
       return await this.offers.expireOverdue();
     } catch (error) {
       this.logger.error(`Sweeper failed to expire offers: ${String(error)}`);
+      return 0;
+    }
+  }
+
+  /**
+   * Sends payouts that are owed: to workers who have just verified an
+   * account, failed ones whose retry backoff has passed, and any transfer
+   * stuck without an answer. sendOwed at release is the fast path.
+   */
+  async runPayoutSweep(): Promise<number> {
+    try {
+      return await this.payouts.sweep();
+    } catch (error) {
+      this.logger.error(`Sweeper failed to send payouts: ${String(error)}`);
       return 0;
     }
   }

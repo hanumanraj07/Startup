@@ -1,7 +1,10 @@
 import { Component, useState, xml } from '@odoo/owl';
+import { formatPaise } from '@onsite/money';
 import type { TaskStatus } from '@onsite/types';
 import { Icon } from '@/components/Icon';
 import { ProofChecklist } from '@/components/ProofChecklist';
+import { TextField } from '@/components/TextField';
+import { parseBudgetPaise } from '@/lib/wizard';
 import type { ProofRequirement, ProofView } from '@/lib/api-types';
 import { ApiError, api } from '@/services/api';
 import { getPosition } from '@/services/geo';
@@ -22,6 +25,10 @@ export class WorkerActions extends Component {
           <Icon name="'navigation'" size="16"/> On my way
         </button>
       </div>
+      <p t-if="props.item" class="mx-6 mb-6 flex items-start gap-2 rounded-input bg-tint-orange px-3 py-2 text-sm text-[#7a3d00]">
+        <Icon name="'wallet'" size="16"/>
+        <span>Carry up to <strong class="tabular" t-out="itemBudget"/> for the item. You pay at the shop, keep the receipt, and get it back with your earnings.</span>
+      </p>
       <p t-if="state.error" role="alert" class="px-6 pb-6 text-sm text-dispute" t-out="state.error"/>
     </div>
 
@@ -51,9 +58,13 @@ export class WorkerActions extends Component {
           </t>
         </div>
 
+        <TextField t-if="props.item and status === 'IN_PROGRESS'" id="'item-cost'" label="'What did the item cost? (₹)'"
+          type="'number'" min="'0'" max="itemMaxRupees" hint="itemCostHint" error="itemCostError"
+          value="state.itemCost" onInput="setItemCost"/>
+
         <p t-if="state.error" role="alert" class="text-sm text-dispute" t-out="state.error"/>
 
-        <button type="button" t-att-class="submitClass" t-att-disabled="state.busy or !allMet" t-on-click="submit">
+        <button type="button" t-att-class="submitClass" t-att-disabled="state.busy or !allMet or !itemCostReady" t-on-click="submit">
           <Icon name="'send'" size="16"/> <t t-out="isDelivery ? 'Delivered: submit proof' : 'Submit for review'"/>
         </button>
       </div>
@@ -64,7 +75,7 @@ export class WorkerActions extends Component {
         Submitted. The requester has up to 24 hours to review before it auto-approves.
       </div>
     </div>`;
-  static components = { Icon, ProofChecklist, RequirementCapture };
+  static components = { Icon, ProofChecklist, RequirementCapture, TextField };
   static override props = {
     taskId: String,
     status: String,
@@ -73,9 +84,11 @@ export class WorkerActions extends Component {
     onChanged: Function,
     /** SINGLE or PICKUP_DROPOFF: deliveries get their own wording for each leg. */
     locationMode: { type: String, optional: true },
+    /** An item to buy and be reimbursed for. Undefined when nothing is bought. */
+    item: { type: Object, optional: true },
   };
 
-  state = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
+  state = useState<{ busy: boolean; error: string | null; itemCost: string }>({ busy: false, error: null, itemCost: '' });
 
   cardClass = card();
   primaryClass = btn('primary');
@@ -89,6 +102,43 @@ export class WorkerActions extends Component {
     if (status === 'SUBMITTED' || status === 'UNDER_REVIEW') return 'submitted';
     return null;
   }
+
+  get status(): TaskStatus {
+    return this.props.status as TaskStatus;
+  }
+
+  get itemBudget(): string {
+    return this.props.item ? formatPaise(this.props.item.budgetPaise) : '';
+  }
+
+  get itemMaxRupees(): string {
+    return this.props.item ? String(this.props.item.budgetPaise / 100) : '0';
+  }
+
+  get itemCostHint(): string {
+    return `Exactly as on the receipt, at most ${this.itemBudget}. This is what you are paid back.`;
+  }
+
+  private get itemCostPaise(): number | null {
+    return parseBudgetPaise(this.state.itemCost.trim());
+  }
+
+  get itemCostError(): string | undefined {
+    const cost = this.itemCostPaise;
+    if (!this.props.item || cost === null) return undefined;
+    return cost > this.props.item.budgetPaise ? `More than the ${this.itemBudget} set aside. Ask the requester in chat first.` : undefined;
+  }
+
+  /** No item, or a cost entered within the budget. Zero is allowed: the item may have been unavailable. */
+  get itemCostReady(): boolean {
+    if (!this.props.item) return true;
+    const cost = this.itemCostPaise;
+    return cost !== null && cost <= this.props.item.budgetPaise;
+  }
+
+  setItemCost = (value: string) => {
+    this.state.itemCost = value;
+  };
 
   get isDelivery(): boolean {
     return this.props.locationMode === 'PICKUP_DROPOFF';
@@ -167,6 +217,9 @@ export class WorkerActions extends Component {
   capture = (payload: Record<string, unknown>) => this.run(() => api.post(`/tasks/${this.props.taskId}/proofs`, payload));
 
   submit() {
-    return this.run(() => api.post(`/tasks/${this.props.taskId}/submit`, {}));
+    const itemSpentPaise = this.props.item ? this.itemCostPaise : null;
+    return this.run(() =>
+      api.post(`/tasks/${this.props.taskId}/submit`, itemSpentPaise !== null ? { itemSpentPaise } : {}),
+    );
   }
 }

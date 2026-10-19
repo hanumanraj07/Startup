@@ -140,7 +140,15 @@ export const kycPresignSchema = z.object({
 export const payoutAccountSchema = z
   .object({
     type: z.enum(['BANK', 'UPI']),
-    accountNumber: z.string().trim().min(6).max(30).optional(),
+    // As printed on the passbook or cheque. Checked against the name the bank
+    // returns when the account is verified.
+    accountHolderName: z.string().trim().min(3, 'Enter the name on the account').max(120).optional(),
+    // Indian bank account numbers are 9 to 18 digits.
+    accountNumber: z
+      .string()
+      .trim()
+      .regex(/^\d{9,18}$/, 'Enter the 9 to 18 digit account number')
+      .optional(),
     ifsc: z
       .string()
       .trim()
@@ -158,8 +166,8 @@ export const payoutAccountSchema = z
       .toUpperCase()
       .regex(/^[A-Z]{5}\d{4}[A-Z]$/, 'Enter a valid PAN'),
   })
-  .refine((v) => (v.type === 'BANK' ? Boolean(v.accountNumber && v.ifsc) : Boolean(v.upiVpa)), {
-    message: 'Provide bank account and IFSC, or a UPI ID',
+  .refine((v) => (v.type === 'BANK' ? Boolean(v.accountNumber && v.ifsc && v.accountHolderName) : Boolean(v.upiVpa)), {
+    message: 'Provide the account holder, account number and IFSC, or a UPI ID',
   });
 
 // ─── Tasks ───────────────────────────────────────────────────────────────
@@ -173,11 +181,22 @@ export const proofRequirementSchema = z.object({
 });
 
 /**
- * Budget bounds come from the business model. Below ₹300 fixed per-transaction
- * costs consume the contribution, so low-value tasks are not worth serving.
+ * The requester sets the task payment themselves (founder decision,
+ * 2026-10-19): there are no per-category price ranges. The floor is what keeps
+ * the commission above the fixed per-transaction costs (gateway and payout
+ * fees) at all; docs/02-business-model.md's suggested ₹300 was lowered to
+ * ₹100 so a small errand such as "₹200 to pick this up" can be posted.
  */
-export const MIN_TASK_BUDGET_PAISE = 30_000;
+export const MIN_TASK_BUDGET_PAISE = 10_000;
 export const MAX_TASK_BUDGET_PAISE = 5_000_000;
+
+/**
+ * The most a requester can ask a worker to spend on an item for them
+ * (pickup & delivery only). The worker pays at the shop with their own money
+ * and is reimbursed on approval, so this is also the most a worker is ever
+ * asked to front. See docs/11-payment-flow.md.
+ */
+export const MAX_ITEM_BUDGET_PAISE = 1_000_000;
 
 /**
  * The task fields a client may supply.
@@ -210,6 +229,10 @@ export const taskFieldsSchema = z.object({
   dropoffAddress: z.string().trim().min(5).max(500).optional(),
   dropoffPlaceName: z.string().trim().max(200).optional(),
   budgetPaise: paiseSchema.min(MIN_TASK_BUDGET_PAISE).max(MAX_TASK_BUDGET_PAISE),
+  // Buying an item for the requester: the most the worker may spend, held
+  // with the task payment and never subject to commission. Pickup & delivery
+  // categories only, which the server checks.
+  itemBudgetPaise: paiseSchema.max(MAX_ITEM_BUDGET_PAISE).optional(),
   deadlineAt: z.coerce.date(),
   proofRequirements: z.array(proofRequirementSchema).min(1).max(20),
   attachmentKeys: z.array(z.string().max(500)).max(5).optional(),
@@ -298,6 +321,9 @@ export const recordProofSchema = z
 
 export const submitTaskSchema = z.object({
   note: z.string().trim().max(2_000).optional(),
+  // What the item actually cost, as on the receipt. Required by the server
+  // when the task has an item budget, and never more than that budget.
+  itemSpentPaise: paiseSchema.max(MAX_ITEM_BUDGET_PAISE).optional(),
 });
 
 export const blockerSchema = z.object({

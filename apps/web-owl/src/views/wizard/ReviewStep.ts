@@ -1,7 +1,7 @@
 import { Component, xml } from '@odoo/owl';
 import { formatPaise } from '@onsite/money';
 import { MoneyBreakdown } from '@/components/MoneyBreakdown';
-import type { ProofRequirement } from '@/lib/api-types';
+import type { ProofRequirement, RequesterMoney } from '@/lib/api-types';
 import { formatDateTime } from '@/lib/format';
 import { composeAddress } from '@/lib/wizard';
 import { btn } from '@/ui/classes';
@@ -9,7 +9,7 @@ import { btn } from '@/ui/classes';
 export interface DraftTask {
   id: string;
   title: string;
-  money: { budgetPaise: number; commissionPaise: number; workerPayoutPaise: number };
+  money: RequesterMoney;
 }
 
 /**
@@ -22,10 +22,7 @@ export class ReviewStep extends Component {
     <div t-if="props.draft" class="flex flex-col gap-4">
       <h2 class="text-lg font-medium text-ink-900">Confirm and pay</h2>
       <p class="text-sm text-ink-500">Your task is saved as a draft. This is the real amount — nothing changes at payment.</p>
-      <MoneyBreakdown
-        budgetPaise="props.draft.money.budgetPaise"
-        commissionPaise="props.draft.money.commissionPaise"
-        workerPayoutPaise="props.draft.money.workerPayoutPaise"/>
+      <MoneyBreakdown money="props.draft.money"/>
       <p t-if="props.submitError" role="alert" class="text-sm text-dispute" t-out="props.submitError"/>
       <button type="button" t-att-class="payClass" t-att-disabled="props.submitting" t-att-aria-busy="props.submitting ? 'true' : null"
         t-on-click="props.onFundAndPublish">
@@ -43,11 +40,7 @@ export class ReviewStep extends Component {
         </div>
       </dl>
       <p class="whitespace-pre-wrap rounded-card bg-paper-100 p-3 text-sm text-ink-700" t-out="props.wizard.description"/>
-      <MoneyBreakdown t-if="props.estimate"
-        budgetPaise="props.estimate.budgetPaise"
-        commissionPaise="props.estimate.commissionPaise"
-        workerPayoutPaise="props.estimate.workerPayoutPaise"
-        estimate="true"/>
+      <MoneyBreakdown t-if="props.estimate" money="props.estimate"/>
       <p t-if="props.submitError" role="alert" class="text-sm text-dispute" t-out="props.submitError"/>
       <button type="button" t-att-class="createClass" t-att-disabled="props.submitting" t-att-aria-busy="props.submitting ? 'true' : null"
         t-on-click="props.onCreateDraft">
@@ -71,7 +64,7 @@ export class ReviewStep extends Component {
 
   get amount(): string {
     const draft = this.props.draft as DraftTask | undefined;
-    return draft ? formatPaise(draft.money.budgetPaise) : '';
+    return draft ? formatPaise(draft.money.totalPaise) : '';
   }
 
   get rows(): { label: string; value: string }[] {

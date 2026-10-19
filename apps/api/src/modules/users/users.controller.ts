@@ -100,6 +100,8 @@ export class UsersController {
     return this.users.getOwnKycStatus(user.id);
   }
 
+  // Adding bank details is rare and worth slowing down for anyone probing.
+  @Throttle({ user: { limit: 10, ttl: 3_600_000 } })
   @Post('me/payout-accounts')
   async addPayoutAccount(
     @Body(zodPipe(payoutAccountSchema)) body: PayoutAccountInput,
@@ -111,5 +113,15 @@ export class UsersController {
   @Get('me/payout-accounts')
   async listPayoutAccounts(@CurrentUser() user: RequestUser) {
     return this.users.listPayoutAccounts(user.id);
+  }
+
+  @Patch('me/payout-accounts/:id/default')
+  async setDefaultPayoutAccount(@Param('id') id: string, @CurrentUser() user: RequestUser) {
+    return this.users.setDefaultPayoutAccount(user.id, uuidSchema.parse(id));
+  }
+
+  @Delete('me/payout-accounts/:id')
+  async removePayoutAccount(@Param('id') id: string, @CurrentUser() user: RequestUser) {
+    return this.users.removePayoutAccount(user.id, uuidSchema.parse(id));
   }
 }

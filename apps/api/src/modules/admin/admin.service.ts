@@ -280,10 +280,14 @@ export class AdminService {
       createdAt: task.createdAt.toISOString(),
       deadlineAt: task.deadlineAt.toISOString(),
       location: { latitude: task.taskLat, longitude: task.taskLng, address: task.taskAddress },
+      // Admins see the whole split, including what requesters and workers
+      // never do: the commission.
       money: {
         budgetPaise: Number(task.budgetPaise),
         commissionPaise: Number(task.commissionPaise),
         workerPayoutPaise: Number(task.workerPayoutPaise),
+        itemBudgetPaise: Number(task.itemBudgetPaise),
+        itemSpentPaise: task.itemSpentPaise !== null ? Number(task.itemSpentPaise) : null,
       },
       payment: task.payment
         ? { status: task.payment.status, amountPaise: Number(task.payment.amountPaise) }

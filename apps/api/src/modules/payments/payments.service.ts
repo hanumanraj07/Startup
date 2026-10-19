@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { calculateItemSettlement, requesterTotal } from '@onsite/money';
 import { decodeCursor, encodeCursor } from '@onsite/utils';
 import { BusinessRuleError, ForbiddenError, NotFoundError } from '../../common/errors';
 import { loadEnv } from '../../config/env';
@@ -6,6 +7,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { LedgerService } from './ledger.service';
 import { RazorpayService } from './razorpay.service';
 import { ModerationService } from '../moderation/moderation.service';
+import { PayoutsService } from './payouts.service';
 
 /**
  * Order creation, capture, and (for the real provider) webhook-driven
@@ -28,6 +30,7 @@ export class PaymentsService {
     private readonly ledger: LedgerService,
     private readonly razorpay: RazorpayService,
     private readonly moderation: ModerationService,
+    private readonly payouts: PayoutsService,
   ) {}
 
   async createOrder(params: { taskId: string; requesterId: string; idempotencyKey: string }) {
@@ -59,10 +62,12 @@ export class PaymentsService {
     if (already) return this.toView(already);
 
     // Amount is read from the task record. It is never accepted from the
-    // client, per docs/16-security-requirements.md.
+    // client, per docs/16-security-requirements.md. It is the task payment
+    // plus any item budget, captured together and held in escrow.
+    const amountPaise = requesterTotal(Number(task.budgetPaise), Number(task.itemBudgetPaise));
     if (env.PAYMENT_PROVIDER === 'razorpay') {
       const order = await this.razorpay.createOrder({
-        amountPaise: Number(task.budgetPaise),
+        amountPaise,
         receipt: task.id,
       });
 
@@ -72,7 +77,7 @@ export class PaymentsService {
           requesterId: task.requesterId,
           gateway: 'RAZORPAY',
           gatewayOrderId: order.id,
-          amountPaise: task.budgetPaise,
+          amountPaise,
           idempotencyKey: params.idempotencyKey,
           status: 'CREATED',
         },
@@ -86,7 +91,7 @@ export class PaymentsService {
         taskId: task.id,
         requesterId: task.requesterId,
         gateway: 'MOCK',
-        amountPaise: task.budgetPaise,
+        amountPaise,
         idempotencyKey: params.idempotencyKey,
         status: 'CAPTURED',
         capturedAt: new Date(),
@@ -96,7 +101,7 @@ export class PaymentsService {
     await this.ledger.recordCapture({
       taskId: task.id,
       paymentId: payment.id,
-      amountPaise: Number(task.budgetPaise),
+      amountPaise,
     });
 
     return this.toView(payment);
@@ -245,43 +250,6 @@ export class PaymentsService {
     };
   }
 
-  /** docs/07: "GET /payouts/mine | worker | Payout history." */
-  async listPayoutsMine(workerId: string, limit: number, cursor?: string) {
-    const cursorData = cursor ? decodeCursor<{ createdAt: string; id: string }>(cursor) : null;
-
-    const payouts = await this.prisma.payout.findMany({
-      where: {
-        workerId,
-        ...(cursorData && {
-          OR: [
-            { createdAt: { lt: new Date(cursorData.createdAt) } },
-            { createdAt: new Date(cursorData.createdAt), id: { lt: cursorData.id } },
-          ],
-        }),
-      },
-      include: { task: { select: { title: true } } },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: limit + 1,
-    });
-
-    const hasMore = payouts.length > limit;
-    const page = payouts.slice(0, limit);
-    const last = page.at(-1);
-
-    return {
-      data: page.map((p) => ({
-        id: p.id,
-        taskId: p.taskId,
-        taskTitle: p.task.title,
-        amountPaise: Number(p.amountPaise),
-        status: p.status,
-        processedAt: p.processedAt?.toISOString() ?? null,
-        createdAt: p.createdAt.toISOString(),
-      })),
-      nextCursor: hasMore && last ? encodeCursor({ createdAt: last.createdAt.toISOString(), id: last.id }) : null,
-    };
-  }
-
   /** Read by the task service to decide whether DRAFT → PUBLISHED is allowed. */
   async isCaptured(taskId: string): Promise<boolean> {
     const payment = await this.prisma.payment.findUnique({ where: { taskId } });
@@ -315,16 +283,13 @@ export class PaymentsService {
   /**
    * Release on approval. Marks the payment RELEASED, credits the worker's
    * payable balance in the ledger, and records a PENDING Payout — the amount
-   * now owed to the worker, not a transfer that has happened. Idempotent:
+   * now owed to the worker — which PayoutsService then sends. Idempotent:
    * calling it twice for the same task writes the entries and the Payout row
    * only once, guarded by the payment's own status.
    *
-   * No money actually moves anywhere here. A real transfer to a bank account
-   * or UPI handle needs a payout gateway and retry handling that is not built
-   * in this phase — see the note on `LedgerService.recordRelease` and the
-   * scope note in TODO.md. What this method guarantees is that the moment a
-   * task is approved, there is an auditable, ledger-backed record of exactly
-   * what is owed and to whom, ready for that transfer to read from.
+   * With an item, the worker is owed their earnings plus what the item cost
+   * (reported at submission with a receipt), and the unspent item budget is
+   * refunded to the requester. Commission was taken on the task payment only.
    */
   async release(params: {
     taskId: string;
@@ -333,7 +298,7 @@ export class PaymentsService {
     tcsPaise: number;
     tdsPaise: number;
     workerPayoutPaise: number;
-  }): Promise<void> {
+  }, options: { sendNow?: boolean } = {}): Promise<void> {
     const payment = await this.prisma.payment.findUnique({ where: { taskId: params.taskId } });
     if (!payment || payment.status !== 'CAPTURED') return;
 
@@ -342,19 +307,22 @@ export class PaymentsService {
       throw new BusinessRuleError('Cannot release payment for a task with no assigned worker.');
     }
 
+    const item = calculateItemSettlement(Number(task.itemBudgetPaise), Number(task.itemSpentPaise ?? 0));
+
     await this.prisma.payment.update({
       where: { id: payment.id },
-      data: { status: 'RELEASED', releasedAt: new Date() },
+      data: {
+        status: 'RELEASED',
+        releasedAt: new Date(),
+        ...(item.refundPaise > 0 && { refundAmountPaise: item.refundPaise, refundedAt: new Date() }),
+      },
     });
 
-    await this.prisma.payout.create({
-      data: {
-        taskId: params.taskId,
-        workerId: task.assignedWorkerId,
-        amountPaise: params.workerPayoutPaise,
-        status: 'PENDING',
-        idempotencyKey: `payout:${params.taskId}`,
-      },
+    await this.payouts.recordOwed({
+      taskId: params.taskId,
+      workerId: task.assignedWorkerId,
+      earningsPaise: params.workerPayoutPaise,
+      reimbursementPaise: item.reimbursePaise,
     });
 
     await this.ledger.recordRelease({
@@ -366,7 +334,13 @@ export class PaymentsService {
       tcsPaise: params.tcsPaise,
       tdsPaise: params.tdsPaise,
       workerPayoutPaise: params.workerPayoutPaise,
+      itemReimbursePaise: item.reimbursePaise,
+      itemRefundPaise: item.refundPaise,
     });
+
+    // A caller that has not yet written the task's own final status (a
+    // dispute decision) sends afterwards, so the payout can mark it paid.
+    if (options.sendNow !== false) await this.payouts.sendOwed(task.assignedWorkerId);
   }
 
   private toView(payment: {

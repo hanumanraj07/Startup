@@ -64,7 +64,7 @@ Per ₹1,000 task at launch scale:
 
 Two conclusions follow directly, and both shape the product:
 
-1. **Low-value tasks barely contribute.** A ₹200 task yields ₹30 of commission and loses much of it to fixed per-transaction costs. This argues for a minimum task value, suggested at ₹300, rather than chasing volume that costs money to serve.
+1. **Low-value tasks barely contribute.** A ₹200 task yields ₹30 of commission and loses much of it to fixed per-transaction costs. This argues for a minimum task value, suggested at ₹300, rather than chasing volume that costs money to serve. **Decided 2026-10-19:** requesters set their own price with a floor of ₹100, because the founder's own example is a ₹200 errand; the ₹300 reasoning stands as the case for nudging prices up later. Commission is charged on the task payment only, never on an item the worker buys (`docs/11-payment-flow.md`), so the gateway fee on item money is a platform cost; whether to recover it is an open question.
 2. **Disputes are the real cost line.** A dispute consumes manual review time worth many completed tasks' contribution. Every trust and proof feature is therefore also a margin feature, which is why they are in the MVP rather than deferred.
 
 ## Future revenue

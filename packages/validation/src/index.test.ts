@@ -3,6 +3,7 @@ import {
   arriveSchema,
   createPaymentOrderSchema,
   createTaskSchema,
+  MAX_ITEM_BUDGET_PAISE,
   MAX_TASK_BUDGET_PAISE,
   MIN_TASK_BUDGET_PAISE,
   paiseSchema,
@@ -12,6 +13,7 @@ import {
   registerSchema,
   resolveDisputeSchema,
   sendMessageSchema,
+  submitTaskSchema,
   updateTaskSchema,
   workerProfileSchema,
 } from './index';
@@ -219,10 +221,11 @@ describe('workerProfileSchema', () => {
 });
 
 describe('payoutAccountSchema', () => {
-  it('accepts a bank account with IFSC and PAN', () => {
+  it('accepts a bank account with holder, IFSC and PAN', () => {
     expect(
       payoutAccountSchema.safeParse({
         type: 'BANK',
+        accountHolderName: 'Rahul Sharma',
         accountNumber: '123456789012',
         ifsc: 'HDFC0001234',
         panNumber: 'ABCDE1234F',
@@ -245,6 +248,17 @@ describe('payoutAccountSchema', () => {
         panNumber: 'ABCDE1234F',
       }).success,
     ).toBe(false);
+  });
+
+  it('rejects a bank account without the holder name, or with letters in the number', () => {
+    const bank = { type: 'BANK', accountNumber: '123456789012', ifsc: 'HDFC0001234', panNumber: 'ABCDE1234F' };
+    expect(payoutAccountSchema.safeParse(bank).success).toBe(false);
+    expect(
+      payoutAccountSchema.safeParse({ ...bank, accountHolderName: 'Rahul Sharma', accountNumber: '12345ABC9012' }).success,
+    ).toBe(false);
+    expect(payoutAccountSchema.safeParse({ ...bank, accountHolderName: 'Rahul Sharma', accountNumber: '12345678' }).success).toBe(
+      false,
+    );
   });
 
   it('rejects a malformed PAN', () => {
@@ -297,5 +311,21 @@ describe('registerSchema', () => {
       displayName: 'Rahul Sharma',
     });
     expect(parsed.email).toBe('rahul@example.com');
+  });
+});
+
+describe('item budget and reported cost', () => {
+  it('accepts an item budget up to the cap and refuses one above it', () => {
+    expect(createTaskSchema.safeParse({ ...validTask, itemBudgetPaise: MAX_ITEM_BUDGET_PAISE }).success).toBe(true);
+    expect(createTaskSchema.safeParse({ ...validTask, itemBudgetPaise: MAX_ITEM_BUDGET_PAISE + 1 }).success).toBe(false);
+  });
+
+  it('accepts the founder example of a ₹200 task payment', () => {
+    expect(createTaskSchema.safeParse({ ...validTask, budgetPaise: 20_000, itemBudgetPaise: 100_000 }).success).toBe(true);
+  });
+
+  it('takes the reported item cost at submission as whole paise', () => {
+    expect(submitTaskSchema.safeParse({ itemSpentPaise: 95_000 }).success).toBe(true);
+    expect(submitTaskSchema.safeParse({ itemSpentPaise: 950.5 }).success).toBe(false);
   });
 });

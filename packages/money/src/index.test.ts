@@ -4,10 +4,12 @@ import {
   assertPaise,
   calculateCancellationCompensation,
   calculateDisputeSplit,
+  calculateItemSettlement,
   calculateSplit,
   formatPaise,
   MoneyError,
   paiseToRupees,
+  requesterTotal,
   rupeesToPaise,
   splitBalances,
   ZERO_DEDUCTIONS,
@@ -197,5 +199,40 @@ describe('calculateCancellationCompensation', () => {
     expect(calculateCancellationCompensation(100_000, { percentBps: 2000, capPaise: 100_000 })).toBe(
       20_000,
     );
+  });
+});
+
+describe("buying an item — the founder's example", () => {
+  // A ₹1,000 item and ₹200 for the task: commission is on the ₹200 only.
+  it('takes commission on the task payment and never on the item', () => {
+    const split = calculateSplit(20_000, 1500);
+    expect(split.commissionPaise).toBe(3_000);
+    expect(split.workerPayoutPaise).toBe(17_000);
+    expect(requesterTotal(20_000, 100_000)).toBe(120_000);
+  });
+
+  it('reimburses what was spent and returns the rest', () => {
+    const item = calculateItemSettlement(100_000, 95_000);
+    expect(item.reimbursePaise).toBe(95_000);
+    expect(item.refundPaise).toBe(5_000);
+  });
+
+  it('balances: commission + earnings + reimbursement + refund equals what was paid', () => {
+    for (const [payment, budget, spent] of [
+      [20_000, 100_000, 95_000],
+      [33_333, 77_777, 77_777],
+      [10_000, 50_000, 0],
+      [45_678, 0, 0],
+    ] as const) {
+      const split = calculateSplit(payment, 1500);
+      const item = calculateItemSettlement(budget, spent);
+      expect(split.commissionPaise + split.workerPayoutPaise + item.reimbursePaise + item.refundPaise).toBe(
+        requesterTotal(payment, budget),
+      );
+    }
+  });
+
+  it('refuses a reported cost above the budget', () => {
+    expect(() => calculateItemSettlement(100_000, 100_001)).toThrow(MoneyError);
   });
 });

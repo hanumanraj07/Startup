@@ -71,7 +71,7 @@ Each of these sounds reasonable, and each would harm the launch.
 | Excluded | Why |
 |---|---|
 | Any category beyond the launch seven (the six inspection categories plus pickup & delivery, added 2026-10-19) | Every category brings unfamiliar fraud and safety modes |
-| Purchasing on a requester's behalf, or cash handling | A worker carrying someone's ₹80,000 is a different, harder business. **Founder reversed this on 2026-10-18 for purchases (held and settled separately from the task payment), to be built in P3; still excluded until then.** See `ai/memory.md` |
+| Cash handling, or purchases outside the item budget | A worker carrying someone's ₹80,000 is a different, harder business. **Buying an item is in scope since 2026-10-19** on pickup & delivery tasks, through an item budget of up to ₹10,000 held in escrow and settled without commission. See `docs/11-payment-flow.md` |
 | Worker bidding | A negotiation round trip in a marketplace with no liquidity, and it worsens time to match |
 | Machine-learned matching | No training data exists, and a model cannot explain itself to a worker who asks why they rank low |
 | Wallets or stored balances | Holding user balances is a much heavier regulatory obligation than escrowing one transaction |

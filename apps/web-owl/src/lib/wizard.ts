@@ -1,25 +1,16 @@
-import { calculateSplit, rupeesToPaise, ZERO_DEDUCTIONS, type TaskSplit } from '@onsite/money';
-import { MAX_TASK_BUDGET_PAISE, MIN_TASK_BUDGET_PAISE } from '@onsite/validation';
+import { requesterTotal, rupeesToPaise } from '@onsite/money';
+import { MAX_ITEM_BUDGET_PAISE, MAX_TASK_BUDGET_PAISE, MIN_TASK_BUDGET_PAISE } from '@onsite/validation';
 import type { LocationMode } from '@onsite/types';
-import type { CategoryView, PickedLocation, ProofRequirement } from '@/lib/api-types';
+import type { CategoryView, PickedLocation, ProofRequirement, RequesterMoney } from '@/lib/api-types';
 
 /**
  * Pure rules for the task-posting wizard, kept out of the view so they can be
  * tested. Nothing here is authoritative: the server re-validates every field
- * and computes the real commission and payout when the draft is created.
+ * and computes the amounts itself when the draft is created.
  */
 
 export const STEPS = ['Category', 'Location', 'Details', 'Proof', 'Review & pay'] as const;
 export const LAST_STEP = STEPS.length - 1;
-
-/**
- * A rough, client-side illustration only. The server computes and returns the
- * authoritative split the moment the draft is created (docs/16-security-
- * requirements.md: commission and payout are never taken from the client).
- * 15% mirrors docs/02-business-model.md's headline rate; the real value can
- * differ if the deployment's env overrides it.
- */
-export const ILLUSTRATIVE_COMMISSION_BPS = 1500;
 
 export const FALLBACK_PROOF: ProofRequirement = { type: 'PHOTO', label: 'Photo evidence', required: true };
 
@@ -35,10 +26,28 @@ export function parseBudgetPaise(rupees: string): number | null {
   }
 }
 
-/** The pre-payment estimate shown beside the budget field, or null below the minimum budget. */
-export function estimateSplit(budgetPaise: number | null): TaskSplit | null {
+/**
+ * What the requester will pay, shown live beside the price fields, or null
+ * below the minimum task payment. Only the requester's own figures: how the
+ * platform divides them is never shown (founder decision 2026-10-19). The
+ * server computes the real amounts when the draft is created.
+ */
+export function estimateMoney(budgetPaise: number | null, itemBudgetPaise: number | null = 0): RequesterMoney | null {
   if (!budgetPaise || budgetPaise < MIN_TASK_BUDGET_PAISE) return null;
-  return calculateSplit(Math.min(budgetPaise, MAX_TASK_BUDGET_PAISE), ILLUSTRATIVE_COMMISSION_BPS, ZERO_DEDUCTIONS);
+  const taskPaymentPaise = Math.min(budgetPaise, MAX_TASK_BUDGET_PAISE);
+  const item = Math.min(itemBudgetPaise ?? 0, MAX_ITEM_BUDGET_PAISE);
+  return {
+    taskPaymentPaise,
+    itemBudgetPaise: item,
+    totalPaise: requesterTotal(taskPaymentPaise, item),
+    itemSpentPaise: null,
+    itemRefundPaise: null,
+  };
+}
+
+/** The item budget that goes with the task: zero unless it is a delivery and the user chose to have something bought. */
+export function effectiveItemBudget(locationMode: LocationMode, buyItem: boolean, itemBudgetPaise: number | null): number {
+  return locationMode === 'PICKUP_DROPOFF' && buyItem ? (itemBudgetPaise ?? 0) : 0;
 }
 
 /** A category's suggested proof, or a single photo requirement when it has none. */
@@ -87,6 +96,9 @@ export interface WizardInput {
   description: string;
   deadlineLocal: string;
   budgetPaise: number | null;
+  /** Pickup & delivery only: whether the worker should buy something, and the most they may spend. */
+  buyItem: boolean;
+  itemBudgetPaise: number | null;
   proofRequirements: readonly ProofRequirement[];
 }
 
@@ -104,13 +116,20 @@ export function canAdvance(step: number, input: WizardInput): boolean {
         Boolean(input.deadlineLocal) &&
         input.budgetPaise !== null &&
         input.budgetPaise >= MIN_TASK_BUDGET_PAISE &&
-        input.budgetPaise <= MAX_TASK_BUDGET_PAISE
+        input.budgetPaise <= MAX_TASK_BUDGET_PAISE &&
+        isItemBudgetReady(input)
       );
     case 3:
       return input.proofRequirements.length > 0 && input.proofRequirements.every((r) => r.label.trim().length > 0);
     default:
       return false;
   }
+}
+
+/** An item budget, when asked for, is a positive amount within the cap. */
+function isItemBudgetReady(input: WizardInput): boolean {
+  if (input.locationMode !== 'PICKUP_DROPOFF' || !input.buyItem) return true;
+  return input.itemBudgetPaise !== null && input.itemBudgetPaise > 0 && input.itemBudgetPaise <= MAX_ITEM_BUDGET_PAISE;
 }
 
 export interface DraftPayloadInput {
@@ -121,6 +140,8 @@ export interface DraftPayloadInput {
   /** Sent only for pickup & delivery categories. */
   dropoff: PickedLocation | null;
   budgetPaise: number;
+  /** Sent only when nonzero; the server refuses it outside pickup & delivery. */
+  itemBudgetPaise?: number;
   deadlineLocal: string;
   proofRequirements: readonly ProofRequirement[];
 }
@@ -138,6 +159,7 @@ export function buildDraftPayload(input: DraftPayloadInput) {
       dropoffAddress: composeAddress(input.dropoff),
     }),
     budgetPaise: input.budgetPaise,
+    ...(input.itemBudgetPaise ? { itemBudgetPaise: input.itemBudgetPaise } : {}),
     deadlineAt: new Date(input.deadlineLocal).toISOString(),
     proofRequirements: input.proofRequirements.map((r) => ({
       type: r.type,

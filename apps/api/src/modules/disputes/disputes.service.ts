@@ -1,12 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { CreateDisputeInput, DisputeStatementInput, ResolveDisputeInput } from '@onsite/validation';
-import { calculateDisputeSplit } from '@onsite/money';
+import { calculateDisputeSplit, calculateItemSettlement } from '@onsite/money';
 import { decodeCursor, encodeCursor } from '@onsite/utils';
 import { AuditService } from '../../common/audit.service';
 import { BusinessRuleError, ConflictError, ForbiddenError, NotFoundError } from '../../common/errors';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AutoApproveQueue } from '../../queue/auto-approve.queue';
 import { LedgerService } from '../payments/ledger.service';
+import { PaymentsService } from '../payments/payments.service';
+import { PayoutsService } from '../payments/payouts.service';
 import { NotificationService } from '../notifications/notification.service';
 import { StorageService } from '../storage/storage.service';
 import { assertTransitionAllowed, DISPUTABLE_STATUSES } from '../tasks/transitions';
@@ -41,6 +43,8 @@ export class DisputesService {
     private readonly notifications: NotificationService,
     private readonly audit: AuditService,
     private readonly storage: StorageService,
+    private readonly payments: PaymentsService,
+    private readonly payouts: PayoutsService,
   ) {}
 
   /**
@@ -310,17 +314,16 @@ export class DisputesService {
 
     if (input.resolution === 'RELEASE_TO_WORKER') {
       nextTaskStatus = 'COMPLETED';
-      await this.ledger.recordRelease({
+      // Identical to an approval: commission on the task payment, the item
+      // reimbursed and its unspent budget refunded, and a payout owed.
+      await this.payments.release({
         taskId: task.id,
-        paymentId: payment.id,
-        budgetPaise: Number(payment.amountPaise),
         commissionPaise: Number(task.commissionPaise),
         gstPaise: Number(task.gstPaise),
         tcsPaise: Number(task.tcsPaise),
         tdsPaise: Number(task.tdsPaise),
         workerPayoutPaise: Number(task.workerPayoutPaise),
-      });
-      await this.prisma.payment.update({ where: { id: payment.id }, data: { status: 'RELEASED', releasedAt: new Date() } });
+      }, { sendNow: false });
       if (task.assignedWorkerId) await this.bumpWorkerCompletionStats(task.assignedWorkerId);
     } else if (input.resolution === 'REFUND_TO_REQUESTER') {
       nextTaskStatus = 'CANCELLED';
@@ -343,19 +346,33 @@ export class DisputesService {
         throw new BusinessRuleError('A split resolution requires workerSharePercent.');
       }
       nextTaskStatus = 'COMPLETED';
-      const split = calculateDisputeSplit(Number(payment.amountPaise), input.workerSharePercent);
-      splitWorkerPaise = split.workerPaise;
-      splitRefundPaise = split.refundPaise;
+      // The percentage divides the task payment. An item the worker bought
+      // is reimbursed in full on a split (they handed it over; a dispute
+      // about it entirely is a refund), and its unspent budget refunded.
+      const split = calculateDisputeSplit(Number(task.budgetPaise), input.workerSharePercent);
+      const item = calculateItemSettlement(Number(task.itemBudgetPaise), Number(task.itemSpentPaise ?? 0));
+      splitWorkerPaise = split.workerPaise + item.reimbursePaise;
+      splitRefundPaise = split.refundPaise + item.refundPaise;
       await this.ledger.recordDisputeSplit({
         taskId: task.id,
         paymentId: payment.id,
         workerPaise: split.workerPaise,
         refundPaise: split.refundPaise,
+        itemReimbursePaise: item.reimbursePaise,
+        itemRefundPaise: item.refundPaise,
       });
       await this.prisma.payment.update({
         where: { id: payment.id },
-        data: { status: 'RELEASED', releasedAt: new Date(), refundAmountPaise: split.refundPaise },
+        data: { status: 'RELEASED', releasedAt: new Date(), refundAmountPaise: splitRefundPaise },
       });
+      if (task.assignedWorkerId && splitWorkerPaise > 0) {
+        await this.payouts.recordOwed({
+          taskId: task.id,
+          workerId: task.assignedWorkerId,
+          earningsPaise: split.workerPaise,
+          reimbursementPaise: item.reimbursePaise,
+        });
+      }
       if (task.assignedWorkerId && split.workerPaise > 0) await this.bumpWorkerCompletionStats(task.assignedWorkerId);
     }
 
@@ -407,6 +424,9 @@ export class DisputesService {
         .filter((id): id is string => Boolean(id))
         .map((id) => this.notifications.notify(id, resolvedNotifyPayload).catch((error) => this.logger.warn(String(error)))),
     );
+
+    // Sent now the task is COMPLETED, so a confirmed payout can mark it paid.
+    if (task.assignedWorkerId && nextTaskStatus === 'COMPLETED') await this.payouts.sendOwed(task.assignedWorkerId);
 
     this.logger.log(`Dispute ${disputeId} resolved (${input.resolution}) by admin ${adminId}.`);
     return this.toView(updatedDispute, []);

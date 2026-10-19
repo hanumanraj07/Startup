@@ -1,5 +1,4 @@
 import { Component, xml } from '@odoo/owl';
-import { formatPaise } from '@onsite/money';
 import { Icon } from '@/components/Icon';
 import { CategoryBadge } from '@/components/CategoryBadge';
 import type { CategoryView } from '@/lib/api-types';
@@ -33,7 +32,7 @@ export class CategoryStep extends Component {
           <CategoryBadge slug="c.slug" size="44"/>
           <span class="font-bold text-ink-900" t-out="c.name"/>
           <span class="text-sm text-ink-500" t-out="c.description"/>
-          <span class="tabular text-xs text-ink-400">Typically <t t-out="range(c)"/></span>
+          <span class="text-xs font-medium text-ink-400" t-out="modeLabel(c)"/>
         </button>
       </div>
     </div>`;
@@ -49,8 +48,9 @@ export class CategoryStep extends Component {
     return c.id === this.props.selectedId;
   }
 
-  range(c: CategoryView): string {
-    return `${formatPaise(c.suggestedMinPaise)}–${formatPaise(c.suggestedMaxPaise)}`;
+  /** What the next step will ask for. No price range: the requester sets the price (founder decision 2026-10-19). */
+  modeLabel(c: CategoryView): string {
+    return c.locationMode === 'PICKUP_DROPOFF' ? 'Pickup and drop-off · can include buying an item' : 'One place';
   }
 
   cardClass(c: CategoryView): string {

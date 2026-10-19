@@ -236,3 +236,48 @@ export function calculateCancellationCompensation(
 
   return Math.min(applyBps(budgetPaise, percentBps), capPaise, budgetPaise);
 }
+
+/**
+ * Buying an item for the requester (pickup & delivery only, founder decision
+ * 2026-10-19). The requester pays the task payment plus an item budget: the
+ * most the worker may spend. The worker pays at the shop, reports what it
+ * actually cost with a receipt, and on approval is reimbursed exactly that;
+ * whatever was not spent goes back to the requester.
+ *
+ * Commission is never taken on the item. It is calculated on the task payment
+ * alone by `calculateSplit`, and the item money passes through untouched.
+ */
+export function requesterTotal(taskPaymentPaise: Paise, itemBudgetPaise: Paise): Paise {
+  assertPaise(taskPaymentPaise, 'taskPaymentPaise');
+  assertPaise(itemBudgetPaise, 'itemBudgetPaise');
+  const total = taskPaymentPaise + itemBudgetPaise;
+  assertPaise(total, 'requesterTotal');
+  return total;
+}
+
+export interface ItemSettlement {
+  itemBudgetPaise: Paise;
+  itemSpentPaise: Paise;
+  /** Paid to the worker on top of their earnings. */
+  reimbursePaise: Paise;
+  /** The unspent part of the item budget, returned to the requester. */
+  refundPaise: Paise;
+}
+
+/** Throws if the worker reports spending more than the budget the requester set. */
+export function calculateItemSettlement(itemBudgetPaise: Paise, itemSpentPaise: Paise): ItemSettlement {
+  assertPaise(itemBudgetPaise, 'itemBudgetPaise');
+  assertPaise(itemSpentPaise, 'itemSpentPaise');
+  if (itemSpentPaise > itemBudgetPaise) {
+    throw new MoneyError(
+      `The item cost (${itemSpentPaise} paise) is more than the item budget (${itemBudgetPaise} paise).`,
+    );
+  }
+  return {
+    itemBudgetPaise,
+    itemSpentPaise,
+    reimbursePaise: itemSpentPaise,
+    // Remainder, so reimbursement and refund always reconstruct the budget.
+    refundPaise: itemBudgetPaise - itemSpentPaise,
+  };
+}

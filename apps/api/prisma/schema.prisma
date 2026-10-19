@@ -350,6 +350,7 @@ model PayoutAccount {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   type PayoutAccountType
+  accountHolderName   String? @map("account_holder_name")
   // Masked. The full value lives with the payment gateway, not here.
   accountNumberMasked String? @map("account_number_masked")
   ifsc                String?
@@ -360,6 +361,9 @@ model PayoutAccount {
   gatewayFundAccountId String? @map("gateway_fund_account_id")
   isVerified           Boolean @default(false) @map("is_verified")
   isDefault            Boolean @default(false) @map("is_default")
+  verifiedAt           DateTime? @map("verified_at")
+  /// Removed by the worker. Kept, not deleted, because past payouts point at it.
+  removedAt            DateTime? @map("removed_at")
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -489,6 +493,14 @@ model Task {
   tcsPaise          BigInt @default(0) @map("tcs_paise")
   tdsPaise          BigInt @default(0) @map("tds_paise")
   workerPayoutPaise BigInt @map("worker_payout_paise")
+
+  // BUYING AN ITEM, pickup & delivery only. The most the worker may spend,
+  // held with the task payment and never subject to commission; zero when
+  // nothing is bought. What it actually cost is reported at submission, with
+  // a receipt photo, and is what the worker is reimbursed on approval. The
+  // rest is refunded. Check constraints keep spent within the budget.
+  itemBudgetPaise BigInt  @default(0) @map("item_budget_paise")
+  itemSpentPaise  BigInt? @map("item_spent_paise")
 
   deadlineAt        DateTime  @map("deadline_at")
   /// submitted_at + 24h. The authoritative auto-approval deadline the sweeper reads.
@@ -728,7 +740,10 @@ model Payout {
   payoutAccountId String? @map("payout_account_id")
   payoutAccount   PayoutAccount? @relation(fields: [payoutAccountId], references: [id])
 
+  /// Everything transferred: earnings plus any item reimbursement.
   amountPaise BigInt       @map("amount_paise")
+  /// The part of amountPaise that repays an item the worker bought. Not earnings.
+  reimbursementPaise BigInt @default(0) @map("reimbursement_paise")
   status      PayoutStatus @default(PENDING)
   gatewayTransferId String? @map("gateway_transfer_id")
   idempotencyKey    String  @unique @map("idempotency_key")

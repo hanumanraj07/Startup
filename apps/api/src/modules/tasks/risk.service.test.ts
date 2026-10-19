@@ -82,16 +82,19 @@ describe('assertNotProhibited', () => {
     ).not.toThrow();
   });
 
-  it('blocks purchasing on the requester\'s behalf, the launch-scope exclusion', () => {
+  it('allows buying an item for the requester, which goes through the item budget', () => {
     expect(() =>
-      service.assertNotProhibited('Buy a laptop', 'Please buy this laptop for me and ship it'),
-    ).toThrow(BusinessRuleError);
+      service.assertNotProhibited('Buy a charger', 'Please buy a 65W USB-C charger for me from Croma and deliver it'),
+    ).not.toThrow();
   });
 
-  it('blocks a worker fronting money', () => {
+  it('blocks asking a worker to hand over or lend money', () => {
     expect(() =>
       service.assertNotProhibited('Urgent', 'Please advance me the cash and I will repay you'),
     ).toThrow(BusinessRuleError);
+    expect(() => service.assertNotProhibited('Help', 'Can you lend me some money until Friday')).toThrow(
+      BusinessRuleError,
+    );
   });
 
   it('does not block ordinary mentions of money or prices', () => {

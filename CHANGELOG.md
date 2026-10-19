@@ -4,6 +4,19 @@ Notable changes to OnSite. Format follows [Keep a Changelog](https://keepachange
 
 ## [Unreleased]
 
+### Added — 2026-10-19 · P3: pricing and payouts
+
+- **Set your own price.** The requester types what they will pay for the task (from ₹100); category price ranges are gone.
+- **"Buy something for me"** on pickup & delivery tasks: an item budget of up to ₹10,000 is held with the task payment. The worker pays at the shop, sends a receipt photo and the actual cost, and gets it back with their earnings; anything unspent is refunded. No commission is taken on the item.
+- **Commission is no longer shown** to requesters or workers. Requesters see what they pay; workers see what they earn.
+- **Worker payouts:** add a bank account or UPI ID, see what is ready, on the way and paid, tap "Pay out", and see every payout with its reference or the reason it failed. Failed payouts retry automatically.
+
+### Fixed — 2026-10-19
+
+- Icon-only buttons (proof delete, chat send) drew their icon 4 px wide.
+- A worker's "My tasks" list showed the task's gross price.
+- A dispute decided for the worker credited them in the ledger but never queued the payout.
+
 ### Added — 2026-10-19 · P2: real-time requests and tracking
 
 - **Incoming task requests** pop up for nearby workers with a 90-second countdown, the payout, distance and (for deliveries) the trip. The first to accept gets it; everyone else's request closes with "Another worker accepted this one first". If a whole wave declines, the next wider wave goes out at once.
