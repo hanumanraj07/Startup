@@ -65,6 +65,16 @@ docker logs onsite-worker 2>&1 | grep -E 'worker process started|Reconciliation|
 
 Roll back by stopping the new containers and starting the `-old-$SHA` ones (`docker start`, `docker update --restart unless-stopped`). A migration is not rolled back that way; restore the backup if one must be undone.
 
+**Build off this machine before real traffic.** On 2026-10-20 an image build on this 1 GB VM swapped so hard (compile 12.5 minutes, 1.5 GB of swap) that the live API stopped answering for a few seconds and SSH sessions dropped. Until the server is replaced (docs/22, #14), deploy when traffic is lowest; the better fix is to build the image in GitHub Actions, push it to a registry, and only pull it here.
+
+### Settings that switch on once the accounts exist
+
+Add to `~/onsite.env`, then recreate the API and worker containers (as in the deploy steps, same image):
+
+- Email (docs/22, #6): `EMAIL_PROVIDER=resend`, `RESEND_API_KEY=…`, `EMAIL_FROM=OnSite <no-reply@your-verified-domain>`.
+- Error reporting (#16): `SENTRY_DSN=…`. Then add a Sentry alert rule for new issues, and an uptime check on `https://onsite-api.duckdns.org/health/ready`.
+- Razorpay dashboard: the webhook must send `payment.captured`, `payment.failed`, `refund.processed`, `refund.failed`.
+
 ### Redis
 
 Run with persistence so a restart does not lose queued matching, auto-approve and notification jobs or rate-limit state (docs/22, #15). Recreating the container loses what the old one held; do it between deploys, when queues are near empty.

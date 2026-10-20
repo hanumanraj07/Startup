@@ -6,6 +6,24 @@ Newest entries at the top. Every entry states the decision, the reasoning, and w
 
 ---
 
+## 2026-10-20 — Deployed P6 and the audit fixes; CI gates production; what still needs the founder
+
+**The founder delegated:** "do all these yourself, I give you all permission."
+
+**Done:**
+- `main` and `owl-frontend` pushed. The backend was deployed by the docs/21 runbook: database backup, the 4 new migrations, then API and worker swapped, keeping the old containers for rollback. Redis was recreated with AOF persistence and a volume (#15), and every container now has log rotation (#26). The worker shows healthy for the first time.
+- On the first sweep, 3 expired tasks were refunded: the 2 the audit found plus one that expired since. Their Razorpay test-mode refunds were accepted (`rfnd_…`, PROCESSING). The first reconciliation was clean over 14 tasks, including a live Razorpay comparison of 3 payments.
+- CI passes for the first time since September. GitHub branch protection on `main` and `owl-frontend` requires `ci` (admins may still push, so the founder's direct pushes keep working). A Vercel deployment check ("GitHub CI", git-provider source, blocks the production alias, 15-minute timeout) holds production until `ci` passes. Proven live: a deployment was ready at 14:20:30, CI passed at 14:21:35, and production switched at 14:21:40.
+- Data retention decided and enforced (docs/06).
+- Email (Resend) and error reporting (Sentry) wired, waiting for their keys.
+
+**Not done, and why:**
+- Razorpay dashboard webhook events (`refund.processed`, `refund.failed`): the dashboard needs the founder's sign-in. Until then refunds are settled by the 30-minute poll.
+- Accounts and purchases (payout partner, email domain and Resend, Sentry, a bigger server, map and geocoding providers, paid hosting): Claude does not create accounts or make purchases for a person, even with permission. Each item's code side is ready or listed in docs/22.
+- Compliance (#31): needs a lawyer and a chartered accountant, not code.
+
+---
+
 ## 2026-10-20 — Reconciliation, worker health, retention, working CI, and a written runbook (docs/22, #25–#27, #29)
 
 - **Reconciliation (#25).** `ReconciliationService`, hourly in the worker and at `GET /admin/reconciliation`, read-only, error lines starting "Reconciliation:" for monitoring (#16) to alert on. Checks: ledger sums, escrow floor, escrow left after settlement, captures booked, refunds queued (compared only from the first refund row, since earlier refunds predate the outbox), refunds and payouts that gave up, and Razorpay's view of the last 48 hours of payments (50 per run). Rejected for now: Razorpay settlement reports (need the settlements API and a finance owner).

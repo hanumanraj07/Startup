@@ -2,6 +2,8 @@
 
 **Date:** 2026-10-20 · **Scope:** the whole system as deployed (`owl-frontend` / `main` at `31a2f03` in production, P6 at `9ec598f` locally) · **Question asked:** what will fail, conflict or lose money when thousands of requesters post tasks and thousands of workers complete them at the same time?
 
+**Deployed 2026-10-20.** Every item marked "fixed locally" below is now in production (backend `4288cf3`, frontend on `owl-frontend`). Production Redis now runs with persistence and every container with log rotation. The 3 stranded expired tasks were refunded through Razorpay on the first sweep, and the first reconciliation was clean. Still open, needing the owner: Razorpay webhook refund events (dashboard sign-in), and the account or purchase items #5, #6, #14, #16, #23, #24, plus #31 (legal).
+
 How this was checked: every money path, state change, background job, queue and external service was read in the code, and the live server and production database were inspected read-only (resources, containers, Redis settings, logs, and task/payment states). Nothing was changed.
 
 Severity:
