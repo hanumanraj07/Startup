@@ -48,10 +48,11 @@ function draft(overrides: Record<string, unknown> = {}) {
 function build(task: ReturnType<typeof draft>, payment: { status: string; amountPaise: bigint } | null) {
   const taskUpdate = vi.fn().mockResolvedValue({});
   const prisma = {
-    task: { findUnique: vi.fn().mockResolvedValue(task), update: taskUpdate },
+    task: { findUnique: vi.fn().mockResolvedValue(task), update: taskUpdate, updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     taskStatusHistory: { create: vi.fn().mockResolvedValue({}) },
-    $transaction: vi.fn(async (ops: Promise<unknown>[]) => Promise.all(ops)),
+    $transaction: vi.fn(),
   };
+  prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma));
   const payments = { forTask: vi.fn().mockResolvedValue(payment) };
   const moderation = { screenTask: vi.fn().mockResolvedValue(undefined), assertNotRestricted: vi.fn().mockResolvedValue(undefined) };
   const matchingQueue = { scheduleTier: vi.fn().mockResolvedValue(undefined) };

@@ -6,7 +6,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
 import { PaymentsService } from '../payments/payments.service';
 import { RealtimePublisher } from '../realtime/realtime.publisher';
-import { assertTransitionAllowed } from './transitions';
+import { assertTransitionAllowed, AWAITING_REVIEW, transitionTask } from './transitions';
 
 /**
  * The requester's side of review — approve, releasing payment, or reject,
@@ -58,28 +58,23 @@ export class ReviewService {
     // Same race as completeApproval's: a dispute raised in the instant
     // between the check above and this write must win, not be silently
     // overwritten by a rejection that no longer reflects reality.
-    const result = await this.prisma.task.updateMany({
-      where: { id: taskId, status: { in: ['SUBMITTED', 'UNDER_REVIEW'] } },
+    const rejected = await transitionTask(this.prisma, {
+      taskId,
+      from: task.status,
+      alsoFrom: AWAITING_REVIEW,
+      to: 'IN_PROGRESS',
+      actorRole: 'REQUESTER',
+      actorUserId: requesterId,
+      reason,
       // Rejection restarts the review clock: it is cleared here and set again
       // only when the worker resubmits. See docs/09-task-lifecycle.md.
-      data: { status: 'IN_PROGRESS', reviewDeadlineAt: null },
+      data: { reviewDeadlineAt: null },
     });
-    if (result.count === 0) {
+    if (!rejected) {
       throw new ConflictError(
         'This task can no longer be rejected — its status changed, most likely because a dispute was just raised.',
       );
     }
-
-    await this.prisma.taskStatusHistory.create({
-      data: {
-        taskId,
-        fromStatus: task.status,
-        toStatus: 'IN_PROGRESS',
-        actorUserId: requesterId,
-        actorRole: 'REQUESTER',
-        reason,
-      },
-    });
     this.realtime.taskStatus(taskId, 'IN_PROGRESS');
 
     await this.autoApproveQueue.cancel(taskId);
@@ -145,27 +140,22 @@ export class ReviewService {
   ): Promise<{ acted: boolean }> {
     assertTransitionAllowed(task.status, 'COMPLETED', actorRole, { hasOpenDispute: false });
 
-    const result = await this.prisma.task.updateMany({
-      where: { id: task.id, status: { in: ['SUBMITTED', 'UNDER_REVIEW'] } },
-      data: { status: 'COMPLETED', completedAt: new Date() },
+    const completed = await transitionTask(this.prisma, {
+      taskId: task.id,
+      from: task.status,
+      alsoFrom: AWAITING_REVIEW,
+      to: 'COMPLETED',
+      actorRole,
+      actorUserId,
+      reason: actorRole === 'SYSTEM' ? 'Auto-approved after the 24-hour review window.' : undefined,
+      data: { completedAt: new Date() },
     });
-    if (result.count === 0) {
+    if (!completed) {
       this.logger.log(
         `Task ${task.id}: completion skipped — its status changed before this could act, most likely a dispute winning the race.`,
       );
       return { acted: false };
     }
-
-    await this.prisma.taskStatusHistory.create({
-      data: {
-        taskId: task.id,
-        fromStatus: task.status,
-        toStatus: 'COMPLETED',
-        actorUserId,
-        actorRole,
-        reason: actorRole === 'SYSTEM' ? 'Auto-approved after the 24-hour review window.' : undefined,
-      },
-    });
     this.realtime.taskStatus(task.id, 'COMPLETED');
 
     // Only reached once this call has won the race above — money moves

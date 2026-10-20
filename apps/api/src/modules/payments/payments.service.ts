@@ -23,6 +23,13 @@ import { PayoutsService } from './payouts.service';
  * money state forward, per docs/16-security-requirements.md and docs/11's
  * "the webhook is the only thing that moves payment state forward."
  */
+/** Payment statuses a gateway capture may still move to CAPTURED. */
+const CAPTURABLE: PaymentStatus[] = ['CREATED', 'AUTHORIZED', 'FAILED'];
+/** An order unpaid for this long without a webhook is asked about directly. */
+const RECONCILE_AFTER_MS = 5 * 60_000;
+/** Orders older than this are left alone: Razorpay order payments do not arrive days later. */
+const RECONCILE_FOR_MS = 3 * 24 * 3_600_000;
+
 @Injectable()
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
@@ -205,28 +212,92 @@ export class PaymentsService {
       this.logger.warn(`payment.captured for unknown order ${entity.order_id} (payment ${entity.id}).`);
       return;
     }
-    if (payment.status === 'CAPTURED') return; // already processed — replay, not an error
+    await this.markCaptured(payment.id, entity.id);
+  }
 
-    await this.prisma.payment.update({
-      where: { id: payment.id },
-      data: { status: 'CAPTURED', gatewayPaymentId: entity.id, capturedAt: new Date() },
-    });
-
-    await this.ledger.recordCapture({
-      taskId: payment.taskId,
-      paymentId: payment.id,
-      amountPaise: Number(payment.amountPaise),
+  /**
+   * CREATED (or FAILED: a later attempt on the same order can succeed) to
+   * CAPTURED, with the escrow entry, in one transaction. The conditional
+   * claim means two deliveries of the same webhook arriving together, or the
+   * webhook and the poller, record the capture once (docs/22, #12). Returns
+   * whether this call recorded it.
+   */
+  private async markCaptured(paymentId: string, gatewayPaymentId: string): Promise<boolean> {
+    return this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.payment.updateMany({
+        where: { id: paymentId, status: { in: CAPTURABLE } },
+        data: { status: 'CAPTURED', gatewayPaymentId, capturedAt: new Date(), failureReason: null },
+      });
+      if (claimed.count === 0) return false; // already captured — a replay, not an error
+      const payment = await tx.payment.findUniqueOrThrow({ where: { id: paymentId } });
+      await this.ledger.recordCapture(
+        { taskId: payment.taskId, paymentId: payment.id, amountPaise: Number(payment.amountPaise) },
+        tx,
+      );
+      return true;
     });
   }
 
   private async failFromWebhook(entity: RazorpayPaymentEntity): Promise<void> {
-    const payment = await this.prisma.payment.findFirst({ where: { gatewayOrderId: entity.order_id } });
-    if (!payment || payment.status === 'CAPTURED') return;
-
-    await this.prisma.payment.update({
-      where: { id: payment.id },
+    // Conditional, so a failed attempt reported after (or alongside) a
+    // successful one never takes a captured payment back to FAILED.
+    await this.prisma.payment.updateMany({
+      where: { gatewayOrderId: entity.order_id, status: { in: ['CREATED', 'AUTHORIZED'] } },
       data: { status: 'FAILED', failureReason: entity.error_description ?? 'Payment failed at the gateway.' },
     });
+  }
+
+  /**
+   * The webhook's backstop (docs/22, #12). A webhook can be lost: the server
+   * was down, the secret was wrong, the gateway gave up retrying. The
+   * customer has paid but the task never publishes. Every order still
+   * unpaid after a few minutes is asked about directly, and a capture the
+   * gateway reports is recorded exactly as the webhook would have. Covers
+   * task payments and item top-ups. Run by the sweeper.
+   */
+  async reconcilePending(now = new Date()): Promise<number> {
+    const env = loadEnv();
+    if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) return 0;
+    const window = { lte: new Date(now.getTime() - RECONCILE_AFTER_MS), gte: new Date(now.getTime() - RECONCILE_FOR_MS) };
+
+    const [payments, topUps] = await Promise.all([
+      this.prisma.payment.findMany({
+        where: { gateway: 'RAZORPAY', status: { in: CAPTURABLE }, gatewayOrderId: { not: null }, createdAt: window },
+        select: { id: true, gatewayOrderId: true },
+        take: 50,
+      }),
+      this.prisma.itemPurchase.findMany({
+        where: { topUpGateway: 'RAZORPAY', topUpGatewayOrderId: { not: null }, topUpCapturedAt: null, updatedAt: window },
+        select: { id: true, topUpGatewayOrderId: true },
+        take: 50,
+      }),
+    ]);
+
+    let recorded = 0;
+    for (const p of payments) {
+      try {
+        const gatewayPaymentId = p.gatewayOrderId ? await this.razorpay.capturedOrderPayment(p.gatewayOrderId) : null;
+        if (gatewayPaymentId && (await this.markCaptured(p.id, gatewayPaymentId))) {
+          recorded += 1;
+          this.logger.warn(`Payment ${p.id} was captured at the gateway with no webhook; recorded by the poller.`);
+        }
+      } catch (error) {
+        this.logger.warn(`Could not check order ${p.gatewayOrderId} with the gateway: ${String(error)}`);
+      }
+    }
+    for (const t of topUps) {
+      try {
+        const gatewayPaymentId = t.topUpGatewayOrderId ? await this.razorpay.capturedOrderPayment(t.topUpGatewayOrderId) : null;
+        if (gatewayPaymentId) {
+          await this.captureTopUp(t.id, gatewayPaymentId);
+          recorded += 1;
+          this.logger.warn(`Top-up for bill ${t.id} was captured at the gateway with no webhook; recorded by the poller.`);
+        }
+      } catch (error) {
+        this.logger.warn(`Could not check top-up order ${t.topUpGatewayOrderId} with the gateway: ${String(error)}`);
+      }
+    }
+    return recorded;
   }
 
   async getForTask(taskId: string, requesterId: string) {

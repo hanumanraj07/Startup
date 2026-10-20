@@ -189,9 +189,11 @@ Statuses: `PENDING` → `PROCESSING` (gateway accepted) → `PROCESSED`; `FAILED
 | Failure | Response |
 |---|---|
 | Payment fails | Task stays `DRAFT`. Never published, never shown to a worker |
-| Webhook never arrives | Reconciliation job polls the gateway for pending payments older than 10 minutes. **The webhook is the fast path; polling is the guarantee** |
-| Webhook arrives twice | Deduplicated on event id |
-| Webhook arrives out of order | Payment state transitions are guarded; a stale event cannot move state backwards |
+| Webhook never arrives | `PaymentsService.reconcilePending` (every sweeper tick) asks the gateway about task payments and item top-ups still unpaid after 5 minutes, up to 3 days old, and records a capture exactly as the webhook would. **The webhook is the fast path; polling is the guarantee** |
+| Webhook arrives twice | Deduplicated on event id, and the capture itself is a conditional claim in one transaction with its escrow entry, so two deliveries arriving together record it once |
+| Webhook arrives out of order | Payment state transitions are guarded; a stale event cannot move state backwards. `payment.failed` only fails a payment not yet captured |
+| The same money moved twice | Refund, release and dispute settlement each claim the payment before writing a ledger entry, and the ledger refuses any write that would take a task's escrow below zero |
+| Crash between a status and its money | The stranded-money sweep refunds or releases a finished task whose payment is still held, the way a dispute decided when there was one |
 | Payout fails | Retried with backoff. After repeated failure, flagged for admin intervention with an audit trail |
 | Release succeeds, payout job lost | The stuck-payout sweeper finds `COMPLETED` tasks with no processed payout |
 | Ledger does not balance | Reconciliation job alerts. This is treated as a serious incident, not a warning |

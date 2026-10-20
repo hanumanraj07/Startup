@@ -19,8 +19,11 @@ function fakePrisma(task: Record<string, unknown> | null, updateManyCount: numbe
     task: { findUnique: vi.fn().mockResolvedValue(task), updateMany },
     taskStatusHistory: { create: historyCreate, findFirst: vi.fn().mockResolvedValue({ actorRole: 'SYSTEM' }) },
     workerProfile: { findUnique: workerProfileFindUnique, update: vi.fn() },
-    $transaction: vi.fn(async (ops: Promise<unknown>[]) => Promise.all(ops)),
+    $transaction: vi.fn(),
   };
+  client.$transaction.mockImplementation(async (arg: unknown) =>
+    typeof arg === 'function' ? (arg as (tx: unknown) => Promise<unknown>)(client) : Promise.all(arg as Promise<unknown>[]),
+  );
 
   return { client, updateMany, historyCreate };
 }

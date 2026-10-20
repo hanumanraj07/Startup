@@ -6,6 +6,22 @@ Newest entries at the top. Every entry states the decision, the reasoning, and w
 
 ---
 
+## 2026-10-20 — Production audit P1 (#8–#13, #28): every status write is a compare-and-set; money claims before it moves; the ledger refuses an overdraft; lost webhooks are polled
+
+The founder said "yes continue" after the P0 fixes. These are the next items in docs/22's order.
+
+- **One status writer (#8, #28).** `writeTransition(tx, {taskId, from, to, alsoFrom?, where?, data?, actor…})` in `transitions.ts` is the only place task status is written, restoring the rule CLAUDE.md always stated. It is `UPDATE … WHERE id AND status IN (<what the caller read>, …alsoFrom) AND <caller conditions>`; the history row is written in the same transaction, only by the winner; false means "lost the race" and the caller writes nothing more (409 "This task changed a moment ago"). `alsoFrom` exists for reads that can be overtaken harmlessly: PUBLISHED becoming MATCHING under a cancel, an accept or an expiry; SUBMITTED becoming UNDER_REVIEW under an approval. Conditions per path: cancel and expiry need no assigned worker (expiry also a passed deadline), accept an unpassed deadline, matching no assigned worker, every worker step the same worker still assigned.
+  - Rejected: a version column (optimistic locking on every column). The status is the only thing these races fight over, and comparing it is what the accept path already did correctly.
+- **The concurrent-task limit on accept (#13).** Counted inside the accept transaction after writing the worker's own profile row, which row-locks it, so one worker's parallel accepts take turns. Rejected: `SELECT … FOR UPDATE` via raw SQL (raw SQL belongs in the geo repository only, and the profile write is already needed for `tasksAccepted`).
+- **Disputes (#9, #10, #11).** Raise: the freeze and the dispute record are one transaction. Resolve: a claim first (dispute to RESOLVED only if open, with the decision and the split computed then; task off DISPUTED only if DISPUTED; one transaction), then `settleResolution`, which claims the payment before any ledger entry and is safe to rerun. The stranded-money sweep calls it for a finished task with a resolved dispute and a held payment, so a crash between the two steps is finished the way the admin decided, never as a plain release or refund.
+- **Escrow floor (#9).** `LedgerService.writeEntries` checks, in the same transaction, that a group taking money out of escrow leaves it at zero or above, and throws otherwise. The balancing rule alone could not catch a double booking, since a doubled group still sums to zero.
+- **Webhooks (#12).** Capture is a conditional claim (`CREATED`/`AUTHORIZED`/`FAILED` → `CAPTURED`) in one transaction with the escrow entry. `payment.failed` only fails a payment not yet captured. `PaymentsService.reconcilePending` (sweeper) asks Razorpay about task payments and top-ups unpaid after 5 minutes, up to 3 days old.
+- **Still open from #10:** status and money are still separate transactions; the sweeps make the gap self-healing, not impossible. A payment marked released whose ledger write was lost is not detected until the ledger reconciliation job (#25).
+
+**Verified against the local API and Postgres:** 20 rounds of accept and cancel fired at the same instant gave all three orderings, including the true race (cancel passed its check, then lost the write), never two winners and never an inconsistent task. Five accepts by one worker at once: 3 succeeded, 2 refused. Ledger unbalanced 0, escrow overdrawn 0, no server errors. API 323 tests.
+
+---
+
 ## 2026-10-20 — Production audit P0 fixes: broadcasts never block money, stranded payments are swept, the price freezes once paid, refunds reach the gateway
 
 The production readiness audit (`docs/22-production-readiness-audit.md`) found four P0 defects; the founder asked for them to be fixed one by one.

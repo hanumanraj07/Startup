@@ -28,7 +28,15 @@ import { OffersService } from '../matching/offers.service';
 import { LiveLocationService } from '../realtime/live-location.service';
 import { RealtimePublisher } from '../realtime/realtime.publisher';
 import { SafetyService } from '../safety/safety.service';
-import { assertTransitionAllowed, checkTransition, REMOVABLE_BEFORE_ARRIVAL } from './transitions';
+import {
+  ACTIVE_WORK,
+  assertTransitionAllowed,
+  checkTransition,
+  REMOVABLE_BEFORE_ARRIVAL,
+  TASK_CHANGED_MESSAGE,
+  transitionTask,
+  writeTransition,
+} from './transitions';
 import { RiskService } from './risk.service';
 import { PaymentsService } from '../payments/payments.service';
 
@@ -79,6 +87,9 @@ export interface FeedItem {
   dropoff: { approximateAddress: string; tripDistanceMeters: number } | null;
   requester: { displayName: string; verificationLevel: number };
 }
+
+/** Open for acceptance; matching moves a task from the first to the second at any moment. */
+const OPEN_STATUSES: readonly TaskStatus[] = ['PUBLISHED', 'MATCHING'];
 
 @Injectable()
 export class TasksService {
@@ -543,21 +554,15 @@ export class TasksService {
     const env = loadEnv();
     const firstTier = env.MATCH_TIER_RADII_M[0] ?? 3_000;
 
-    await this.prisma.$transaction([
-      this.prisma.task.update({
-        where: { id: taskId },
-        data: { status: 'PUBLISHED', publishedAt: new Date(), currentRadiusMeters: firstTier },
-      }),
-      this.prisma.taskStatusHistory.create({
-        data: {
-          taskId,
-          fromStatus: task.status,
-          toStatus: 'PUBLISHED',
-          actorUserId: requesterId,
-          actorRole: 'REQUESTER',
-        },
-      }),
-    ]);
+    const published = await transitionTask(this.prisma, {
+      taskId,
+      from: task.status,
+      to: 'PUBLISHED',
+      actorRole: 'REQUESTER',
+      actorUserId: requesterId,
+      data: { publishedAt: new Date(), currentRadiusMeters: firstTier },
+    });
+    if (!published) throw new ConflictError(TASK_CHANGED_MESSAGE);
     this.publisher.taskStatus(taskId, 'PUBLISHED');
 
     // Hand off to the background matching pipeline. Best-effort: if Redis is
@@ -582,31 +587,26 @@ export class TasksService {
 
     assertTransitionAllowed(task.status, 'CANCELLED', 'REQUESTER');
 
-    const payment = await this.prisma.payment.findUnique({ where: { taskId } });
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.task.update({
-        where: { id: taskId },
-        data: { status: 'CANCELLED', cancelledAt: new Date(), cancellationReason: reason },
-      });
-      await tx.taskStatusHistory.create({
-        data: {
-          taskId,
-          fromStatus: task.status,
-          toStatus: 'CANCELLED',
-          actorUserId: requesterId,
-          actorRole: 'REQUESTER',
-          reason,
-        },
-      });
+    // Only while nobody is assigned: a worker accepting in the same instant
+    // wins or loses here, never both (docs/22, #8). An open task may move
+    // from PUBLISHED to MATCHING under us; that is not a conflict.
+    const cancelled = await transitionTask(this.prisma, {
+      taskId,
+      from: task.status,
+      alsoFrom: OPEN_STATUSES.includes(task.status) ? OPEN_STATUSES : [],
+      to: 'CANCELLED',
+      actorRole: 'REQUESTER',
+      actorUserId: requesterId,
+      reason,
+      where: { assignedWorkerId: null },
+      data: { cancelledAt: new Date(), cancellationReason: reason },
     });
+    if (!cancelled) throw new ConflictError(TASK_CHANGED_MESSAGE);
     this.publisher.taskStatus(taskId, 'CANCELLED');
     await this.matchingQueue.cancelPending(taskId);
     await this.offers.withdraw(taskId).catch(() => undefined);
 
-    if (payment && payment.status === 'CAPTURED') {
-      await this.payments.refundFull(taskId);
-    }
+    await this.payments.refundFull(taskId);
 
     return this.getById(taskId, requesterId);
   }
@@ -635,18 +635,19 @@ export class TasksService {
     const check = checkTransition(task.status, 'EXPIRED', 'SYSTEM');
     if (!check.allowed) return { acted: false };
 
-    await this.prisma.$transaction([
-      this.prisma.task.update({ where: { id: taskId }, data: { status: 'EXPIRED' } }),
-      this.prisma.taskStatusHistory.create({
-        data: {
-          taskId,
-          fromStatus: task.status,
-          toStatus: 'EXPIRED',
-          actorRole: 'SYSTEM',
-          reason: 'Deadline passed with no worker accepted.',
-        },
-      }),
-    ]);
+    // Conditional on nobody being assigned and the deadline having passed,
+    // so a worker accepting at the deadline and the sweeper expiring the
+    // task cannot both win (docs/22, #8).
+    const expired = await transitionTask(this.prisma, {
+      taskId,
+      from: task.status,
+      alsoFrom: OPEN_STATUSES.includes(task.status) ? OPEN_STATUSES : [],
+      to: 'EXPIRED',
+      actorRole: 'SYSTEM',
+      reason: 'Deadline passed with no worker accepted.',
+      where: { assignedWorkerId: null, deadlineAt: { lte: new Date() } },
+    });
+    if (!expired) return { acted: false };
     this.publisher.taskStatus(taskId, 'EXPIRED');
 
     await this.matchingQueue.cancelPending(taskId);
@@ -762,39 +763,46 @@ export class TasksService {
     if (!check.allowed) {
       throw new ConflictError(check.reason ?? 'This task cannot be accepted right now.');
     }
-
-    // THE atomic operation. Prisma issues this as a single UPDATE ... WHERE
-    // statement; count === 0 means another worker won the race between our
-    // read above and this write.
-    const result = await this.prisma.task.updateMany({
-      where: { id: taskId, status: { in: ['PUBLISHED', 'MATCHING'] }, assignedWorkerId: null },
-      data: { status: 'ASSIGNED', assignedWorkerId: workerId, assignedAt: new Date() },
-    });
-
-    if (result.count === 0) {
-      throw new ConflictError('Another worker accepted this task first.');
+    if (task.deadlineAt.getTime() <= Date.now()) {
+      throw new ConflictError('This task\'s deadline has passed.');
     }
+
+    const maxActive = loadEnv().MAX_CONCURRENT_TASKS_PER_WORKER;
+    await this.prisma.$transaction(async (tx) => {
+      // Writing the worker's own profile row first locks it until commit, so
+      // two accepts by the same worker take turns and the count below sees
+      // the other's result: the limit holds under concurrency (docs/22, #13).
+      await tx.workerProfile.update({
+        where: { userId: workerId },
+        data: { tasksAccepted: { increment: 1 }, lastActiveAt: new Date() },
+      });
+      const active = await tx.task.count({ where: { assignedWorkerId: workerId, status: { in: [...ACTIVE_WORK] } } });
+      if (active >= maxActive) {
+        throw new BusinessRuleError(
+          `You already have ${active} tasks in progress. Finish one before accepting another.`,
+        );
+      }
+
+      // THE atomic operation: a conditional UPDATE ... WHERE that only the
+      // first of several racing workers can win. The deadline is part of the
+      // condition, so the expiry sweep and an accept cannot both win either.
+      const won = await writeTransition(tx, {
+        taskId,
+        from: task.status,
+        alsoFrom: OPEN_STATUSES,
+        to: 'ASSIGNED',
+        actorRole: 'WORKER',
+        actorUserId: workerId,
+        where: { assignedWorkerId: null, deadlineAt: { gt: new Date() } },
+        data: { assignedWorkerId: workerId, assignedAt: new Date() },
+      });
+      if (!won) throw new ConflictError('Another worker accepted this task first.');
+    });
 
     // Best-effort: a pending tier-expansion job left in Redis after this
     // would only ever run into the "already assigned" no-op guard in
     // MatchingService.runTierPass, but there is no reason to leave it ticking.
     await this.matchingQueue.cancelPending(taskId);
-
-    await this.prisma.$transaction([
-      this.prisma.taskStatusHistory.create({
-        data: {
-          taskId,
-          fromStatus: task.status,
-          toStatus: 'ASSIGNED',
-          actorUserId: workerId,
-          actorRole: 'WORKER',
-        },
-      }),
-      this.prisma.workerProfile.update({
-        where: { userId: workerId },
-        data: { tasksAccepted: { increment: 1 }, lastActiveAt: new Date() },
-      }),
-    ]);
     this.publisher.taskStatus(taskId, 'ASSIGNED');
     // Everyone else's request disappears at once, and the requester hears
     // about it wherever they are in the app, not only on the task page.
@@ -940,29 +948,23 @@ export class TasksService {
     if (!workerId) throw new BusinessRuleError('No worker is assigned to this task.');
 
     await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.task.updateMany({
-        where: { id: task.id, status: task.status, assignedWorkerId: workerId },
-        data: { status: 'MATCHING', assignedWorkerId: null, assignedAt: null },
+      const updated = await writeTransition(tx, {
+        taskId: task.id,
+        from: task.status,
+        to: 'MATCHING',
+        actorRole: initiatedBy,
+        actorUserId,
+        reason:
+          initiatedBy === 'WORKER'
+            ? `Worker left the task: ${RELEASE_REASON_LABEL[reason] ?? reason}${note ? ` (${note})` : ''}.`
+            : `Requester removed the worker: ${RELEASE_REASON_LABEL[reason] ?? reason}${note ? ` (${note})` : ''}.`,
+        where: { assignedWorkerId: workerId },
+        data: { assignedWorkerId: null, assignedAt: null },
       });
-      if (updated.count === 0) {
-        throw new ConflictError('This task changed a moment ago. Refresh to see its current state.');
-      }
+      if (!updated) throw new ConflictError(TASK_CHANGED_MESSAGE);
 
       await tx.taskRelease.create({
         data: { taskId: task.id, workerId, initiatedBy, fromStatus: task.status, reason, note },
-      });
-      await tx.taskStatusHistory.create({
-        data: {
-          taskId: task.id,
-          fromStatus: task.status,
-          toStatus: 'MATCHING',
-          actorUserId,
-          actorRole: initiatedBy,
-          reason:
-            initiatedBy === 'WORKER'
-              ? `Worker left the task: ${RELEASE_REASON_LABEL[reason] ?? reason}${note ? ` (${note})` : ''}.`
-              : `Requester removed the worker: ${RELEASE_REASON_LABEL[reason] ?? reason}${note ? ` (${note})` : ''}.`,
-        },
       });
       await tx.taskProof.deleteMany({ where: { taskId: task.id, workerId } });
       // An unanswered bill goes with the worker; the next one sends their own.

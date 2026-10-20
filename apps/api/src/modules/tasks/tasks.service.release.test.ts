@@ -70,7 +70,7 @@ describe('TasksService.leave', () => {
     await expect(service.leave('t1', WORKER, { reason: 'PERSONAL_EMERGENCY' })).resolves.toEqual({ status: 'MATCHING' });
 
     expect(tx.task.updateMany).toHaveBeenCalledWith({
-      where: { id: 't1', status: 'IN_PROGRESS', assignedWorkerId: WORKER },
+      where: { assignedWorkerId: WORKER, id: 't1', status: { in: ['IN_PROGRESS'] } },
       data: { status: 'MATCHING', assignedWorkerId: null, assignedAt: null },
     });
     expect(tx.taskRelease.create).toHaveBeenCalledWith({

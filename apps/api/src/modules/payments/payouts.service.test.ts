@@ -77,7 +77,7 @@ describe('PayoutsService.process', () => {
       { taskId: 't1', payoutId: 'po-1', amountPaise: 112_000, kind: 'EARNINGS' },
       expect.anything(),
     );
-    expect(taskUpdateMany).toHaveBeenCalledWith({ where: { id: 't1', status: 'COMPLETED' }, data: { status: 'PAYMENT_RELEASED' } });
+    expect(taskUpdateMany).toHaveBeenCalledWith({ where: { id: 't1', status: { in: ['COMPLETED'] } }, data: { status: 'PAYMENT_RELEASED' } });
     expect(notifications.notify).toHaveBeenCalledWith('w1', expect.objectContaining({ event: 'PAYMENT_RELEASED' }));
   });
 

@@ -34,6 +34,13 @@ export class LedgerService {
    * (an outbox), which RefundsService sends. A refund can therefore never be
    * booked without one, from any caller (docs/22, #4: refunds used to be
    * bookkeeping only).
+   *
+   * And escrow can never go below zero: a group that takes money out of a
+   * task's escrow is checked against the balance in the same transaction and
+   * refused if it would overdraw it. A double release or refund that slipped
+   * past its caller's claim fails here instead of paying twice (docs/22, #9);
+   * the old balancing check alone could not see it, since a doubled group
+   * still sums to zero.
    */
   async writeEntries(
     entries: {
@@ -62,6 +69,8 @@ export class LedgerService {
       throw new Error('A refund entry must name its task, so the gateway refund can be queued. This is a defect.');
     }
 
+    const escrowTaskId = entries.find((e) => e.account === 'ESCROW' && e.amountPaise < 0)?.taskId;
+
     const write = async (client: Prisma.TransactionClient) => {
       await client.ledgerEntry.createMany({
         data: entries.map((e) => ({
@@ -75,10 +84,16 @@ export class LedgerService {
         })),
       });
       if (refundPaise > 0 && refundTaskId) await this.queueRefunds(client, refundTaskId, refundPaise);
+      if (escrowTaskId) {
+        const held = await this.escrowBalance(escrowTaskId, client);
+        if (held < 0) {
+          throw new Error(`Task ${escrowTaskId}: this would overdraw its escrow by ${-held} paise. Refused; this is a defect, most likely money moved twice.`);
+        }
+      }
     };
 
     if (tx) await write(tx);
-    else if (refundPaise > 0) await this.prisma.$transaction(write);
+    else if (refundPaise > 0 || escrowTaskId) await this.prisma.$transaction(write);
     else await write(this.prisma);
   }
 
@@ -152,11 +167,14 @@ export class LedgerService {
    *   REQUESTER_FUNDS  -budget
    *   ESCROW           +budget
    */
-  async recordCapture(params: {
-    taskId: string;
-    paymentId: string;
-    amountPaise: number;
-  }): Promise<void> {
+  async recordCapture(
+    params: {
+      taskId: string;
+      paymentId: string;
+      amountPaise: number;
+    },
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
     await this.writeEntries([
       {
         taskId: params.taskId,
@@ -174,7 +192,7 @@ export class LedgerService {
         amountPaise: params.amountPaise,
         description: 'Funds held in escrow pending task completion',
       },
-    ]);
+    ], tx);
   }
 
   /**

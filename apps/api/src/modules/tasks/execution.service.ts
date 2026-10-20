@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { ArriveInput, BlockerInput, PresignUploadInput, RecordProofInput } from '@onsite/validation';
-import { BusinessRuleError, ForbiddenError, NotFoundError } from '../../common/errors';
+import { BusinessRuleError, ConflictError, ForbiddenError, NotFoundError } from '../../common/errors';
 import { loadEnv } from '../../config/env';
 import { GeoRepository } from '../../repositories/geo.repository';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -10,7 +10,7 @@ import { ItemPurchasesService } from '../payments/item-purchases.service';
 import { LiveLocationService } from '../realtime/live-location.service';
 import { RealtimePublisher } from '../realtime/realtime.publisher';
 import { StorageService } from '../storage/storage.service';
-import { assertTransitionAllowed } from './transitions';
+import { assertTransitionAllowed, TASK_CHANGED_MESSAGE, writeTransition } from './transitions';
 
 /** How long after capture an upload is treated as suspiciously delayed. */
 const UPLOAD_DELAY_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2 hours
@@ -66,8 +66,21 @@ export class ExecutionService {
     });
     if (!measurement) throw new NotFoundError('Task not found.');
 
-    await this.prisma.$transaction([
-      this.prisma.arrivalRecord.create({
+    await this.prisma.$transaction(async (tx) => {
+      const moved = await writeTransition(tx, {
+        taskId,
+        from: task.status,
+        to: 'ARRIVED',
+        actorRole: 'WORKER',
+        actorUserId: workerId,
+        where: { assignedWorkerId: workerId },
+        metadata: {
+          distanceFromTaskMeters: measurement.distanceMeters,
+          isWithinGeofence: measurement.isWithinGeofence,
+        },
+      });
+      if (!moved) throw new ConflictError(TASK_CHANGED_MESSAGE);
+      await tx.arrivalRecord.create({
         data: {
           taskId,
           workerId,
@@ -77,22 +90,8 @@ export class ExecutionService {
           distanceFromTaskMeters: measurement.distanceMeters,
           isWithinGeofence: measurement.isWithinGeofence,
         },
-      }),
-      this.prisma.task.update({ where: { id: taskId }, data: { status: 'ARRIVED' } }),
-      this.prisma.taskStatusHistory.create({
-        data: {
-          taskId,
-          fromStatus: task.status,
-          toStatus: 'ARRIVED',
-          actorUserId: workerId,
-          actorRole: 'WORKER',
-          metadata: {
-            distanceFromTaskMeters: measurement.distanceMeters,
-            isWithinGeofence: measurement.isWithinGeofence,
-          },
-        },
-      }),
-    ]);
+      });
+    });
     this.realtime.taskStatus(taskId, 'ARRIVED');
     // Arrival ends the trip, so it ends location sharing (for a delivery,
     // the leg to the pickup; the leg to the drop-off starts with the pickup).
@@ -272,32 +271,21 @@ export class ExecutionService {
     const env = loadEnv();
     const reviewDeadlineAt = new Date(Date.now() + env.REVIEW_WINDOW_HOURS * 3_600_000);
 
-    await this.prisma.$transaction([
-      ...(note
-        ? [
-            this.prisma.taskProof.create({
-              data: { taskId, workerId, type: 'NOTE', noteBody: note },
-            }),
-          ]
-        : []),
-      this.prisma.task.update({
-        where: { id: taskId },
-        data: {
-          status: 'SUBMITTED',
-          submittedAt: new Date(),
-          reviewDeadlineAt,
-        },
-      }),
-      this.prisma.taskStatusHistory.create({
-        data: {
-          taskId,
-          fromStatus: task.status,
-          toStatus: 'SUBMITTED',
-          actorUserId: workerId,
-          actorRole: 'WORKER',
-        },
-      }),
-    ]);
+    // A double tap, or a removal landing at the same moment, loses here
+    // and writes nothing: no second note, history row or auto-approve job.
+    await this.prisma.$transaction(async (tx) => {
+      const moved = await writeTransition(tx, {
+        taskId,
+        from: task.status,
+        to: 'SUBMITTED',
+        actorRole: 'WORKER',
+        actorUserId: workerId,
+        where: { assignedWorkerId: workerId },
+        data: { submittedAt: new Date(), reviewDeadlineAt },
+      });
+      if (!moved) throw new ConflictError(TASK_CHANGED_MESSAGE);
+      if (note) await tx.taskProof.create({ data: { taskId, workerId, type: 'NOTE', noteBody: note } });
+    });
     this.realtime.taskStatus(taskId, 'SUBMITTED');
     await this.live.end(taskId);
 
@@ -381,12 +369,12 @@ export class ExecutionService {
     to: Parameters<typeof assertTransitionAllowed>[1],
     actorUserId: string,
   ) {
-    await this.prisma.$transaction([
-      this.prisma.task.update({ where: { id: taskId }, data: { status: to } }),
-      this.prisma.taskStatusHistory.create({
-        data: { taskId, fromStatus: from, toStatus: to, actorUserId, actorRole: 'WORKER' },
-      }),
-    ]);
+    // Conditional on the same worker still being assigned: a requester
+    // removing them at this moment wins or loses, never both (docs/22, #8).
+    const moved = await this.prisma.$transaction((tx) =>
+      writeTransition(tx, { taskId, from, to, actorRole: 'WORKER', actorUserId, where: { assignedWorkerId: actorUserId } }),
+    );
+    if (!moved) throw new ConflictError(TASK_CHANGED_MESSAGE);
     this.realtime.taskStatus(taskId, to);
   }
 

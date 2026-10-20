@@ -6,7 +6,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { MatchingQueue } from '../../queue/matching.queue';
 import { NotificationService } from '../notifications/notification.service';
 import { SafetyService } from '../safety/safety.service';
-import { assertTransitionAllowed } from '../tasks/transitions';
+import { assertTransitionAllowed, transitionTask } from '../tasks/transitions';
 import {
   MIN_RATINGS_FOR_OWN_SCORE,
   compareCandidates,
@@ -106,18 +106,18 @@ export class MatchingService {
     // replaces — see ai/memory.md).
     if (task.status === 'PUBLISHED') {
       assertTransitionAllowed(task.status, 'MATCHING', 'SYSTEM');
-      await this.prisma.$transaction([
-        this.prisma.task.update({ where: { id: taskId }, data: { status: 'MATCHING' } }),
-        this.prisma.taskStatusHistory.create({
-          data: {
-            taskId,
-            fromStatus: 'PUBLISHED',
-            toStatus: 'MATCHING',
-            actorRole: 'SYSTEM',
-            reason: `Matching tier ${clampedTier + 1} started.`,
-          },
-        }),
-      ]);
+      // Conditional: a worker accepting from the feed at this moment must
+      // not be put back into MATCHING with the worker still attached
+      // (docs/22, #8). Losing means the task moved on; nothing to match.
+      const started = await transitionTask(this.prisma, {
+        taskId,
+        from: 'PUBLISHED',
+        to: 'MATCHING',
+        actorRole: 'SYSTEM',
+        reason: `Matching tier ${clampedTier + 1} started.`,
+        where: { assignedWorkerId: null },
+      });
+      if (!started) return { acted: false, offered: 0 };
     }
 
     // The previous wave's window is over by now (or it was answered in

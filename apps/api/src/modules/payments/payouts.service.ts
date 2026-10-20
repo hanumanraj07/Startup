@@ -6,7 +6,7 @@ import { loadEnv, payoutProvider } from '../../config/env';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
 import { RealtimePublisher } from '../realtime/realtime.publisher';
-import { checkTransition } from '../tasks/transitions';
+import { checkTransition, writeTransition } from '../tasks/transitions';
 import { LedgerService } from './ledger.service';
 
 /** Why a transfer did not go through, in words a worker can act on. */
@@ -235,21 +235,13 @@ export class PayoutsService {
       // COMPLETED → PAYMENT_RELEASED is the state machine's last step: the
       // money has actually reached the worker, not just been approved.
       if (markPaid) {
-        const moved = await tx.task.updateMany({
-          where: { id: payout.taskId, status: 'COMPLETED' },
-          data: { status: 'PAYMENT_RELEASED' },
+        await writeTransition(tx, {
+          taskId: payout.taskId,
+          from: 'COMPLETED',
+          to: 'PAYMENT_RELEASED',
+          actorRole: 'SYSTEM',
+          reason: `Paid to the worker (reference ${reference}).`,
         });
-        if (moved.count > 0) {
-          await tx.taskStatusHistory.create({
-            data: {
-              taskId: payout.taskId,
-              fromStatus: 'COMPLETED',
-              toStatus: 'PAYMENT_RELEASED',
-              actorRole: 'SYSTEM',
-              reason: `Paid to the worker (reference ${reference}).`,
-            },
-          });
-        }
       }
     });
     if (markPaid) this.publisher.toTask(payout.taskId, 'task:status', { taskId: payout.taskId, status: 'PAYMENT_RELEASED' });

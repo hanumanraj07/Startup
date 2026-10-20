@@ -82,6 +82,16 @@ export class RazorpayService {
     return refund as unknown as RazorpayRefundEntity;
   }
 
+  /**
+   * The captured payment on an order, if any: what the payment poller asks
+   * when a webhook has not arrived (docs/22, #12).
+   */
+  async capturedOrderPayment(orderId: string): Promise<string | null> {
+    const list = await this.client().orders.fetchPayments(orderId);
+    const items = (list.items ?? []) as unknown as { id: string; status: string }[];
+    return items.find((p) => p.status === 'captured')?.id ?? null;
+  }
+
   /** The captured payment on an order, for a record that never stored its payment id. */
   async capturedPaymentForOrder(orderId: string): Promise<string | null> {
     const list = await this.client().orders.fetchPayments(orderId);

@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { DisputesService } from '../disputes/disputes.service';
 import { OffersService } from '../matching/offers.service';
+import { PaymentsService } from '../payments/payments.service';
 import { PayoutsService } from '../payments/payouts.service';
 import { RefundsService } from '../payments/refunds.service';
 import { ReviewService } from './review.service';
@@ -45,6 +47,8 @@ export class SweeperService {
     private readonly offers: OffersService,
     private readonly payouts: PayoutsService,
     private readonly refunds: RefundsService,
+    private readonly disputes: DisputesService,
+    private readonly payments: PaymentsService,
   ) {}
 
   start(intervalMs: number): void {
@@ -56,6 +60,7 @@ export class SweeperService {
       void this.runPayoutSweep();
       void this.runStrandedMoneySweep();
       void this.runRefundSweep();
+      void this.runPaymentReconcileSweep();
     }, intervalMs);
     // Never let a scheduled tick keep the process alive on its own if
     // everything else has shut down.
@@ -156,6 +161,19 @@ export class SweeperService {
   }
 
   /**
+   * Asks the gateway about orders still unpaid after a few minutes, for the
+   * webhook that never arrived (docs/22, #12).
+   */
+  async runPaymentReconcileSweep(): Promise<number> {
+    try {
+      return await this.payments.reconcilePending();
+    } catch (error) {
+      this.logger.error(`Sweeper failed to reconcile pending payments: ${String(error)}`);
+      return 0;
+    }
+  }
+
+  /**
    * Sends the refunds the ledger has queued to the gateway, retries failed
    * ones, and checks on any the gateway has not settled (docs/22, #4).
    */
@@ -176,9 +194,12 @@ export class SweeperService {
    * revisits a task once it has left the statuses the other sweeps read.
    * Only tasks untouched for STRANDED_AFTER_MS are considered, so this never
    * races the live path that is about to move the money itself.
+   *
+   * A task finished by a dispute decision is finished the way the admin
+   * decided (a split, a refund), never by a plain release or refund.
    */
   async runStrandedMoneySweep(): Promise<{ processed: number; acted: number }> {
-    let due: { id: string; status: string }[];
+    let due: { id: string; status: string; disputes: { id: string }[] }[];
     try {
       due = await this.prisma.task.findMany({
         where: {
@@ -186,7 +207,11 @@ export class SweeperService {
           payment: { status: 'CAPTURED' },
           updatedAt: { lte: new Date(Date.now() - STRANDED_AFTER_MS) },
         },
-        select: { id: true, status: true },
+        select: {
+          id: true,
+          status: true,
+          disputes: { where: { status: 'RESOLVED' }, select: { id: true }, orderBy: { createdAt: 'desc' }, take: 1 },
+        },
         take: 50,
       });
     } catch (error) {
@@ -195,10 +220,14 @@ export class SweeperService {
     }
 
     let acted = 0;
-    for (const { id, status } of due) {
+    for (const { id, status, disputes } of due) {
       try {
-        const result =
-          status === 'COMPLETED' ? await this.review.releaseStranded(id) : await this.tasks.refundStranded(id);
+        const resolved = disputes[0];
+        const result = resolved
+          ? await this.disputes.settleResolution(resolved.id)
+          : status === 'COMPLETED'
+            ? await this.review.releaseStranded(id)
+            : await this.tasks.refundStranded(id);
         if (result.acted) acted += 1;
       } catch (error) {
         this.logger.error(`Sweeper failed to repair the stranded payment of task ${id}: ${String(error)}`);

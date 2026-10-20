@@ -11,12 +11,17 @@ function fakePrisma(
     payment?: { id: string; gateway: string; gatewayPaymentId: string | null; amountPaise: bigint } | null;
     topUps?: { id: string; topUpGateway: string | null; topUpGatewayPaymentId: string | null; topUpPaise: bigint }[];
     earlierRefunds?: { paymentId: string | null; itemPurchaseId: string | null; amountPaise: bigint }[];
+    /** What escrow holds once the entries are written. */
+    escrowAfterPaise?: bigint;
   } = {},
 ) {
   const createMany = vi.fn().mockResolvedValue({ count: 0 });
   const refundCreateMany = vi.fn().mockResolvedValue({ count: 0 });
   const client: Record<string, unknown> = {
-    ledgerEntry: { createMany },
+    ledgerEntry: {
+      createMany,
+      aggregate: vi.fn().mockResolvedValue({ _sum: { amountPaise: options.escrowAfterPaise ?? 1_000_000n } }),
+    },
     payment: {
       findUnique: vi.fn().mockResolvedValue(
         options.payment === undefined ? { id: 'p1', gateway: 'RAZORPAY', gatewayPaymentId: 'pay_1', amountPaise: 1_000_000n } : options.payment,
@@ -242,5 +247,21 @@ describe('LedgerService — every refund credit queues a gateway refund (docs/22
 
     await expect(service.recordFullRefund({ taskId: 't1', paymentId: 'p1', amountPaise: 20_000 })).rejects.toThrow(/exceeds/);
     expect(refundCreateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('LedgerService — escrow can never be overdrawn (docs/22, #9)', () => {
+  it('refuses a refund that would take escrow below zero, such as one booked twice', async () => {
+    const { client } = fakePrisma({ escrowAfterPaise: -50_000n });
+    const service = new LedgerService(client);
+
+    await expect(service.recordFullRefund({ taskId: 't1', paymentId: 'p1', amountPaise: 50_000 })).rejects.toThrow(/overdraw its escrow/);
+  });
+
+  it('allows a release that empties escrow exactly', async () => {
+    const { client } = fakePrisma({ escrowAfterPaise: 0n });
+    const service = new LedgerService(client);
+
+    await expect(service.recordFullRefund({ taskId: 't1', paymentId: 'p1', amountPaise: 50_000 })).resolves.toBeUndefined();
   });
 });

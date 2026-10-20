@@ -12,7 +12,7 @@ import { ItemPurchasesService } from '../payments/item-purchases.service';
 import { PayoutsService } from '../payments/payouts.service';
 import { NotificationService } from '../notifications/notification.service';
 import { StorageService } from '../storage/storage.service';
-import { assertTransitionAllowed, DISPUTABLE_STATUSES } from '../tasks/transitions';
+import { assertTransitionAllowed, writeTransition } from '../tasks/transitions';
 
 export interface DisputeView {
   id: string;
@@ -50,13 +50,14 @@ export class DisputesService {
   ) {}
 
   /**
-   * Raises a dispute and freezes the task. The freeze is the atomic
-   * conditional `updateMany` below, not the pre-check above it — the
-   * pre-check only produces a clean error message for the ordinary case
-   * (task never was in a disputable state to begin with). If a completion is
-   * committing in the same instant, whichever write reaches Postgres first
-   * wins; this is the other half of the race described in
-   * review.service.ts's completeApproval.
+   * Raises a dispute and freezes the task. The freeze is the conditional
+   * status write below, not the pre-check above it — the pre-check only
+   * produces a clean error message for the ordinary case (task never was in
+   * a disputable state to begin with). If a completion is committing in the
+   * same instant, whichever write reaches Postgres first wins; this is the
+   * other half of the race described in review.service.ts's
+   * completeApproval. The freeze and the dispute record are one transaction,
+   * so a task can never be DISPUTED with no dispute to resolve (docs/22, #11).
    */
   async raise(taskId: string, userId: string, input: CreateDisputeInput): Promise<DisputeView> {
     const task = await this.prisma.task.findUnique({ where: { id: taskId } });
@@ -73,29 +74,21 @@ export class DisputesService {
     });
     if (existing) throw new ConflictError('A dispute is already open for this task.');
 
-    const frozen = await this.prisma.task.updateMany({
-      where: { id: taskId, status: { in: [...DISPUTABLE_STATUSES] } },
-      data: { status: 'DISPUTED' },
-    });
-    if (frozen.count === 0) {
-      throw new ConflictError('This task cannot be disputed in its current state.');
-    }
-
     const dispute = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.dispute.create({
+      const frozen = await writeTransition(tx, {
+        taskId,
+        from: task.status,
+        to: 'DISPUTED',
+        actorRole: isRequester ? 'REQUESTER' : 'WORKER',
+        actorUserId: userId,
+        reason: input.reason,
+      });
+      if (!frozen) {
+        throw new ConflictError('This task changed a moment ago and can no longer be disputed as it was. Refresh and try again.');
+      }
+      return tx.dispute.create({
         data: { taskId, raisedById: userId, reason: input.reason, description: input.description },
       });
-      await tx.taskStatusHistory.create({
-        data: {
-          taskId,
-          fromStatus: task.status,
-          toStatus: 'DISPUTED',
-          actorUserId: userId,
-          actorRole: isRequester ? 'REQUESTER' : 'WORKER',
-          reason: input.reason,
-        },
-      });
-      return created;
     });
 
     // Best-effort cleanup: the task's own status no longer being
@@ -285,6 +278,15 @@ export class DisputesService {
    * docs/14's table — release retains commission (identical accounting to a
    * normal approval), refund takes none, and a split waives it entirely and
    * divides the full held amount by the awarded percentage.
+   *
+   * Two steps (docs/22, #9 and #10). First a claim, in one transaction: the
+   * dispute moves to RESOLVED with the decision, only if it is still open,
+   * and the task leaves DISPUTED, only if it is still DISPUTED. A second admin,
+   * or a double click, loses the claim and moves nothing. Then the money
+   * (settleResolution), which claims the payment before writing a ledger
+   * entry and so is safe to run again: if the process dies between the two
+   * steps, the stranded-money sweep finds the task finished with its payment
+   * still held and finishes the resolution, never a different one.
    */
   async resolve(
     disputeId: string,
@@ -301,116 +303,61 @@ export class DisputesService {
     if (!payment || payment.status !== 'CAPTURED') {
       throw new BusinessRuleError('This task has no held payment to resolve the dispute against.');
     }
+    if (input.resolution === 'SPLIT' && input.workerSharePercent === undefined) {
+      // Unreachable in practice: resolveDisputeSchema's own refine requires
+      // workerSharePercent whenever resolution is SPLIT. Checked again here
+      // so a future caller that bypasses validation fails loudly instead of
+      // computing a split against `undefined`.
+      throw new BusinessRuleError('A split resolution requires workerSharePercent.');
+    }
 
     const before = { disputeStatus: dispute.status, taskStatus: task.status, paymentStatus: payment.status };
 
-    let splitWorkerPaise: number | null = null;
-    let splitRefundPaise: number | null = null;
     // The task's terminal state after a dispute has only two options in the
     // state machine (DISPUTED -> COMPLETED or -> CANCELLED). A split still
     // pays the worker something, so it lands on COMPLETED alongside a full
     // release; only a full refund, where the worker receives nothing, is
     // CANCELLED. Documented here because docs/14 does not name a status for
     // this, only the money outcome.
-    let nextTaskStatus: 'COMPLETED' | 'CANCELLED';
+    const nextTaskStatus = input.resolution === 'REFUND_TO_REQUESTER' ? 'CANCELLED' : 'COMPLETED';
+    assertTransitionAllowed(task.status, nextTaskStatus, 'ADMIN');
+    // The percentage divides the task payment only; stored with the claim so
+    // a resumed settlement divides it the same way.
+    const split =
+      input.resolution === 'SPLIT' && input.workerSharePercent !== undefined
+        ? calculateDisputeSplit(Number(task.budgetPaise), input.workerSharePercent)
+        : null;
 
-    if (input.resolution === 'RELEASE_TO_WORKER') {
-      nextTaskStatus = 'COMPLETED';
-      // Identical to an approval: commission on the task payment, unspent
-      // item money refunded, and a payout owed. An approved cash bill not yet
-      // repaid (no handover code was entered) is owed to the worker too: the
-      // requester agreed it, and the admin found for the worker.
-      await this.purchases.settleApprovedCash(task.id);
-      await this.payments.release({
-        taskId: task.id,
-        commissionPaise: Number(task.commissionPaise),
-        gstPaise: Number(task.gstPaise),
-        tcsPaise: Number(task.tcsPaise),
-        tdsPaise: Number(task.tdsPaise),
-        workerPayoutPaise: Number(task.workerPayoutPaise),
-      }, { sendNow: false });
-      if (task.assignedWorkerId) await this.bumpWorkerCompletionStats(task.assignedWorkerId);
-    } else if (input.resolution === 'REFUND_TO_REQUESTER') {
-      nextTaskStatus = 'CANCELLED';
-      // Everything escrow still holds goes back: the payment, any top-up, and
-      // any approved cash bill never repaid (the admin decided the item did
-      // not arrive). A bill already paid to a shop has left escrow and cannot
-      // be refunded from it; docs/14 records that as an admin judgement call.
-      const heldPaise = await this.ledger.escrowBalance(task.id);
-      await this.ledger.recordFullRefund({
-        taskId: task.id,
-        paymentId: payment.id,
-        amountPaise: heldPaise,
-      });
-      await this.prisma.payment.update({
-        where: { id: payment.id },
-        data: { status: 'REFUNDED', refundedAt: new Date(), refundAmountPaise: heldPaise },
-      });
-    } else {
-      if (input.workerSharePercent === undefined) {
-        // Unreachable in practice: resolveDisputeSchema's own refine requires
-        // workerSharePercent whenever resolution is SPLIT. Checked again here
-        // so TypeScript can narrow it to `number` without a non-null
-        // assertion, and so a future caller that bypasses validation fails
-        // loudly instead of computing a split against `undefined`.
-        throw new BusinessRuleError('A split resolution requires workerSharePercent.');
-      }
-      nextTaskStatus = 'COMPLETED';
-      // The percentage divides the task payment. An approved bill is not
-      // divided: it was paid to the shop, or is repaid in full to the worker
-      // who paid cash (a dispute about the item entirely is a refund). Item
-      // money still held is refunded.
-      await this.purchases.settleApprovedCash(task.id);
-      const split = calculateDisputeSplit(Number(task.budgetPaise), input.workerSharePercent);
-      const itemRefundPaise = await this.payments.heldItemPaise(task.id, Number(task.budgetPaise));
-      splitWorkerPaise = split.workerPaise;
-      splitRefundPaise = split.refundPaise + itemRefundPaise;
-      await this.ledger.recordDisputeSplit({
-        taskId: task.id,
-        paymentId: payment.id,
-        workerPaise: split.workerPaise,
-        refundPaise: split.refundPaise,
-        itemRefundPaise,
-      });
-      await this.prisma.payment.update({
-        where: { id: payment.id },
-        data: { status: 'RELEASED', releasedAt: new Date(), refundAmountPaise: splitRefundPaise },
-      });
-      if (task.assignedWorkerId && splitWorkerPaise > 0) {
-        await this.payouts.recordOwed({
-          taskId: task.id,
-          workerId: task.assignedWorkerId,
-          earningsPaise: split.workerPaise,
-        });
-      }
-      if (task.assignedWorkerId && split.workerPaise > 0) await this.bumpWorkerCompletionStats(task.assignedWorkerId);
-    }
-
-    const [updatedDispute] = await this.prisma.$transaction([
-      this.prisma.dispute.update({
-        where: { id: disputeId },
+    const now = new Date();
+    const updatedDispute = await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.dispute.updateMany({
+        where: { id: disputeId, status: { in: ['OPEN', 'UNDER_REVIEW'] } },
         data: {
           status: 'RESOLVED',
           resolution: input.resolution,
-          splitWorkerPaise,
-          splitRefundPaise,
+          splitWorkerPaise: split?.workerPaise ?? null,
+          splitRefundPaise: split?.refundPaise ?? null,
           resolvedByAdminId: adminId,
           resolutionNotes: input.notes,
-          resolvedAt: new Date(),
+          resolvedAt: now,
         },
-      }),
-      this.prisma.task.update({ where: { id: task.id }, data: { status: nextTaskStatus, completedAt: nextTaskStatus === 'COMPLETED' ? new Date() : undefined, cancelledAt: nextTaskStatus === 'CANCELLED' ? new Date() : undefined } }),
-      this.prisma.taskStatusHistory.create({
-        data: {
-          taskId: task.id,
-          fromStatus: 'DISPUTED',
-          toStatus: nextTaskStatus,
-          actorUserId: adminId,
-          actorRole: 'ADMIN',
-          reason: input.notes,
-        },
-      }),
-    ]);
+      });
+      if (claimed.count === 0) throw new ConflictError('This dispute has already been resolved.');
+
+      const moved = await writeTransition(tx, {
+        taskId: task.id,
+        from: 'DISPUTED',
+        to: nextTaskStatus,
+        actorRole: 'ADMIN',
+        actorUserId: adminId,
+        reason: input.notes,
+        data: nextTaskStatus === 'COMPLETED' ? { completedAt: now } : { cancelledAt: now },
+      });
+      if (!moved) throw new ConflictError('This task is no longer disputed.');
+      return tx.dispute.findUniqueOrThrow({ where: { id: disputeId } });
+    });
+
+    await this.settleResolution(disputeId);
 
     await this.audit.record({
       actorUserId: adminId,
@@ -435,11 +382,82 @@ export class DisputesService {
         .map((id) => this.notifications.notify(id, resolvedNotifyPayload).catch((error) => this.logger.warn(String(error)))),
     );
 
-    // Sent now the task is COMPLETED, so a confirmed payout can mark it paid.
-    if (task.assignedWorkerId && nextTaskStatus === 'COMPLETED') await this.payouts.sendOwed(task.assignedWorkerId);
-
     this.logger.log(`Dispute ${disputeId} resolved (${input.resolution}) by admin ${adminId}.`);
     return this.toView(updatedDispute, []);
+  }
+
+  /**
+   * Moves the money a resolved dispute decided. Safe to run more than once:
+   * every branch claims the payment (CAPTURED → RELEASED / REFUNDED) before it
+   * writes a ledger entry, and the cash and payout steps are idempotent on
+   * their own keys. Called by resolve, and by the stranded-money sweep for a
+   * resolution whose money never moved. Returns whether this call moved it.
+   */
+  async settleResolution(disputeId: string): Promise<{ acted: boolean }> {
+    const dispute = await this.prisma.dispute.findUnique({ where: { id: disputeId }, include: { task: true } });
+    if (!dispute || dispute.status !== 'RESOLVED' || !dispute.resolution) return { acted: false };
+    const task = dispute.task;
+    const payment = await this.prisma.payment.findUnique({ where: { taskId: task.id } });
+    if (!payment || payment.status !== 'CAPTURED') return { acted: false };
+
+    let acted = false;
+    if (dispute.resolution === 'RELEASE_TO_WORKER') {
+      // Identical to an approval: commission on the task payment, unspent
+      // item money refunded, and a payout owed. An approved cash bill not yet
+      // repaid (no handover code was entered) is owed to the worker too: the
+      // requester agreed it, and the admin found for the worker.
+      await this.purchases.settleApprovedCash(task.id);
+      acted = await this.payments.release({
+        taskId: task.id,
+        commissionPaise: Number(task.commissionPaise),
+        gstPaise: Number(task.gstPaise),
+        tcsPaise: Number(task.tcsPaise),
+        tdsPaise: Number(task.tdsPaise),
+        workerPayoutPaise: Number(task.workerPayoutPaise),
+      }, { sendNow: false });
+      if (acted && task.assignedWorkerId) await this.bumpWorkerCompletionStats(task.assignedWorkerId);
+    } else if (dispute.resolution === 'REFUND_TO_REQUESTER') {
+      // Everything escrow still holds goes back: the payment, any top-up, and
+      // any approved cash bill never repaid (the admin decided the item did
+      // not arrive). A bill already paid to a shop has left escrow and cannot
+      // be refunded from it; docs/14 records that as an admin judgement call.
+      const heldPaise = await this.ledger.escrowBalance(task.id);
+      const claimed = await this.prisma.payment.updateMany({
+        where: { id: payment.id, status: 'CAPTURED' },
+        data: { status: 'REFUNDED', refundedAt: new Date(), refundAmountPaise: heldPaise },
+      });
+      if (claimed.count > 0) {
+        await this.ledger.recordFullRefund({ taskId: task.id, paymentId: payment.id, amountPaise: heldPaise });
+        acted = true;
+      }
+    } else {
+      // An approved bill is not divided: it was paid to the shop, or is
+      // repaid in full to the worker who paid cash (a dispute about the item
+      // entirely is a refund). Item money still held is refunded.
+      await this.purchases.settleApprovedCash(task.id);
+      const workerPaise = Number(dispute.splitWorkerPaise ?? 0);
+      const refundPaise = Number(dispute.splitRefundPaise ?? 0);
+      const itemRefundPaise = await this.payments.heldItemPaise(task.id, Number(task.budgetPaise));
+      const claimed = await this.prisma.payment.updateMany({
+        where: { id: payment.id, status: 'CAPTURED' },
+        data: { status: 'RELEASED', releasedAt: new Date(), refundAmountPaise: refundPaise + itemRefundPaise },
+      });
+      if (claimed.count > 0) {
+        await this.ledger.recordDisputeSplit({ taskId: task.id, paymentId: payment.id, workerPaise, refundPaise, itemRefundPaise });
+        await this.prisma.dispute.update({ where: { id: dispute.id }, data: { splitRefundPaise: refundPaise + itemRefundPaise } });
+        if (task.assignedWorkerId && workerPaise > 0) {
+          await this.payouts.recordOwed({ taskId: task.id, workerId: task.assignedWorkerId, earningsPaise: workerPaise });
+          await this.bumpWorkerCompletionStats(task.assignedWorkerId);
+        }
+        acted = true;
+      }
+    }
+
+    // The task is already COMPLETED, so a confirmed payout can mark it paid.
+    if (acted && task.assignedWorkerId && dispute.resolution !== 'REFUND_TO_REQUESTER') {
+      await this.payouts.sendOwed(task.assignedWorkerId);
+    }
+    return { acted };
   }
 
   // ─── Internal ────────────────────────────────────────────────────────

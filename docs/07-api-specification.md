@@ -106,7 +106,7 @@ Unassigned tasks show an approximate location to workers, not the exact address.
 | Method | Path | Auth | Notes |
 |---|---|---|---|
 | GET | `/tasks/nearby` | worker | The feed. PostGIS radius search from the worker's **saved** base point and working radius; takes no location or radius from the client. Pickup & delivery items carry the drop-off locality and trip distance only. Paginated |
-| POST | `/tasks/:id/accept` | worker | **Atomic.** Exactly one winner; the rest get `409 TASK_ALREADY_ASSIGNED`. Verification level enforced here |
+| POST | `/tasks/:id/accept` | worker | **Atomic.** Exactly one winner; the rest get `409 TASK_ALREADY_ASSIGNED`. Verification level enforced here, and the deadline, and the worker's limit of `MAX_CONCURRENT_TASKS_PER_WORKER` active tasks (422 above it), counted inside the same transaction |
 | POST | `/tasks/:id/decline` | worker | Records a decline and reason. If nobody in the current wave is still deciding, the next wave goes out immediately |
 | GET | `/offers/mine` | worker | Open incoming requests (unanswered, inside their window, task still unassigned and before its deadline), each with `expiresAt` and `windowSeconds`. Locality only, like the feed |
 | POST | `/tasks/:id/leave` | assigned worker | Gives the task up before submission. Task returns to `MATCHING`; uploaded proof is discarded; completion rate drops; the worker can never re-accept that task. Reason required (`OTHER` needs a note) |

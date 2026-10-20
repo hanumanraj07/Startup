@@ -26,12 +26,12 @@ Severity:
 | 5 | Workers can never actually be paid (no payout partner; mock driver only) | P1 (launch blocker) |
 | 6 | Email is printed to server logs, so email sign-ups can't verify or reset passwords | P1 (launch blocker) |
 | 7 | Login limited to 5 tries per 15 minutes **per IP**; Indian mobile networks share IPs across thousands of users | P1 |
-| 8 | Many status changes are unconditional writes that race each other (cancel vs accept, expiry vs accept, matching vs accept, en-route vs removal) | P1 |
-| 9 | Refunds, releases and dispute decisions can run twice at the same time and double-book money | P1 |
-| 10 | Multi-step money flows are not atomic; a crash midway leaves tasks stuck with nobody retrying | P1 |
-| 11 | A dispute can freeze a task without the dispute record being created | P1 |
-| 12 | Duplicate Razorpay webhooks arriving together can capture twice; a lost webhook is never recovered | P1 |
-| 13 | The worker's 3-task limit is only applied to offers; a worker can accept any number of tasks from the feed | P1 |
+| 8 | Many status changes are unconditional writes that race each other (cancel vs accept, expiry vs accept, matching vs accept, en-route vs removal) | P1 · **fixed locally** |
+| 9 | Refunds, releases and dispute decisions can run twice at the same time and double-book money | P1 · **fixed locally** |
+| 10 | Multi-step money flows are not atomic; a crash midway leaves tasks stuck with nobody retrying | P1 · **mostly fixed locally** |
+| 11 | A dispute can freeze a task without the dispute record being created | P1 · **fixed locally** |
+| 12 | Duplicate Razorpay webhooks arriving together can capture twice; a lost webhook is never recovered | P1 · **fixed locally** |
+| 13 | The worker's 3-task limit is only applied to offers; a worker can accept any number of tasks from the feed | P1 · **fixed locally** |
 | 14 | Production server: 1 GB RAM, already swapping ~930 MB, one machine for everything | P1 |
 | 15 | Redis in production has no persistence; a restart loses all queued matching jobs and rate-limit state | P1 |
 | 16 | No monitoring, alerting or error tracking; production errors are only visible by reading container logs | P1 |
@@ -46,7 +46,7 @@ Severity:
 | 25 | No ledger reconciliation job, despite the docs saying one exists | P2 |
 | 26 | Container logs grow forever; worker shows "unhealthy" because its health check calls an HTTP server it doesn't have | P2 |
 | 27 | Uploaded files are never cleaned up; tables (notifications, messages, offers) grow without limit | P3 |
-| 28 | Task status writes live in many files, against the "only in transitions.ts" rule | P3 |
+| 28 | Task status writes live in many files, against the "only in transitions.ts" rule | P3 · **fixed locally** |
 | 29 | CI on `main` has failed since September; no automated gate before production | P3 |
 | 30 | Item bills (P6): a "shop" UPI ID could be a colluder's personal one; tax treatment unconfirmed | P3 |
 | 31 | Compliance: escrow licence position, DPDP Act data handling, GST/TDS, refund policy | Business |
@@ -141,6 +141,8 @@ The accept path is correct: one atomic conditional update decides the winner. Se
 
 **Fix:** route every status write through one `transitionTask(taskId, from[], to, extra)` helper that does a conditional update inside a transaction with the history row, and returns "lost the race" rather than writing.
 
+**Status (2026-10-20): fixed locally, not yet deployed.** `writeTransition` / `transitionTask` in `transitions.ts` are now the only task status writers: `UPDATE … WHERE id AND status = <what the caller read>` plus the caller's own conditions (nobody assigned, the same worker still assigned, the deadline passed or not), with the history row in the same transaction and only for the winner. Every path in the table uses it: cancel and expiry require no assigned worker (expiry also a passed deadline), accept requires an unpassed deadline, matching requires no assigned worker, en route / start / arrival / submit require the same worker. Losers get 409 "This task changed a moment ago". **Verified against the local API and Postgres:** 20 rounds of a worker accepting while the requester cancels at the same instant produced all three possible orderings (including the true race, where cancel passed its check and then lost the write) and never both winners or an inconsistent task.
+
 ### 9. Money operations can run twice
 
 `refundFull`, `release` and dispute `resolve` each read "is the payment still CAPTURED / dispute still open?" and then write without a condition. Two at once, both book the money:
@@ -153,15 +155,21 @@ The ledger still sums to zero (escrow goes negative), so the existing balance ch
 
 **How large companies do it:** every money movement has an idempotency key with a unique constraint (for example `refund:{taskId}`, `release:{taskId}`) and claims its row with a conditional update before calling the gateway. Escrow balance must never go below zero, enforced in the ledger writer.
 
+**Status (2026-10-20): fixed locally, not yet deployed.** `refundFull` and `release` claim the payment (`CAPTURED` → `REFUNDED`/`RELEASED`) with a conditional update before any ledger entry (with #1). Dispute resolution is claimed first: the dispute moves to RESOLVED only if still open and the task leaves DISPUTED only if still DISPUTED, in one transaction, so a second admin or a double click moves nothing; its money step claims the payment too. And the ledger writer now refuses any group that would take a task's escrow below zero, checked in the same transaction, so a double booking that slips past a caller fails instead of paying twice.
+
 ### 10. Multi-step money flows aren't atomic; failures leave stuck tasks
 
 Approval writes COMPLETED, then history, then broadcasts, then releases payment, then updates stats, then notifies: separate statements with no transaction. A crash, deploy or database blip midway leaves, for example, a task COMPLETED with payment still held. Nothing looks for that state, so it stays stuck. Same for cancel→refund, expire→refund, and dispute resolve (money moves first, dispute status is written after).
 
 **How large companies do it:** one transaction for state plus ledger, an outbox for side effects, and **reconciliation sweeps** that look for impossible combinations ("COMPLETED but payment CAPTURED", "EXPIRED but CAPTURED", "DISPUTED with no open dispute") and either repair them or page someone.
 
+**Status (2026-10-20): mostly fixed locally.** Each flow now writes its status (with history) in one transaction, and the money step after it is idempotent. The stranded-money sweep (#1) repairs "EXPIRED/CANCELLED but CAPTURED" and "COMPLETED but CAPTURED"; for a task finished by a dispute it finishes the money the way the admin decided (`DisputesService.settleResolution`), never a plain release. "DISPUTED with no dispute" can no longer happen (#11). A capture's status and its escrow entry are one transaction (#12). Refunds and payouts have their own retrying senders. **Still open:** status and money are not one database transaction (the sweep makes the gap self-healing, not impossible), and a payment released with its ledger write lost mid-way is not detected; that is the ledger reconciliation job (#25).
+
 ### 11. A task can be frozen with no dispute
 
 Raising a dispute sets the task to DISPUTED in one statement and creates the dispute record in a separate transaction (`disputes/disputes.service.ts:76` then the transaction below it). If the second step fails, the task is DISPUTED forever with nothing for an admin to resolve, and the escrow is locked. Do both in one transaction.
+
+**Status (2026-10-20): fixed locally.** The freeze (a conditional status write) and the dispute record are one transaction.
 
 ### 12. Razorpay webhooks: duplicates and losses
 
@@ -170,9 +178,13 @@ Raising a dispute sets the task to DISPUTED in one statement and creates the dis
 
 Payment companies always run both a webhook handler and a *poller* that fetches pending orders after a few minutes.
 
+**Status (2026-10-20): fixed locally, not yet deployed.** Capture is a conditional claim (`CREATED`/`AUTHORIZED`/`FAILED` → `CAPTURED`) in one transaction with its escrow entry, so parallel deliveries, or the webhook and the poller, record it once. `payment.failed` can only fail a payment not yet captured, so a late failure never undoes a capture. A poller (`PaymentsService.reconcilePending`, every sweeper tick) asks Razorpay about every order still unpaid after 5 minutes (up to 3 days old), task payments and item top-ups, and records a capture it finds exactly as the webhook would.
+
 ### 13. The concurrent-task limit is not enforced on accept
 
 `MAX_CONCURRENT_TASKS_PER_WORKER` (3) is only used to filter who gets offers. A worker browsing the feed can accept 20 tasks at once (`tasks.service.ts:661` has no such check), then abandon most. Count active tasks inside the accept transaction.
+
+**Status (2026-10-20): fixed locally.** Accept counts the worker's active tasks (the same four statuses matching uses) inside its transaction, after writing the worker's own profile row, which locks it so two accepts by the same worker take turns. The deadline is checked too. **Verified:** 5 accepts by one worker fired at once, 3 succeeded and 2 were refused.
 
 ### 14. One small server
 
@@ -254,6 +266,8 @@ Uploaded proofs and bill photos are never deleted from storage, including proofs
 ### 28. Status writes everywhere
 
 `CLAUDE.md` says task status writes live only in `transitions.ts`. In practice they are in `tasks.service.ts`, `execution.service.ts`, `review.service.ts`, `matching.service.ts`, `disputes.service.ts` and `payouts.service.ts`. That is what makes #8 possible. One helper (see #8) restores the rule.
+
+**Status (2026-10-20): fixed locally with #8.** Every task status write goes through `writeTransition`.
 
 ### 29. No working CI
 

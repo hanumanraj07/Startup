@@ -22,8 +22,8 @@ beforeEach(() => {
 /**
  * A fake Prisma narrow enough to exercise MatchingService without a database,
  * following the same pattern as ledger.service.test.ts. `$transaction` here
- * just resolves whatever array of promises it is given, which is enough to
- * observe which writes were attempted.
+ * resolves an array of promises, or runs a callback against the same fake,
+ * which is enough to observe which writes were attempted.
  */
 function fakePrisma(task: Record<string, unknown> | null, releasedWorkerIds: string[] = []) {
   const taskUpdate = vi.fn().mockResolvedValue({});
@@ -33,13 +33,16 @@ function fakePrisma(task: Record<string, unknown> | null, releasedWorkerIds: str
   const aggregate = vi.fn().mockResolvedValue({ _avg: { ratingAvg: null, completionRate: null, responseRate: null } });
 
   const client = {
-    task: { findUnique: vi.fn().mockResolvedValue(task), update: taskUpdate },
+    task: { findUnique: vi.fn().mockResolvedValue(task), update: taskUpdate, updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     taskStatusHistory: { create: historyCreate },
     taskOffer: { findMany: vi.fn().mockResolvedValue([]), createMany: taskOfferCreateMany },
     taskRelease: { findMany: vi.fn().mockResolvedValue(releasedWorkerIds.map((workerId) => ({ workerId }))) },
     workerProfile: { updateMany: workerProfileUpdateMany, aggregate },
-    $transaction: vi.fn(async (ops: Promise<unknown>[]) => Promise.all(ops)),
+    $transaction: vi.fn(),
   };
+  client.$transaction.mockImplementation(async (arg: unknown) =>
+    typeof arg === 'function' ? (arg as (tx: unknown) => Promise<unknown>)(client) : Promise.all(arg as Promise<unknown>[]),
+  );
 
   return { client, taskUpdate, historyCreate, taskOfferCreateMany, workerProfileUpdateMany, aggregate };
 }

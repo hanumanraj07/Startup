@@ -4,6 +4,13 @@ Notable changes to OnSite. Format follows [Keep a Changelog](https://keepachange
 
 ## [Unreleased]
 
+### Fixed — 2026-10-20 · Production audit P1 (docs/22)
+
+- **Two actions at the same moment no longer collide.** If a worker accepts just as you cancel, or the deadline passes as someone accepts, exactly one of them happens; the other is told the task changed. Before, both could happen, leaving a cancelled task with a worker on the way.
+- **Workers can hold at most 3 active tasks**, including tasks accepted from the feed.
+- **A dispute decision is applied once**, even if submitted twice, and money can never be paid out twice from the same task.
+- **Payments are confirmed even if the payment gateway's notice is lost.** We check with the gateway after a few minutes, so a paid task is never left unpublished.
+
 ### Fixed — 2026-10-20 · Production audit P0 (docs/22)
 
 - **Refunds for expired tasks.** A task that expired with nobody accepting it now refunds the requester. Before, a crash in the background worker skipped the refund. Any task already stuck like this is refunded automatically, and its requester is told.

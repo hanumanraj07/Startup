@@ -1,4 +1,4 @@
-import type { TaskStatus } from '@prisma/client';
+import type { Prisma, TaskStatus } from '@prisma/client';
 import { IllegalTransitionError } from '../../common/errors';
 
 /**
@@ -10,8 +10,10 @@ import { IllegalTransitionError } from '../../common/errors';
  *
  * The transition table below is pure data and pure functions, deliberately
  * free of database access, so every legal and illegal transition can be tested
- * without a database. The persistence half lives in the task service, which
- * calls assertTransitionAllowed before writing.
+ * without a database. Services call assertTransitionAllowed against what they
+ * read, then write with writeTransition (bottom of this file), the one status
+ * writer: a compare-and-set that only lands if the task is still in the
+ * status the caller read (docs/22, #8).
  */
 
 export type TransitionActor = 'REQUESTER' | 'WORKER' | 'ADMIN' | 'SYSTEM';
@@ -259,3 +261,72 @@ export function availableTransitions(
   }
   return [...seen];
 }
+
+// ─── The status writer ─────────────────────────────────────────────────
+
+/** The part of a Prisma transaction client the writer needs. */
+export type StatusWriter = Pick<Prisma.TransactionClient, 'task' | 'taskStatusHistory'>;
+
+export interface TransitionWrite {
+  taskId: string;
+  /** The status the caller read and checked. Written to the history row. */
+  from: TaskStatus;
+  to: TaskStatus;
+  /**
+   * Other statuses the write may also land from, for a caller whose read can
+   * be overtaken harmlessly (PUBLISHED becoming MATCHING under an accept).
+   */
+  alsoFrom?: readonly TaskStatus[];
+  actorRole: TransitionActor;
+  actorUserId?: string | null;
+  reason?: string;
+  metadata?: Prisma.InputJsonValue;
+  /** Conditions the row must still meet besides its status, e.g. the same assigned worker. */
+  where?: Prisma.TaskWhereInput;
+  /** Columns written together with the status. */
+  data?: Omit<Prisma.TaskUncheckedUpdateManyInput, 'status'>;
+}
+
+/**
+ * THE task status write. A compare-and-set: `UPDATE … WHERE id = ? AND status
+ * = <what the caller read>`, so a change that landed between the caller's read
+ * and this write is never silently overwritten (docs/22, #8: cancel racing
+ * accept, expiry racing accept, matching racing accept, en route racing a
+ * removal). Postgres serializes writes to the row; exactly one racer sees
+ * count 1. The history row is written only by the winner.
+ *
+ * Call it inside a transaction so the status and its history commit together
+ * with whatever else the caller writes; returns false when the race was lost,
+ * and the caller then writes nothing more (throwing rolls the transaction back).
+ */
+export async function writeTransition(tx: StatusWriter, t: TransitionWrite): Promise<boolean> {
+  const statuses = [...new Set([t.from, ...(t.alsoFrom ?? [])])];
+  const result = await tx.task.updateMany({
+    where: { ...t.where, id: t.taskId, status: { in: statuses } },
+    data: { ...t.data, status: t.to },
+  });
+  if (result.count === 0) return false;
+  await tx.taskStatusHistory.create({
+    data: {
+      taskId: t.taskId,
+      fromStatus: t.from,
+      toStatus: t.to,
+      actorUserId: t.actorUserId ?? null,
+      actorRole: t.actorRole,
+      reason: t.reason,
+      metadata: t.metadata,
+    },
+  });
+  return true;
+}
+
+/** writeTransition in a transaction of its own, for a caller with nothing else to write. */
+export function transitionTask(
+  prisma: { $transaction<R>(fn: (tx: Prisma.TransactionClient) => Promise<R>): Promise<R> },
+  t: TransitionWrite,
+): Promise<boolean> {
+  return prisma.$transaction((tx) => writeTransition(tx, t));
+}
+
+/** The message for a caller who lost the race. */
+export const TASK_CHANGED_MESSAGE = 'This task changed a moment ago. Refresh to see its current state.';
