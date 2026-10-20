@@ -87,7 +87,7 @@ function setup() {
     },
     signAccessToken: () => 'access-token',
   };
-  const service = new AuthService(prisma as never, {} as never, tokens as never, {} as never, {} as never, {} as never);
+  const service = new AuthService(prisma as never, {} as never, tokens as never, {} as never, {} as never, {} as never, {} as never);
 
   const seed = (token: string) =>
     refreshToken.create({

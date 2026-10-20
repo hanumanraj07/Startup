@@ -44,7 +44,7 @@ const BASE_USER = { id: 'u1', passwordHash: null as string | null };
 describe('UsersService.deleteAccount', () => {
   it('refuses when the user has a task still in progress, as requester or worker', async () => {
     const { client } = fakePrisma(BASE_USER, 1);
-    const service = new UsersService(client as never, {} as never, fakePasswords(true) as never, fakeAudit() as never, {} as never);
+    const service = new UsersService(client as never, {} as never, fakePasswords(true) as never, fakeAudit() as never, {} as never, { disconnectUser: vi.fn() } as never);
 
     await expect(service.deleteAccount('u1', { confirm: 'DELETE' })).rejects.toThrow(BusinessRuleError);
     expect(client.user.update).not.toHaveBeenCalled();
@@ -53,7 +53,7 @@ describe('UsersService.deleteAccount', () => {
   it('requires the correct password when the account has one', async () => {
     const { client } = fakePrisma({ ...BASE_USER, passwordHash: 'hash' }, 0);
     const passwords = fakePasswords(false);
-    const service = new UsersService(client as never, {} as never, passwords as never, fakeAudit() as never, {} as never);
+    const service = new UsersService(client as never, {} as never, passwords as never, fakeAudit() as never, {} as never, { disconnectUser: vi.fn() } as never);
 
     await expect(service.deleteAccount('u1', { confirm: 'DELETE', password: 'wrong' })).rejects.toThrow(
       ForbiddenError,
@@ -63,14 +63,14 @@ describe('UsersService.deleteAccount', () => {
 
   it('refuses with no password given at all when the account has one', async () => {
     const { client } = fakePrisma({ ...BASE_USER, passwordHash: 'hash' }, 0);
-    const service = new UsersService(client as never, {} as never, fakePasswords(true) as never, fakeAudit() as never, {} as never);
+    const service = new UsersService(client as never, {} as never, fakePasswords(true) as never, fakeAudit() as never, {} as never, { disconnectUser: vi.fn() } as never);
 
     await expect(service.deleteAccount('u1', { confirm: 'DELETE' })).rejects.toThrow(ForbiddenError);
   });
 
   it('does not require a password for a Google-only account', async () => {
     const { client, update } = fakePrisma({ ...BASE_USER, passwordHash: null }, 0);
-    const service = new UsersService(client as never, {} as never, fakePasswords(true) as never, fakeAudit() as never, {} as never);
+    const service = new UsersService(client as never, {} as never, fakePasswords(true) as never, fakeAudit() as never, {} as never, { disconnectUser: vi.fn() } as never);
 
     const result = await service.deleteAccount('u1', { confirm: 'DELETE' });
 
@@ -80,7 +80,7 @@ describe('UsersService.deleteAccount', () => {
 
   it('anonymizes every identifying field and bumps tokenVersion to invalidate existing sessions', async () => {
     const { client, update } = fakePrisma({ ...BASE_USER, passwordHash: 'hash' }, 0);
-    const service = new UsersService(client as never, {} as never, fakePasswords(true) as never, fakeAudit() as never, {} as never);
+    const service = new UsersService(client as never, {} as never, fakePasswords(true) as never, fakeAudit() as never, {} as never, { disconnectUser: vi.fn() } as never);
 
     await service.deleteAccount('u1', { confirm: 'DELETE', password: 'correct' });
 
@@ -99,7 +99,7 @@ describe('UsersService.deleteAccount', () => {
 
   it('rejects a user id that does not exist', async () => {
     const { client } = fakePrisma(null, 0);
-    const service = new UsersService(client as never, {} as never, fakePasswords(true) as never, fakeAudit() as never, {} as never);
+    const service = new UsersService(client as never, {} as never, fakePasswords(true) as never, fakeAudit() as never, {} as never, { disconnectUser: vi.fn() } as never);
 
     await expect(service.deleteAccount('missing', { confirm: 'DELETE' })).rejects.toThrow(NotFoundError);
   });

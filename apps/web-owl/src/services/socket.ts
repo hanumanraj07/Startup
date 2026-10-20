@@ -1,6 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
 import { config } from '@/lib/config';
-import { getAccessToken } from './api';
+import { getAccessToken, refreshSession } from './api';
 
 /** The worker's shared position, as the server re-broadcasts it (distance measured server-side). */
 export interface LiveLocationEvent {
@@ -30,16 +30,45 @@ export interface TaskRoomHandle {
   leave(): void;
 }
 
+/** Reconnect attempts after the server ends a socket for an expired token, before giving up. */
+const MAX_SESSION_RECONNECTS = 5;
+
 /**
  * The token is read on every (re)connect, not captured once: access tokens
  * last 15 minutes, and a socket that reconnects after a network drop with a
  * stale one would be refused.
+ *
+ * The server now ends a socket when its access token expires, and when the
+ * user's sessions are revoked (suspended, password reset, account deleted),
+ * saying which first (docs/22, #22). Socket.IO never reconnects by itself
+ * after the server ends a connection, so: on `session:expired` the token is
+ * refreshed and the socket reconnects; on `session:revoked` it stays closed
+ * (the next API call signs the user out).
  */
 function connect(): Socket {
-  return io(`${config.socketUrl}/ws`, {
+  const socket = io(`${config.socketUrl}/ws`, {
     auth: (cb) => cb({ token: getAccessToken() }),
     transports: ['websocket'],
   });
+
+  let revoked = false;
+  let attempts = 0;
+  socket.on('session:revoked', () => {
+    revoked = true;
+  });
+  socket.on('connect', () => {
+    attempts = 0;
+  });
+  socket.on('disconnect', (reason) => {
+    // Any other reason is a network drop, which Socket.IO retries itself;
+    // a disconnect we asked for (leave, sign-out) is 'io client disconnect'.
+    if (reason !== 'io server disconnect' || revoked || attempts >= MAX_SESSION_RECONNECTS) return;
+    attempts += 1;
+    void refreshSession().then((ok) => {
+      if (ok && !revoked) setTimeout(() => socket.connect(), 500 * attempts);
+    });
+  });
+  return socket;
 }
 
 /**

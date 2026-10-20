@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { Queue } from 'bullmq';
-import { createBullConnection } from './redis-connection';
+import { createBullConnection, withTimeout } from './redis-connection';
 
 export const MATCHING_QUEUE_NAME = 'task-matching';
 export const MATCHING_JOB_NAME = 'match-tier';
@@ -40,6 +40,19 @@ function jobIdFor(taskId: string, tierIndex: number): string {
 const MAX_PLAUSIBLE_TIERS = 10;
 
 /**
+ * A tier pass that throws (a database blip, a Redis hiccup) is retried with
+ * backoff instead of being dropped, which used to leave that task's search
+ * never widening (docs/22, #18). runTierPass is idempotent, so a retry after
+ * a partial pass is safe. Failed jobs are kept a week for inspection.
+ */
+const JOB_OPTIONS = {
+  attempts: 4,
+  backoff: { type: 'exponential' as const, delay: 5_000 },
+  removeOnComplete: true,
+  removeOnFail: { age: 7 * 24 * 3600 },
+};
+
+/**
  * The producer side of the matching pipeline's radius expansion: schedules
  * (or reschedules) the next tier pass for a task.
  *
@@ -68,10 +81,8 @@ export class MatchingQueue implements OnModuleDestroy {
       // replace at this specific tier. (A resubmitted/duplicate schedule
       // call for the same tier would throw "Job already exists", which is
       // caught and logged below rather than left to crash the caller.)
-      await this.queue.add(
-        MATCHING_JOB_NAME,
-        { taskId, tierIndex },
-        { jobId, delay: Math.max(delayMs, 0), removeOnComplete: true, removeOnFail: true },
+      await withTimeout(
+        this.queue.add(MATCHING_JOB_NAME, { taskId, tierIndex }, { ...JOB_OPTIONS, jobId, delay: Math.max(delayMs, 0) }),
       );
     } catch (error) {
       this.logger.warn(
@@ -89,7 +100,7 @@ export class MatchingQueue implements OnModuleDestroy {
    */
   async advanceNow(taskId: string, tierIndex: number): Promise<void> {
     try {
-      await this.queue.remove(jobIdFor(taskId, tierIndex));
+      await withTimeout(this.queue.remove(jobIdFor(taskId, tierIndex)));
     } catch (error) {
       this.logger.warn(`Could not clear the pending tier ${tierIndex} job for task ${taskId}: ${String(error)}`);
     }
@@ -105,9 +116,9 @@ export class MatchingQueue implements OnModuleDestroy {
    */
   async cancelPending(taskId: string): Promise<void> {
     try {
-      await Promise.all(
-        Array.from({ length: MAX_PLAUSIBLE_TIERS }, (_, tierIndex) =>
-          this.queue.remove(jobIdFor(taskId, tierIndex)),
+      await withTimeout(
+        Promise.all(
+          Array.from({ length: MAX_PLAUSIBLE_TIERS }, (_, tierIndex) => this.queue.remove(jobIdFor(taskId, tierIndex))),
         ),
       );
     } catch (error) {

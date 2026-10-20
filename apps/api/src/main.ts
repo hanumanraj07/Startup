@@ -13,6 +13,8 @@ import { ReviewService } from './modules/tasks/review.service';
 import { SweeperService } from './modules/tasks/sweeper.service';
 import { startAutoApproveWorker } from './queue/auto-approve.worker';
 import { startMatchingWorker } from './queue/matching.worker';
+import { startNotificationWorker } from './queue/notification.worker';
+import { NotificationService } from './modules/notifications/notification.service';
 
 /** docs/05-system-architecture.md: "sweeper.reviewDeadlines | Every 60s". */
 const SWEEPER_INTERVAL_MS = 60_000;
@@ -52,6 +54,7 @@ async function bootstrap(): Promise<void> {
     const review = context.get(ReviewService);
     const sweeper = context.get(SweeperService);
     const matching = context.get(MatchingService);
+    const notifications = context.get(NotificationService);
 
     // Fast path: a BullMQ worker consuming delayed auto-approve jobs.
     const autoApproveWorker = startAutoApproveWorker(review);
@@ -59,6 +62,10 @@ async function bootstrap(): Promise<void> {
     // The matching pipeline's radius-expansion consumer. See
     // docs/10-matching-engine.md and matching.service.ts.
     const matchingWorker = startMatchingWorker(matching);
+
+    // Push and email, sent here rather than inside the API's requests
+    // (docs/22, #17). The sweeper delivers anything this queue never got.
+    const notificationWorker = startNotificationWorker(notifications);
 
     // Guarantee path: a Redis-independent poll of the database, covering
     // both review-deadline auto-approval and task-deadline expiry. Started
@@ -70,11 +77,13 @@ async function bootstrap(): Promise<void> {
       sweeper.stop();
       void autoApproveWorker.close();
       void matchingWorker.close();
+      void notificationWorker.close();
     });
 
     logger.log('OnSite worker process started.');
     logger.log(`  auto-approve queue: consuming (fast path)`);
     logger.log(`  matching queue: consuming (radius expansion)`);
+    logger.log(`  notification queue: consuming (push and email delivery)`);
     logger.log(
       `  sweeper: every ${SWEEPER_INTERVAL_MS}ms (review-deadline + task-expiry guarantee paths, no Redis dependency)`,
     );

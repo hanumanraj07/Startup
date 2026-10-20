@@ -7,6 +7,7 @@ import { BusinessRuleError, ForbiddenError, NotFoundError } from '../../common/e
 import { EncryptionService } from '../../common/encryption.service';
 import { toPublicUser, toPublicWorker, toSelfUser } from '../../common/projections';
 import { PrismaService } from '../../prisma/prisma.service';
+import { RealtimePublisher } from '../realtime/realtime.publisher';
 import { PasswordService } from '../auth/password.service';
 import { VerificationService } from '../verification/verification.service';
 
@@ -44,6 +45,7 @@ export class UsersService {
     private readonly passwords: PasswordService,
     private readonly audit: AuditService,
     private readonly verification: VerificationService,
+    private readonly publisher: RealtimePublisher,
   ) {}
 
   async getSelf(userId: string) {
@@ -161,6 +163,7 @@ export class UsersService {
       this.prisma.pushSubscription.deleteMany({ where: { userId } }),
       this.prisma.workerProfile.updateMany({ where: { userId }, data: { isAvailable: false } }),
     ]);
+    this.publisher.disconnectUser(userId);
 
     await this.audit.record({
       actorUserId: userId,

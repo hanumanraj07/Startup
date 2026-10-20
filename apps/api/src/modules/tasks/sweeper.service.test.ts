@@ -16,6 +16,7 @@ function build(rows: { id: string; status: string; disputes?: { id: string }[] }
     {} as never,
     disputes as never,
     {} as never,
+    {} as never,
   );
   return { sweeper, findMany, review, tasks, disputes };
 }
@@ -66,5 +67,28 @@ describe('SweeperService.runStrandedMoneySweep (docs/22, #1 and #2)', () => {
     tasks.refundStranded.mockRejectedValueOnce(new Error('db down'));
 
     expect(await sweeper.runStrandedMoneySweep()).toEqual({ processed: 2, acted: 1 });
+  });
+});
+
+describe('SweeperService.exclusive (docs/22, #19)', () => {
+  it('skips a sweep whose previous pass is still running, and runs it again once that pass ends', async () => {
+    const { sweeper } = build([]);
+    let finish: () => void = () => undefined;
+    const slow = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
+
+    const first = sweeper.exclusive('refunds', slow);
+    expect(await sweeper.exclusive('refunds', slow)).toBe(false);
+    expect(slow).toHaveBeenCalledOnce();
+
+    finish();
+    expect(await first).toBe(true);
+    const third = sweeper.exclusive('refunds', async () => undefined);
+    expect(await third).toBe(true);
+  });
+
+  it('a failing sweep does not stay marked as running', async () => {
+    const { sweeper } = build([]);
+    await sweeper.exclusive('payouts', () => Promise.reject(new Error('db down')));
+    expect(await sweeper.exclusive('payouts', async () => undefined)).toBe(true);
   });
 });

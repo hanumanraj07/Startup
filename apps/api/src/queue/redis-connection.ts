@@ -39,6 +39,21 @@ export function createBullConnection(): IORedis {
 }
 
 /**
+ * Bounds a BullMQ call made inside a user's request. BullMQ's connection
+ * waits for Redis forever, so with Redis down, publishing a task or
+ * submitting work would hang on its queue.add (docs/22, #17, #21). Every
+ * producer is best-effort with a database-backed sweep behind it, so giving
+ * up after a moment is safe; the call may still land later.
+ */
+export function withTimeout<T>(promise: Promise<T>, ms = 1_500): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Redis did not answer within ${ms} ms.`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+/**
  * For checks on the request path (rate limits, sign-in lockouts), which must
  * fail open rather than wait (docs/22, #21). The BullMQ connection above
  * queues commands while Redis is down and waits for it forever, so every

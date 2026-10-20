@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationService } from '../notifications/notification.service';
 import { DisputesService } from '../disputes/disputes.service';
 import { OffersService } from '../matching/offers.service';
 import { PaymentsService } from '../payments/payments.service';
@@ -34,11 +35,15 @@ import { TasksService } from './tasks.service';
  */
 /** How long a finished task must sit untouched before its held payment counts as stranded. */
 const STRANDED_AFTER_MS = 2 * 60 * 1000;
+/** Most tasks one sweep acts on; the rest wait for the next tick, oldest first. */
+const SWEEP_BATCH = 200;
 
 @Injectable()
 export class SweeperService {
   private readonly logger = new Logger(SweeperService.name);
   private timer: ReturnType<typeof setInterval> | null = null;
+  /** Sweeps still running from an earlier tick. */
+  private readonly running = new Set<string>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -49,18 +54,20 @@ export class SweeperService {
     private readonly refunds: RefundsService,
     private readonly disputes: DisputesService,
     private readonly payments: PaymentsService,
+    private readonly notifications: NotificationService,
   ) {}
 
   start(intervalMs: number): void {
     if (this.timer) return;
     this.timer = setInterval(() => {
-      void this.runReviewDeadlineSweep();
-      void this.runTaskExpirySweep();
-      void this.runOfferExpirySweep();
-      void this.runPayoutSweep();
-      void this.runStrandedMoneySweep();
-      void this.runRefundSweep();
-      void this.runPaymentReconcileSweep();
+      void this.exclusive('review-deadline', () => this.runReviewDeadlineSweep());
+      void this.exclusive('task-expiry', () => this.runTaskExpirySweep());
+      void this.exclusive('offer-expiry', () => this.runOfferExpirySweep());
+      void this.exclusive('payouts', () => this.runPayoutSweep());
+      void this.exclusive('stranded-money', () => this.runStrandedMoneySweep());
+      void this.exclusive('refunds', () => this.runRefundSweep());
+      void this.exclusive('payment-reconcile', () => this.runPaymentReconcileSweep());
+      void this.exclusive('notifications', () => this.notifications.deliverPending());
     }, intervalMs);
     // Never let a scheduled tick keep the process alive on its own if
     // everything else has shut down.
@@ -74,6 +81,33 @@ export class SweeperService {
   }
 
   /**
+   * One pass of a sweep at a time (docs/22, #19). A pass slower than the
+   * interval (a burst of due tasks, a slow database) used to have the next
+   * tick start on top of it, acting on the same tasks. Now that tick skips
+   * that sweep. Each pass also takes at most SWEEP_BATCH tasks.
+   *
+   * Across worker replicas no lock is needed for correctness: every action
+   * a sweep takes is a compare-and-set status write or a conditional money
+   * claim (docs/22, #8 and #9), so two instances acting on one task leave
+   * exactly one effect. Two instances only duplicate reads.
+   */
+  async exclusive(name: string, sweep: () => Promise<unknown>): Promise<boolean> {
+    if (this.running.has(name)) {
+      this.logger.warn(`Sweep "${name}" is still running from an earlier tick; skipping this one.`);
+      return false;
+    }
+    this.running.add(name);
+    try {
+      await sweep();
+    } catch (error) {
+      this.logger.error(`Sweep "${name}" failed: ${String(error)}`);
+    } finally {
+      this.running.delete(name);
+    }
+    return true;
+  }
+
+  /**
    * One sweep: every SUBMITTED or UNDER_REVIEW task whose review deadline has
    * passed gets auto-approved. Each task is handled independently — one
    * failure is logged and does not stop the rest of the batch.
@@ -82,6 +116,8 @@ export class SweeperService {
     const due = await this.prisma.task.findMany({
       where: { status: { in: ['SUBMITTED', 'UNDER_REVIEW'] }, reviewDeadlineAt: { lte: new Date() } },
       select: { id: true },
+      orderBy: { reviewDeadlineAt: 'asc' },
+      take: SWEEP_BATCH,
     });
 
     let acted = 0;
@@ -142,6 +178,8 @@ export class SweeperService {
         deadlineAt: { lte: new Date() },
       },
       select: { id: true },
+      orderBy: { deadlineAt: 'asc' },
+      take: SWEEP_BATCH,
     });
 
     let acted = 0;

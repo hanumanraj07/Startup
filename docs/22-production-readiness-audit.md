@@ -35,12 +35,12 @@ Severity:
 | 14 | Production server: 1 GB RAM, already swapping ~930 MB, one machine for everything | P1 |
 | 15 | Redis in production has no persistence; a restart loses all queued matching jobs and rate-limit state | P1 |
 | 16 | No monitoring, alerting or error tracking; production errors are only visible by reading container logs | P1 |
-| 17 | Notifications (push, email) are sent inside the user's request; slow providers slow every action | P2 |
-| 18 | Matching jobs have no retry and run one at a time; a burst of tasks queues up behind each other | P2 |
-| 19 | Sweeper ticks can overlap, and it loads every due task at once | P2 |
-| 20 | Worker stats (completed count, completion rate) lose updates under concurrency | P2 |
+| 17 | Notifications (push, email) are sent inside the user's request; slow providers slow every action | P2 · **fixed locally** |
+| 18 | Matching jobs have no retry and run one at a time; a burst of tasks queues up behind each other | P2 · **fixed locally** |
+| 19 | Sweeper ticks can overlap, and it loads every due task at once | P2 · **fixed locally** |
+| 20 | Worker stats (completed count, completion rate) lose updates under concurrency | P2 · **fixed locally** |
 | 21 | Rate-limit counters can become permanent blocks if a request dies mid-count; Redis outage fails every request | P2 · **fixed locally** |
-| 22 | Live sockets keep working after a user is suspended or signs out elsewhere | P2 |
+| 22 | Live sockets keep working after a user is suspended or signs out elsewhere | P2 · **fixed locally** |
 | 23 | Free public map tiles and geocoder are not allowed for production traffic | P2 |
 | 24 | Free-tier hosting everywhere (Neon, Oracle, DuckDNS, Vercel Hobby) with limits and terms that don't fit a commercial launch | P2 |
 | 25 | No ledger reconciliation job, despite the docs saying one exists | P2 |
@@ -214,17 +214,25 @@ There is no error tracking (such as Sentry), no uptime monitor, no alert on fail
 
 Standard approach: write the notification row (or outbox event) in the request and let a queue worker deliver push and email with retries and backoff.
 
+**Status (2026-10-20): fixed locally, not yet deployed.** The notification row is the outbox: `notify` writes it with the channels still to send and queues a delivery job (giving up on Redis after 1.5 s); the worker process delivers push and email (`NotificationService.deliver`, 20 at a time), each channel at most once, retrying a failed email with backoff and giving up with a recorded error after 6 attempts; a sweep delivers anything whose job was lost. Migration `20261020150000_notification_outbox`. Every BullMQ call made inside a request (matching, auto-approve, notifications) now gives up after 1.5 s, since the queue connection used to wait for Redis forever. **Verified locally (API and worker):** an accept's notification and a matching wave's pushes were delivered by the worker; with Redis stopped, publish and cancel returned in about 1.5 s and an accept in about 3 s instead of hanging, and the notification it created was delivered within 10 s of Redis returning.
+
 ### 18. Matching jobs don't retry and don't run in parallel
 
 Matching jobs use `removeOnFail: true` with no `attempts` (`queue/matching.queue.ts:74`): one database blip and that task's search never widens. The BullMQ workers run with default concurrency 1, so 1,000 tasks published in the morning rush queue one behind another while each offer's 90-second window ticks. Set `attempts` with backoff, raise worker concurrency, and keep failed jobs for inspection.
+
+**Status (2026-10-20): fixed locally.** Tier jobs retry 4 times with exponential backoff from 5 s and failed jobs are kept a week; the matching worker runs `MATCHING_CONCURRENCY` (default 10) passes at once, safe because each pass is idempotent.
 
 ### 19. The sweeper can overlap itself
 
 The sweeper is a `setInterval` every 60 s (`tasks/sweeper.service.ts:47`). If a pass takes longer than 60 s (thousands of due tasks, a slow database), the next one starts on top of it, and both act on the same tasks (feeding #9). Each sweep loads every due task with no limit. Fix: one pass at a time (skip if running), batches with `take`, and with more than one worker process, a database advisory lock or a BullMQ repeatable job so only one instance sweeps.
 
+**Status (2026-10-20): fixed locally.** Each sweep runs one pass at a time (a tick that finds the previous pass still running skips it and logs) and takes at most 200 due tasks, oldest first. No cross-instance lock: every action a sweep takes is a compare-and-set or a claimed money move (#8, #9), so two worker replicas acting on one task leave one effect.
+
 ### 20. Worker stats lose updates
 
 Completion stats are read, changed in code, and written back (`review.service.ts:219`, also in dispute resolution and leave/remove). Two tasks completing for the same worker at once will lose one count, and completion rate (which feeds matching scores) drifts. Use atomic `increment` and compute the rate in SQL.
+
+**Status (2026-10-20): fixed locally.** `adjustWorkerStats` increments with an atomic update, which locks the profile row, then recomputes the completion rate from the counts in the same transaction; used by approval, dispute settlement, and leave/remove. Ratings are recomputed from the reviews table under the same lock, counting only ratings received as a worker. **Verified against local Postgres:** 20 simultaneous completions for one worker all counted and the rate came out exact.
 
 ### 21. Rate limiter edge cases
 
@@ -235,6 +243,8 @@ The counter is `INCR` then `PEXPIRE` as two calls (`common/redis-throttler-stora
 ### 22. Sockets outlive their sessions
 
 The socket checks the access token once at connect (`realtime/realtime.gateway.ts:65`). A suspended user, or one who changed their password (which bumps `tokenVersion`), keeps receiving live task events until they disconnect. Check `tokenVersion` and status at connect, and disconnect a user's sockets on suspension or sign-out.
+
+**Status (2026-10-20): fixed locally, not yet deployed.** At connect the socket now gets the same checks as an HTTP request (account active, token version current), and it is ended when its access token expires, with `session:expired` so the client refreshes and reconnects. Suspension, password reset and account deletion end the user's sockets on every instance (`RealtimePublisher.disconnectUser`) with `session:revoked`, so the client stays disconnected. The frontend reconnects after an expiry (Socket.IO does not on its own when the server ends a socket). **Verified locally with a real Socket.IO client:** a bad token was told to refresh; suspending an account cut its live socket within a second; its old token was refused on reconnect.
 
 ### 23. Free public map tiles and geocoder
 

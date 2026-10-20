@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { decodeCursor, encodeCursor } from '@onsite/utils';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationQueue } from '../../queue/notification.queue';
 import { EMAIL_PROVIDER, type EmailProvider } from '../messaging/providers';
 import { EVENT_DEFINITIONS, NOTIFICATION_CATEGORIES, type NotificationCategory, type NotificationPayload } from './events';
 import { PushService } from './push.service';
@@ -30,7 +31,19 @@ export interface NotificationView {
  * record docs/13 calls "the fallback for everything." Push and email are
  * gated by the event's declared channels, the user's stored preference, and
  * `nonDisableable` overriding that preference for payment-carrying events.
+ *
+ * Push and email are not sent here (docs/22, #17). The row is written with
+ * the channels still to send (an outbox) and the worker process delivers
+ * them (`deliver`), with retries; a sweep catches any whose queued job was
+ * lost. One slow provider used to slow every action that notified anyone.
  */
+
+/** A claim on a delivery older than this is from a process that died mid-send. */
+const STALE_CLAIM_MS = 5 * 60_000;
+/** After this many attempts a delivery gives up and records why. */
+export const MAX_DELIVERY_ATTEMPTS = 6;
+/** The sweep leaves fresh rows to the queue. */
+const SWEEP_AFTER_MS = 2 * 60_000;
 @Injectable()
 export class NotificationService {
   private readonly logger = new Logger(NotificationService.name);
@@ -39,13 +52,21 @@ export class NotificationService {
     private readonly prisma: PrismaService,
     private readonly push: PushService,
     @Inject(EMAIL_PROVIDER) private readonly email: EmailProvider,
+    private readonly queue: NotificationQueue,
   ) {}
 
+  /** Writes the in-app notification and queues its push and email. Never waits on a provider. */
   async notify(userId: string, payload: NotificationPayload): Promise<void> {
     const def = EVENT_DEFINITIONS[payload.event];
     const rendered = renderNotification(payload);
 
-    await this.prisma.notification.create({
+    const prefs = await this.getPreferences(userId);
+    const categoryPrefs = prefs[def.category];
+    const pending: string[] = [];
+    if (def.channels.includes('PUSH') && (def.nonDisableable || categoryPrefs?.push !== false)) pending.push('PUSH');
+    if (def.channels.includes('EMAIL') && (def.nonDisableable || categoryPrefs?.email !== false)) pending.push('EMAIL');
+
+    const row = await this.prisma.notification.create({
       data: {
         userId,
         type: payload.event,
@@ -53,33 +74,95 @@ export class NotificationService {
         body: rendered.body,
         data: payload as object,
         channels: [...def.channels],
+        pendingChannels: pending,
+        deliveredAt: pending.length === 0 ? new Date() : null,
       },
+      select: { id: true },
     });
 
-    const prefs = await this.getPreferences(userId);
-    const categoryPrefs = prefs[def.category];
-    const pushEnabled = def.nonDisableable || categoryPrefs?.push !== false;
-    const emailEnabled = def.nonDisableable || categoryPrefs?.email !== false;
+    if (pending.length > 0) await this.queue.enqueue(row.id);
+  }
 
-    if (def.channels.includes('PUSH') && pushEnabled) {
+  /**
+   * Sends a notification's pending push and email, each at most once.
+   * Called by the worker's queue consumer and by the sweep. A claim makes a
+   * second deliverer back off; a claim left by a process that died is taken
+   * over after STALE_CLAIM_MS. Returns RETRY while a channel is still unsent
+   * (the queue then retries with backoff), DONE otherwise, including when it
+   * gives up after MAX_DELIVERY_ATTEMPTS.
+   */
+  async deliver(notificationId: string, now = new Date()): Promise<'DONE' | 'RETRY' | 'SKIPPED'> {
+    const claimed = await this.prisma.notification.updateMany({
+      where: {
+        id: notificationId,
+        deliveredAt: null,
+        OR: [{ deliveryClaimedAt: null }, { deliveryClaimedAt: { lt: new Date(now.getTime() - STALE_CLAIM_MS) } }],
+      },
+      data: { deliveryClaimedAt: now, deliveryAttempts: { increment: 1 } },
+    });
+    if (claimed.count === 0) return 'SKIPPED';
+
+    const n = await this.prisma.notification.findUniqueOrThrow({ where: { id: notificationId } });
+    const message = { title: n.title, body: n.body };
+    const done: { pushSentAt?: Date; emailSentAt?: Date } = {};
+    let error: string | null = null;
+
+    if (n.pendingChannels.includes('PUSH') && !n.pushSentAt) {
       try {
-        await this.push.sendToUser(userId, { title: rendered.title, body: rendered.body, data: { event: payload.event } });
-      } catch (error) {
-        // A failed push must never fail the action that triggered it.
-        this.logger.warn(`Push dispatch failed for user ${userId}, event ${payload.event}: ${String(error)}`);
+        // PushService swallows per-device failures (and drops dead ones), so
+        // an attempt counts as sent: a retry would repeat it on devices that
+        // already received it.
+        await this.push.sendToUser(n.userId, { ...message, data: { event: n.type } });
+        done.pushSentAt = new Date();
+      } catch (e) {
+        error = `push: ${String(e)}`;
+      }
+    }
+    if (n.pendingChannels.includes('EMAIL') && !n.emailSentAt) {
+      try {
+        const user = await this.prisma.user.findUnique({ where: { id: n.userId }, select: { email: true } });
+        if (user) await this.email.send({ to: user.email, subject: n.title, body: n.body });
+        done.emailSentAt = new Date();
+      } catch (e) {
+        error = `${error ? error + '; ' : ''}email: ${String(e)}`;
       }
     }
 
-    if (def.channels.includes('EMAIL') && emailEnabled) {
+    const pushLeft = n.pendingChannels.includes('PUSH') && !n.pushSentAt && !done.pushSentAt;
+    const emailLeft = n.pendingChannels.includes('EMAIL') && !n.emailSentAt && !done.emailSentAt;
+    const finished = !pushLeft && !emailLeft;
+    const givingUp = !finished && n.deliveryAttempts >= MAX_DELIVERY_ATTEMPTS;
+
+    await this.prisma.notification.update({
+      where: { id: n.id },
+      data: {
+        ...done,
+        deliveryError: error,
+        deliveryClaimedAt: null,
+        ...((finished || givingUp) && { deliveredAt: new Date() }),
+      },
+    });
+    if (givingUp) this.logger.warn(`Notification ${n.id} (${n.type}) gave up after ${n.deliveryAttempts} attempts: ${error}`);
+    return finished || givingUp ? 'DONE' : 'RETRY';
+  }
+
+  /** The sweep: deliveries whose queued job was lost, or whose retries outlived the queue. */
+  async deliverPending(now = new Date()): Promise<number> {
+    const due = await this.prisma.notification.findMany({
+      where: { deliveredAt: null, createdAt: { lte: new Date(now.getTime() - SWEEP_AFTER_MS) } },
+      select: { id: true },
+      orderBy: { createdAt: 'asc' },
+      take: 100,
+    });
+    let delivered = 0;
+    for (const { id } of due) {
       try {
-        const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
-        if (user) {
-          await this.email.send({ to: user.email, subject: rendered.title, body: rendered.body });
-        }
+        if ((await this.deliver(id, now)) === 'DONE') delivered += 1;
       } catch (error) {
-        this.logger.warn(`Email dispatch failed for user ${userId}, event ${payload.event}: ${String(error)}`);
+        this.logger.warn(`Notification ${id} delivery failed in the sweep: ${String(error)}`);
       }
     }
+    return delivered;
   }
 
   async list(

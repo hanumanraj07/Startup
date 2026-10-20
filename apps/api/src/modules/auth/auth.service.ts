@@ -7,6 +7,7 @@ import { loadEnv } from '../../config/env';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GoogleAuthService } from './google-auth.service';
 import { LoginAttemptsService } from './login-attempts.service';
+import { RealtimePublisher } from '../realtime/realtime.publisher';
 import { PasswordService } from './password.service';
 import { TokenService } from './token.service';
 import { VerificationService } from './verification.service';
@@ -39,6 +40,7 @@ export class AuthService {
     private readonly verification: VerificationService,
     private readonly google: GoogleAuthService,
     private readonly attempts: LoginAttemptsService,
+    private readonly publisher: RealtimePublisher,
   ) {}
 
   async register(input: RegisterInput): Promise<AuthResult> {
@@ -287,6 +289,7 @@ export class AuthService {
         data: { revokedAt: new Date() },
       }),
     ]);
+    this.publisher.disconnectUser(userId);
   }
 
   private async issueSession(userId: string): Promise<AuthResult> {

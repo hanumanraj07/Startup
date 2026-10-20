@@ -4,6 +4,13 @@ Notable changes to OnSite. Format follows [Keep a Changelog](https://keepachange
 
 ## [Unreleased]
 
+### Changed — 2026-10-20 · Faster and steadier under load (docs/22)
+
+- **Actions no longer wait for notifications to send.** Accepting, approving and publishing used to wait while push notifications and emails went out; they are now sent in the background, retried if an email fails, and never sent twice.
+- **Task searches recover from hiccups** and many tasks are matched at once, instead of one after another.
+- **Completed-task counts and ratings stay accurate** when several tasks finish at the same moment.
+- **Signing out everywhere really signs you out.** If an account is suspended, its password is reset, or it is deleted, any open app stops receiving live updates at once.
+
 ### Fixed — 2026-10-20 · Sign-in limits that work on mobile networks (docs/22)
 
 - **Other people on your network can no longer lock you out.** Mobile networks share one internet address across thousands of phones, and sign-in used to allow only 5 tries per address. Limits now follow your account: after 5 wrong passwords your account waits a minute before the next try, then a little longer each time, and the right password clears it.

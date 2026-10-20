@@ -32,7 +32,16 @@ function build(current: Record<string, unknown>, opts: { removals?: number; upda
     taskStatusHistory: { create: vi.fn().mockResolvedValue({}) },
     taskProof: { deleteMany: vi.fn().mockResolvedValue({ count: 2 }) },
     itemPurchase: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
-    workerProfile: { findUnique: vi.fn().mockResolvedValue(profile), update: vi.fn().mockResolvedValue({}) },
+    workerProfile: {
+      findUnique: vi.fn(async () => profile),
+      // Applies increments the way the database would, so the recomputed rate can be checked.
+      updateMany: vi.fn(async ({ data }: { data: Record<string, { increment: number }> }) => {
+        const counts = profile as unknown as Record<string, number>;
+        for (const [key, value] of Object.entries(data)) counts[key] = (counts[key] ?? 0) + value.increment;
+        return { count: 1 };
+      }),
+      update: vi.fn().mockResolvedValue({}),
+    },
   };
   const prisma = {
     task: { findUnique: vi.fn().mockResolvedValue(current) },
@@ -80,7 +89,7 @@ describe('TasksService.leave', () => {
     // 3 of 4 accepted completed → 75%, and one more abandonment on record.
     expect(tx.workerProfile.update).toHaveBeenCalledWith({
       where: { userId: WORKER },
-      data: { tasksAccepted: 4, tasksAbandoned: 1, completionRate: 75 },
+      data: { tasksAccepted: 4, completionRate: 75 },
     });
     expect(realtime.removeUserFromTask).toHaveBeenCalledWith('t1', WORKER);
     expect(queue.scheduleTier).toHaveBeenCalledWith('t1', 0, 0);
@@ -116,7 +125,7 @@ describe('TasksService.removeWorker', () => {
     // The undone acceptance is taken back out: 3 of 3 → 100%, no abandonment.
     expect(tx.workerProfile.update).toHaveBeenCalledWith({
       where: { userId: WORKER },
-      data: { tasksAccepted: 3, tasksAbandoned: 0, completionRate: 100 },
+      data: { tasksAccepted: 3, completionRate: 100 },
     });
     expect(notifications.notify).toHaveBeenCalledWith(WORKER, expect.objectContaining({ event: 'WORKER_REMOVED' }));
   });

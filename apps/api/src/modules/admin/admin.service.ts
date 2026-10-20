@@ -13,6 +13,7 @@ import { AuditService } from '../../common/audit.service';
 import { EncryptionService } from '../../common/encryption.service';
 import { BusinessRuleError, ConflictError, NotFoundError } from '../../common/errors';
 import { PrismaService } from '../../prisma/prisma.service';
+import { RealtimePublisher } from '../realtime/realtime.publisher';
 import { NotificationService } from '../notifications/notification.service';
 import { StorageService } from '../storage/storage.service';
 
@@ -45,6 +46,7 @@ export class AdminService {
     private readonly encryption: EncryptionService,
     private readonly notifications: NotificationService,
     private readonly audit: AuditService,
+    private readonly publisher: RealtimePublisher,
   ) {}
 
   // ─── KYC ─────────────────────────────────────────────────────────────
@@ -200,6 +202,8 @@ export class AdminService {
       where: { id: userId },
       data: { status: 'SUSPENDED', suspendedReason: input.reason, tokenVersion: { increment: 1 } },
     });
+    // Live connections end now too, not when they next reconnect (docs/22, #22).
+    this.publisher.disconnectUser(userId);
 
     await this.audit.record({
       actorUserId: adminId,

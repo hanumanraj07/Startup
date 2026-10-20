@@ -86,15 +86,31 @@ export class RatingsService {
     return { id: review.id, taskId, rating: review.rating, comment: review.comment, createdAt: review.createdAt.toISOString() };
   }
 
-  private async bumpRateeAggregate(rateeId: string, rating: number): Promise<void> {
-    const profile = await this.prisma.workerProfile.findUnique({ where: { userId: rateeId } });
-    if (!profile) return; // See the class comment: no requester-side aggregate exists yet.
-
-    const newCount = profile.ratingCount + 1;
-    const newAvg = ((profile.ratingAvg ?? 0) * profile.ratingCount + rating) / newCount;
-    await this.prisma.workerProfile.update({
-      where: { userId: rateeId },
-      data: { ratingAvg: Math.round(newAvg * 100) / 100, ratingCount: newCount },
+  /**
+   * Recomputes the worker's rating from their reviews, rather than nudging a
+   * stored average by one rating (docs/22, #20): two ratings landing at once
+   * used to read the same old average and one was lost, and each step's
+   * rounding accumulated. The first write locks the profile row, so a
+   * concurrent recompute waits and then counts both. Only ratings given to
+   * the person as a worker count; one they received as a requester never
+   * did belong in their worker score.
+   */
+  private async bumpRateeAggregate(rateeId: string, _rating: number): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const locked = await tx.workerProfile.updateMany({ where: { userId: rateeId }, data: { ratingCount: { increment: 0 } } });
+      if (locked.count === 0) return; // See the class comment: no requester-side aggregate exists yet.
+      const agg = await tx.review.aggregate({
+        where: { rateeId, direction: 'REQUESTER_TO_WORKER' },
+        _avg: { rating: true },
+        _count: { _all: true },
+      });
+      await tx.workerProfile.update({
+        where: { userId: rateeId },
+        data: {
+          ratingCount: agg._count._all,
+          ratingAvg: agg._avg.rating === null ? null : Math.round(agg._avg.rating * 100) / 100,
+        },
+      });
     });
   }
 }

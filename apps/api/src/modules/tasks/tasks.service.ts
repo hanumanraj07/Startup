@@ -38,6 +38,7 @@ import {
   writeTransition,
 } from './transitions';
 import { RiskService } from './risk.service';
+import { adjustWorkerStats } from '../workers/worker-stats';
 import { PaymentsService } from '../payments/payments.service';
 
 /** How many times a requester may remove a worker from one task before only cancel or report remain. */
@@ -973,19 +974,13 @@ export class TasksService {
         data: { status: 'CANCELLED', decidedAt: new Date() },
       });
 
-      const profile = await tx.workerProfile.findUnique({ where: { userId: workerId } });
-      if (profile) {
-        // Leaving counts against the worker; being removed does not, so the
-        // acceptance that is being undone is taken back out of the ratio.
-        const tasksAccepted = initiatedBy === 'REQUESTER' ? Math.max(0, profile.tasksAccepted - 1) : profile.tasksAccepted;
-        const tasksAbandoned = profile.tasksAbandoned + (initiatedBy === 'WORKER' ? 1 : 0);
-        const completionRate =
-          tasksAccepted > 0 ? Math.round((profile.tasksCompleted / tasksAccepted) * 1000) / 10 : null;
-        await tx.workerProfile.update({
-          where: { userId: workerId },
-          data: { tasksAccepted, tasksAbandoned, completionRate },
-        });
-      }
+      // Leaving counts against the worker; being removed does not, so the
+      // acceptance that is being undone is taken back out of the ratio.
+      await adjustWorkerStats(
+        tx,
+        workerId,
+        initiatedBy === 'REQUESTER' ? { accepted: -1 } : { abandoned: 1 },
+      );
     });
 
     this.publisher.taskStatus(task.id, 'MATCHING');

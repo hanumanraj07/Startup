@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { Queue } from 'bullmq';
-import { createBullConnection } from './redis-connection';
+import { createBullConnection, withTimeout } from './redis-connection';
 
 export const AUTO_APPROVE_QUEUE_NAME = 'task-auto-approve';
 export const AUTO_APPROVE_JOB_NAME = 'auto-approve';
@@ -53,12 +53,12 @@ export class AutoApproveQueue implements OnModuleDestroy {
   async schedule(taskId: string, delayMs: number): Promise<void> {
     const jobId = jobIdFor(taskId);
     try {
-      await this.queue.remove(jobId);
-      await this.queue.add(
+      await withTimeout(this.queue.remove(jobId));
+      await withTimeout(this.queue.add(
         AUTO_APPROVE_JOB_NAME,
         { taskId },
         { jobId, delay: Math.max(delayMs, 0), removeOnComplete: true, removeOnFail: true },
-      );
+      ));
     } catch (error) {
       this.logger.warn(
         `Could not schedule the auto-approve queue job for task ${taskId}; the sweeper will still catch it at its deadline. ${String(error)}`,
@@ -69,7 +69,7 @@ export class AutoApproveQueue implements OnModuleDestroy {
   /** Best-effort cleanup after a manual approve/reject, so a stale job doesn't fire a no-op later. */
   async cancel(taskId: string): Promise<void> {
     try {
-      await this.queue.remove(jobIdFor(taskId));
+      await withTimeout(this.queue.remove(jobIdFor(taskId)));
     } catch (error) {
       this.logger.warn(`Could not cancel the auto-approve job for task ${taskId}: ${String(error)}`);
     }

@@ -21,6 +21,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { PaymentsModule } from './modules/payments/payments.module';
 import { PlacesModule } from './modules/places/places.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
+import { RealtimePublisherModule } from './modules/realtime/realtime-publisher.module';
 import { SafetyModule } from './modules/safety/safety.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { TrustModule } from './modules/trust/trust.module';
@@ -76,6 +77,7 @@ import { PrismaModule } from './prisma/prisma.module';
     PlacesModule,
     PaymentsModule,
     NotificationsModule,
+    RealtimePublisherModule,
     RealtimeModule,
     SafetyModule,
     ModerationModule,

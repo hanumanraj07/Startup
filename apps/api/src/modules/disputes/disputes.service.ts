@@ -13,6 +13,7 @@ import { PayoutsService } from '../payments/payouts.service';
 import { NotificationService } from '../notifications/notification.service';
 import { StorageService } from '../storage/storage.service';
 import { assertTransitionAllowed, writeTransition } from '../tasks/transitions';
+import { adjustWorkerStats } from '../workers/worker-stats';
 
 export interface DisputeView {
   id: string;
@@ -495,12 +496,7 @@ export class DisputesService {
   }
 
   private async bumpWorkerCompletionStats(workerId: string): Promise<void> {
-    const profile = await this.prisma.workerProfile.findUnique({ where: { userId: workerId } });
-    if (!profile) return;
-    const tasksCompleted = profile.tasksCompleted + 1;
-    const completionRate =
-      profile.tasksAccepted > 0 ? Math.round((tasksCompleted / profile.tasksAccepted) * 1000) / 10 : null;
-    await this.prisma.workerProfile.update({ where: { userId: workerId }, data: { tasksCompleted, completionRate } });
+    await adjustWorkerStats(this.prisma, workerId, { completed: 1 });
   }
 
   private toView(

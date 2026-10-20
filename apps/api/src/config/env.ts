@@ -135,6 +135,9 @@ const envSchema = z
     MIN_TASK_BUDGET_PAISE: z.coerce.number().int().positive().default(10_000),
     MAX_TASK_BUDGET_PAISE: z.coerce.number().int().positive().default(5_000_000),
     MAX_CONCURRENT_TASKS_PER_WORKER: z.coerce.number().int().min(1).max(20).default(3),
+    // Tier passes and notification deliveries run at once in the worker process (docs/22, #17, #18).
+    MATCHING_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(10),
+    NOTIFICATION_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(20),
     // How long a worker has to answer an incoming task request; the next,
     // wider wave goes out when every request in a wave is answered or
     // expired (founder decision, 2026-10-19).

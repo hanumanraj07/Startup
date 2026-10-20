@@ -67,6 +67,8 @@ Bolded events are the ones that carry the product. If push must be limited, thes
 
 **Dispatch is asynchronous, always.** Notification sending never happens inside a request. It is queued and processed by the worker process, so a slow push service cannot slow the API.
 
+How (2026-10-20, docs/22 #17; until then push and email were in fact sent inside the request): the `notifications` row is the outbox. `NotificationService.notify` writes it with `pending_channels` and queues a `notification-delivery` job; the worker process delivers it (`deliver`), recording `push_sent_at` / `email_sent_at` so a retry never repeats a channel, retrying a failed email with backoff and recording `delivery_error` after the last attempt; the sweeper delivers any row whose job was lost. In-app is the row itself, so it never waits. Locally, push and email therefore need the worker process running (`ROLE=worker`), as matching already did.
+
 **Failures are logged and retried, never surfaced as request errors.** A failed push must not fail the action that triggered it.
 
 ## Preferences

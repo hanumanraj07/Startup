@@ -1073,6 +1073,18 @@ model Notification {
   readAt    DateTime? @map("read_at")
   createdAt DateTime  @default(now()) @map("created_at")
 
+  /// Delivery outbox (docs/22, #17): push and email still to send, sent by
+  /// the worker process. A channel's sent-at is set once it has gone, so a
+  /// retry never sends it twice. delivered_at is set when nothing is left
+  /// (or delivery gave up); a partial index covers the rows where it is null.
+  pendingChannels   String[]  @default([]) @map("pending_channels")
+  pushSentAt        DateTime? @map("push_sent_at")
+  emailSentAt       DateTime? @map("email_sent_at")
+  deliveryAttempts  Int       @default(0) @map("delivery_attempts")
+  deliveryClaimedAt DateTime? @map("delivery_claimed_at")
+  deliveredAt       DateTime? @map("delivered_at")
+  deliveryError     String?   @map("delivery_error")
+
   @@index([userId, createdAt(sort: Desc)])
   @@map("notifications")
 }

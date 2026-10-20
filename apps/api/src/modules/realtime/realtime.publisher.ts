@@ -21,6 +21,11 @@ import { taskRoom, userRoom } from './rooms';
  * expiry through the gateway, threw on the undefined server, and never
  * reached the refund that followed. Nothing here throws.
  */
+/** Sent before the server ends a socket whose sessions were revoked: do not reconnect. */
+export const SESSION_REVOKED_EVENT = 'session:revoked';
+/** Sent before the server ends a socket whose access token has expired: refresh, then reconnect. */
+export const SESSION_EXPIRED_EVENT = 'session:expired';
+
 @Injectable()
 export class RealtimePublisher implements OnModuleDestroy {
   private readonly logger = new Logger(RealtimePublisher.name);
@@ -52,6 +57,20 @@ export class RealtimePublisher implements OnModuleDestroy {
   /** A persisted, already-redacted chat message. Never the raw body. */
   newMessage(taskId: string, message: unknown): void {
     this.toTask(taskId, 'message:new', message);
+  }
+
+  /**
+   * Ends every live connection a user has, on every API instance: their
+   * sessions were revoked (suspended, password reset, account deleted). The
+   * client is told first, so it does not try to reconnect (docs/22, #22).
+   */
+  disconnectUser(userId: string): void {
+    try {
+      this.ws.in(userRoom(userId)).emit(SESSION_REVOKED_EVENT, {});
+      this.ws.in(userRoom(userId)).disconnectSockets(true);
+    } catch (error) {
+      this.logger.warn(`Could not disconnect user ${userId}: ${String(error)}`);
+    }
   }
 
   /**

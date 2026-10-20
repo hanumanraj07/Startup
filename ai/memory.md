@@ -6,6 +6,19 @@ Newest entries at the top. Every entry states the decision, the reasoning, and w
 
 ---
 
+## 2026-10-20 — Background work at scale: notification outbox, matching retries, one sweep pass at a time, atomic worker stats, sockets end with their session (docs/22, #17–#20, #22)
+
+- **Notifications (#17).** The row is the outbox: `notify` writes it with `pending_channels` and queues delivery; the worker sends push and email (`deliver`), each at most once (per-channel sent-at), email retried with backoff, giving up after 6 attempts with the error recorded; the sweeper delivers rows whose job was lost. docs/13 always required this; the code sent inline. Push counts as sent once attempted, since PushService swallows per-device failures and a retry would repeat it on devices that got it. Rejected: a separate outbox table (the notification row already is one).
+- **Queue calls inside requests time out (#17, #21).** `withTimeout` (1.5 s) on every BullMQ producer call: the queue connection waits for Redis forever, so with Redis down a publish or an accept used to hang. Every producer already had a database-backed sweep behind it.
+- **Matching (#18).** 4 attempts with exponential backoff, failed jobs kept a week, `MATCHING_CONCURRENCY` (10) passes at once; safe because a pass is idempotent.
+- **Sweeper (#19).** One pass per sweep at a time, 200 tasks per pass. No cross-instance lock (rejected: an advisory lock via raw SQL, which belongs in the geo repository only): every sweep action is a compare-and-set or a claimed money move, so replicas only duplicate reads.
+- **Worker stats (#20).** `adjustWorkerStats`: atomic increment (row lock) then the rate from the locked row, in one transaction. Ratings are recomputed from `reviews` under the same lock, counting only ratings received as a worker (a rating someone received as a requester used to leak into their worker score).
+- **Sockets (#22).** Connect checks status and token version like JwtAuthGuard; the socket ends at token expiry with `session:expired` (the client refreshes and reconnects, since Socket.IO never reconnects after a server-side disconnect); suspension, password reset and deletion end every socket of the user with `session:revoked`. `RealtimePublisher` moved to a global module so AuthModule can use it without a cycle.
+
+**Verified locally:** the worker delivered an accept's notification and a wave's pushes; with Redis stopped, publish and cancel answered in about 1.5 s and accept in about 3 s, and the pending notification was delivered within 10 s of Redis returning; 20 simultaneous completions all counted; a suspended account's live socket was cut within a second and its old token refused.
+
+---
+
 ## 2026-10-20 — Sign-in limits are per account, not per IP; the rate limiter fails open (docs/22, #7 and #21)
 
 **Why:** login was 5 per 15 minutes per IP. Jio and Airtel put thousands of phones behind one public IP (carrier-grade NAT), so a few people mistyping on one tower would lock out everyone on it, and the global 300-per-minute per-IP default had the same problem at scale. And the limiter waited forever on a down Redis (the BullMQ connection queues commands), so a Redis outage would stall every request.

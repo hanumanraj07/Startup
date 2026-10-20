@@ -13,6 +13,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { TokenService } from '../auth/token.service';
 import { isAllowedOrigin } from './cors-origin';
 import { LiveLocationService, type LiveLocationInput } from './live-location.service';
+import { SESSION_EXPIRED_EVENT, SESSION_REVOKED_EVENT } from './realtime.publisher';
 import { taskRoom, userRoom } from './rooms';
 
 /**
@@ -58,32 +59,69 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     private readonly live: LiveLocationService,
   ) {}
 
-  handleConnection(client: Socket): void {
+  /**
+   * The same checks JwtAuthGuard makes on every HTTP request, not just a
+   * valid signature (docs/22, #22): the account still exists and is active,
+   * and the token's version is current (suspension, a password reset and
+   * account deletion all bump it). And the socket lives no longer than its
+   * token: when the token expires the client is told to refresh and
+   * reconnect. Before, one valid token at connect kept a socket receiving
+   * events indefinitely, through a suspension or a password reset.
+   */
+  async handleConnection(client: Socket): Promise<void> {
     const token =
       (client.handshake.auth as Record<string, unknown> | undefined)?.token ??
       client.handshake.query.token;
 
     if (typeof token !== 'string' || !token) {
       this.logger.debug(`Socket ${client.id} rejected: no access token presented.`);
-      client.disconnect(true);
+      this.end(client, SESSION_EXPIRED_EVENT);
       return;
     }
 
+    let payload: ReturnType<TokenService['verifyAccessToken']> & { exp?: number };
     try {
-      const payload = this.tokens.verifyAccessToken(token);
-      client.data.userId = payload.sub;
-      // Every authenticated socket hears events addressed to its own user:
-      // incoming task requests for a worker, "your task was accepted" for a
-      // requester. Nothing addressed to anyone else.
-      void client.join(userRoom(payload.sub));
+      payload = this.tokens.verifyAccessToken(token);
     } catch {
       this.logger.debug(`Socket ${client.id} rejected: invalid or expired access token.`);
-      client.disconnect(true);
+      this.end(client, SESSION_EXPIRED_EVENT);
+      return;
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { status: true, tokenVersion: true },
+    });
+    if (!user || user.status !== 'ACTIVE' || user.tokenVersion !== payload.tokenVersion) {
+      this.logger.debug(`Socket ${client.id} rejected: session revoked or account not active.`);
+      this.end(client, SESSION_REVOKED_EVENT);
+      return;
+    }
+
+    client.data.userId = payload.sub;
+    // Every authenticated socket hears events addressed to its own user:
+    // incoming task requests for a worker, "your task was accepted" for a
+    // requester. Nothing addressed to anyone else. Also how disconnectUser
+    // reaches every socket of a revoked user.
+    void client.join(userRoom(payload.sub));
+
+    if (payload.exp) {
+      const ms = payload.exp * 1000 - Date.now();
+      const timer = setTimeout(() => this.end(client, SESSION_EXPIRED_EVENT), Math.max(ms, 0));
+      timer.unref?.();
+      client.data.expiryTimer = timer;
     }
   }
 
   handleDisconnect(client: Socket): void {
+    if (client.data.expiryTimer) clearTimeout(client.data.expiryTimer as ReturnType<typeof setTimeout>);
     this.logger.debug(`Socket ${client.id} (user ${client.data.userId ?? 'unauthenticated'}) disconnected.`);
+  }
+
+  /** Tells the client why, then ends the socket. */
+  private end(client: Socket, reason: typeof SESSION_EXPIRED_EVENT | typeof SESSION_REVOKED_EVENT): void {
+    client.emit(reason, {});
+    client.disconnect(true);
   }
 
   /**
