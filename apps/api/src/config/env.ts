@@ -113,6 +113,9 @@ const envSchema = z
     EMAIL_PROVIDER: z.enum(['console', 'smtp', 'resend']).default('console'),
     EMAIL_FROM: z.string().default('OnSite <no-reply@example.com>'),
     SMTP_URL: z.string().optional(),
+    // Resend's API key, for EMAIL_PROVIDER=resend (docs/22, #6). EMAIL_FROM
+    // must then be an address on a domain verified in Resend.
+    RESEND_API_KEY: z.string().optional(),
 
     SMS_PROVIDER: z.enum(['console', 'msg91', 'twilio']).default('console'),
     SMS_API_KEY: z.string().optional(),

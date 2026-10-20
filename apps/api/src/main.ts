@@ -14,6 +14,7 @@ import { SweeperService } from './modules/tasks/sweeper.service';
 import { startAutoApproveWorker } from './queue/auto-approve.worker';
 import { startMatchingWorker } from './queue/matching.worker';
 import { startNotificationWorker } from './queue/notification.worker';
+import { initErrorReporting } from './logging/error-reporting';
 import { NotificationService } from './modules/notifications/notification.service';
 
 /** docs/05-system-architecture.md: "sweeper.reviewDeadlines | Every 60s". */
@@ -41,6 +42,7 @@ const SWEEPER_INTERVAL_MS = 60_000;
 async function bootstrap(): Promise<void> {
   const env = loadEnv();
   const logger = new Logger('Bootstrap');
+  initErrorReporting(env.ROLE);
 
   if (env.ROLE === 'worker') {
     // No HTTP server: this process only runs background work. See

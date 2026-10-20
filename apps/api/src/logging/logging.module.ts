@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { loadEnv } from '../config/env';
+import { reportLoggedError } from './error-reporting';
 
 /**
  * Structured logging via pino, with a correlation ID on every request.
@@ -24,6 +25,13 @@ import { loadEnv } from '../config/env';
         return {
           pinoHttp: {
             level: env.LOG_LEVEL,
+            // Error-level lines also go to Sentry when it is configured (docs/22, #16).
+            hooks: {
+              logMethod(args: unknown[], method: (...a: unknown[]) => void, level: number) {
+                if (level >= 50) reportLoggedError(args);
+                method.apply(this, args);
+              },
+            },
             // JSON in production (what a log aggregator wants); colorized,
             // human-readable output everywhere else.
             transport: isProduction

@@ -119,6 +119,8 @@ The first four are the ones to fix first: two are live bugs that are holding rea
 
 `EMAIL_PROVIDER=console` in production: verification and password-reset emails go to the container log. Google sign-in works; email/password users can never verify (level 1) or recover their account. Needs a real provider (Resend, SES, or SMTP) and a sending domain.
 
+**Status (2026-10-20): code ready; needs an account.** A Resend driver is in (`EMAIL_PROVIDER=resend`, `RESEND_API_KEY`, `EMAIL_FROM` on a domain verified in Resend), sent over plain HTTPS and retried by the notification outbox when it fails. What remains is the owner's: a Resend account and a real sending domain (a DuckDNS name cannot carry the DNS records email verification needs), then the three settings in `~/onsite.env` and a restart.
+
 ### 7. Login and OTP limits are per IP, and Indian mobile IPs are shared
 
 Login allows 5 attempts per 15 minutes per IP; OTP 3 per hour per IP (`apps/api/src/modules/auth/auth.controller.ts:46`, `:50`). Jio and Airtel put thousands of phones behind one public IP (carrier-grade NAT), so a handful of users mistyping passwords locks out everyone on that tower, and a few OTP requests do the same. The global default (300 requests per minute per IP) has the same problem at scale.
@@ -203,6 +205,8 @@ Fix: turn on AOF persistence, size memory properly, and use a managed Redis or a
 ### 16. No one is told when something breaks
 
 There is no error tracking (such as Sentry), no uptime monitor, no alert on failed jobs, and no dashboard. Issue #1 has been failing silently in production. At minimum add Sentry (or equivalent) for API and worker errors, an uptime check on `/health/ready`, and an alert on any error-level log from the sweeper or payment code.
+
+**Status (2026-10-20): code ready; needs an account.** With `SENTRY_DSN` set, every error-level log line goes to Sentry (pino hook, errors only, no request bodies or personal data): unhandled request errors, sweep failures, refunds and payouts that gave up, and every "Reconciliation:" finding. What remains is the owner's: a Sentry project (the free tier is enough to start), its DSN in `~/onsite.env`, an alert rule to email or phone, and an uptime check on `https://onsite-api.duckdns.org/health/ready`.
 
 ---
 

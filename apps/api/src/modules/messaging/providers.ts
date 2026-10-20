@@ -39,6 +39,34 @@ export class ConsoleSmsProvider implements SmsProvider {
   }
 }
 
+/**
+ * Sends through Resend's HTTP API (docs/22, #6: production had only the
+ * console driver, so verification and password-reset emails never left the
+ * server). No SDK: one POST. A failure throws, so NotificationService's
+ * delivery retries it; auth emails are sent directly and their callers
+ * already treat a failure as non-fatal.
+ */
+export class ResendEmailProvider implements EmailProvider {
+  constructor(
+    private readonly apiKey: string,
+    private readonly from: string,
+    private readonly fetchImpl: typeof fetch = fetch,
+  ) {}
+
+  async send(params: { to: string; subject: string; body: string }): Promise<void> {
+    const res = await this.fetchImpl('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: this.from, to: [params.to], subject: params.subject, text: params.body }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(`Resend refused the email (${res.status}): ${detail.slice(0, 300)}`);
+    }
+  }
+}
+
 export const EMAIL_PROVIDER = Symbol('EMAIL_PROVIDER');
 export const SMS_PROVIDER = Symbol('SMS_PROVIDER');
 
@@ -46,10 +74,13 @@ export const emailProviderFactory = {
   provide: EMAIL_PROVIDER,
   useFactory: (): EmailProvider => {
     const env = loadEnv();
-    // console is the only implemented driver today; smtp/resend are declared
-    // in the env schema for Phase 8 and validated there, not wired here yet.
+    if (env.EMAIL_PROVIDER === 'resend') {
+      if (!env.RESEND_API_KEY) throw new Error('EMAIL_PROVIDER=resend needs RESEND_API_KEY.');
+      return new ResendEmailProvider(env.RESEND_API_KEY, env.EMAIL_FROM);
+    }
+    // smtp is declared in the env schema but has no driver; Resend covers the need.
     if (env.EMAIL_PROVIDER !== 'console') {
-      throw new Error(`EMAIL_PROVIDER=${env.EMAIL_PROVIDER} has no driver yet. Use "console".`);
+      throw new Error(`EMAIL_PROVIDER=${env.EMAIL_PROVIDER} has no driver yet. Use "resend" or "console".`);
     }
     return new ConsoleEmailProvider();
   },
