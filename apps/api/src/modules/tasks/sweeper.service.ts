@@ -1,9 +1,14 @@
+import { writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
 import { DisputesService } from '../disputes/disputes.service';
 import { OffersService } from '../matching/offers.service';
 import { PaymentsService } from '../payments/payments.service';
+import { ReconciliationService } from '../payments/reconciliation.service';
+import { RetentionService } from '../retention/retention.service';
 import { PayoutsService } from '../payments/payouts.service';
 import { RefundsService } from '../payments/refunds.service';
 import { ReviewService } from './review.service';
@@ -37,6 +42,18 @@ import { TasksService } from './tasks.service';
 const STRANDED_AFTER_MS = 2 * 60 * 1000;
 /** Most tasks one sweep acts on; the rest wait for the next tick, oldest first. */
 const SWEEP_BATCH = 200;
+/**
+ * Touched on every tick, so the worker container's health check can tell a
+ * live worker from a stuck one (docs/22, #26). The worker has no HTTP
+ * server, and the image's old check called one, so it always showed
+ * unhealthy. Read by the HEALTHCHECK in apps/api/Dockerfile.
+ */
+export const WORKER_HEARTBEAT_FILE = join(tmpdir(), 'onsite-worker-heartbeat');
+
+/** How often the ledger reconciliation runs. */
+const RECONCILE_EVERY_MS = 60 * 60_000;
+/** How often old records and orphaned files are cleaned up. */
+const RETENTION_EVERY_MS = 24 * 60 * 60_000;
 
 @Injectable()
 export class SweeperService {
@@ -44,6 +61,10 @@ export class SweeperService {
   private timer: ReturnType<typeof setInterval> | null = null;
   /** Sweeps still running from an earlier tick. */
   private readonly running = new Set<string>();
+  /** Reconciliation runs hourly, starting with the first tick after start (docs/22, #25). */
+  private lastReconciledAt = 0;
+  /** Retention runs daily, starting with the first tick after start (docs/22, #27). */
+  private lastRetentionAt = 0;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -55,11 +76,15 @@ export class SweeperService {
     private readonly disputes: DisputesService,
     private readonly payments: PaymentsService,
     private readonly notifications: NotificationService,
+    private readonly reconciliation: ReconciliationService,
+    private readonly retention: RetentionService,
   ) {}
 
   start(intervalMs: number): void {
     if (this.timer) return;
+    void this.heartbeat();
     this.timer = setInterval(() => {
+      void this.heartbeat();
       void this.exclusive('review-deadline', () => this.runReviewDeadlineSweep());
       void this.exclusive('task-expiry', () => this.runTaskExpirySweep());
       void this.exclusive('offer-expiry', () => this.runOfferExpirySweep());
@@ -68,11 +93,25 @@ export class SweeperService {
       void this.exclusive('refunds', () => this.runRefundSweep());
       void this.exclusive('payment-reconcile', () => this.runPaymentReconcileSweep());
       void this.exclusive('notifications', () => this.notifications.deliverPending());
+      if (Date.now() - this.lastReconciledAt >= RECONCILE_EVERY_MS) {
+        this.lastReconciledAt = Date.now();
+        void this.exclusive('reconciliation', () => this.reconciliation.run());
+      }
+      if (Date.now() - this.lastRetentionAt >= RETENTION_EVERY_MS) {
+        this.lastRetentionAt = Date.now();
+        void this.exclusive('retention', () => this.retention.run());
+      }
     }, intervalMs);
     // Never let a scheduled tick keep the process alive on its own if
     // everything else has shut down.
     this.timer.unref?.();
     this.logger.log(`Review-deadline and task-expiry sweeper started, running every ${intervalMs}ms.`);
+  }
+
+  private async heartbeat(): Promise<void> {
+    await writeFile(WORKER_HEARTBEAT_FILE, new Date().toISOString()).catch((error) =>
+      this.logger.warn(`Could not write the worker heartbeat: ${String(error)}`),
+    );
   }
 
   stop(): void {

@@ -6,6 +6,17 @@ Newest entries at the top. Every entry states the decision, the reasoning, and w
 
 ---
 
+## 2026-10-20 — Reconciliation, worker health, retention, working CI, and a written runbook (docs/22, #25–#27, #29)
+
+- **Reconciliation (#25).** `ReconciliationService`, hourly in the worker and at `GET /admin/reconciliation`, read-only, error lines starting "Reconciliation:" for monitoring (#16) to alert on. Checks: ledger sums, escrow floor, escrow left after settlement, captures booked, refunds queued (compared only from the first refund row, since earlier refunds predate the outbox), refunds and payouts that gave up, and Razorpay's view of the last 48 hours of payments (50 per run). Rejected for now: Razorpay settlement reports (need the settlements API and a finance owner).
+- **Worker health (#26).** The sweeper touches a heartbeat file each tick; the image's HEALTHCHECK checks it for `ROLE=worker`. Rejected: a Redis heartbeat key (the health of the worker should not depend on Redis being up). Log rotation and Redis persistence are flags on the production containers, now in docs/21's "Production runbook", the first written record of how production is deployed.
+- **Retention (#27).** Storage objects are deleted through `storage_deletions`, queued in the transaction that removes their rows (`queueStorageDeletion`), then deleted by `RetentionService` (daily). Operational rows have fixed lifetimes (`RETENTION`). **Deliberately kept, as a decision for the founder:** messages, status history, ledger, payments, refunds, payouts, disputes, audit records and completed tasks' proof, which are evidence or financial records with legal retention periods (DPDP, GST, disputes).
+- **CI (#29).** It failed from September because the seed imported an ungenerated Prisma client; now generated first, on Node 22, also on `owl-frontend` (the branch that deploys the frontend). Gating deploys on it needs branch protection and a Vercel setting, which only the owner can change.
+
+**Verified locally:** reconciliation clean on 113 tasks and catching a planted entry; the worker health check healthy with a heartbeat and unhealthy without; a queued file deleted from MinIO; the migrations applied to an empty database, the seed completed and 349 tests passed against it.
+
+---
+
 ## 2026-10-20 — Background work at scale: notification outbox, matching retries, one sweep pass at a time, atomic worker stats, sockets end with their session (docs/22, #17–#20, #22)
 
 - **Notifications (#17).** The row is the outbox: `notify` writes it with `pending_channels` and queues delivery; the worker sends push and email (`deliver`), each at most once (per-channel sent-at), email retried with backoff, giving up after 6 attempts with the error recorded; the sweeper delivers rows whose job was lost. docs/13 always required this; the code sent inline. Push counts as sent once attempted, since PushService swallows per-device failures and a retry would repeat it on devices that got it. Rejected: a separate outbox table (the notification row already is one).

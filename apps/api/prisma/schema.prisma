@@ -1196,3 +1196,18 @@ model Refund {
   @@index([taskId])
   @@map("refunds")
 }
+
+/// A stored file whose rows are gone, waiting to be deleted from storage
+/// (docs/22, #27). Queued in the transaction that removed the rows, so a file
+/// is never deleted while something still points at it; RetentionService
+/// deletes it.
+model StorageDeletion {
+  id         String    @id @default(uuid(7))
+  storageKey String    @unique @map("storage_key")
+  reason     String
+  attempts   Int       @default(0)
+  deletedAt  DateTime? @map("deleted_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@map("storage_deletions")
+}

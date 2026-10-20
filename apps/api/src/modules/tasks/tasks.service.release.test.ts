@@ -30,7 +30,11 @@ function build(current: Record<string, unknown>, opts: { removals?: number; upda
     task: { updateMany: vi.fn().mockResolvedValue({ count: opts.updateCount ?? 1 }) },
     taskRelease: { create: vi.fn().mockResolvedValue({}) },
     taskStatusHistory: { create: vi.fn().mockResolvedValue({}) },
-    taskProof: { deleteMany: vi.fn().mockResolvedValue({ count: 2 }) },
+    taskProof: {
+      findMany: vi.fn().mockResolvedValue([{ storageKey: 'proofs/t1/w/a.jpg' }, { storageKey: null }]),
+      deleteMany: vi.fn().mockResolvedValue({ count: 2 }),
+    },
+    storageDeletion: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
     itemPurchase: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
     workerProfile: {
       findUnique: vi.fn(async () => profile),
@@ -86,6 +90,11 @@ describe('TasksService.leave', () => {
       data: expect.objectContaining({ taskId: 't1', workerId: WORKER, initiatedBy: 'WORKER', fromStatus: 'IN_PROGRESS' }),
     });
     expect(tx.taskProof.deleteMany).toHaveBeenCalledWith({ where: { taskId: 't1', workerId: WORKER } });
+    // Their files are queued for deletion from storage in the same transaction (docs/22, #27).
+    expect(tx.storageDeletion.createMany).toHaveBeenCalledWith({
+      data: [{ storageKey: 'proofs/t1/w/a.jpg', reason: 'proof of a released worker' }],
+      skipDuplicates: true,
+    });
     // 3 of 4 accepted completed → 75%, and one more abandonment on record.
     expect(tx.workerProfile.update).toHaveBeenCalledWith({
       where: { userId: WORKER },

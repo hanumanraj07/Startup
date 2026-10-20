@@ -4,6 +4,12 @@ Notable changes to OnSite. Format follows [Keep a Changelog](https://keepachange
 
 ## [Unreleased]
 
+### Changed — 2026-10-20 · Operations (docs/22)
+
+- **Money is checked every hour.** A reconciliation job compares every task's accounts, the money held, refunds and payouts, and recent payments against Razorpay, and reports anything that does not add up. Admins can run it on demand.
+- **Old data is cleaned up.** Photos a worker removed, or left behind when they gave up a task, are deleted from storage; old notifications, used codes and expired sessions are removed on a schedule. Messages, payments and the proof of completed work are kept.
+- **The background worker reports its health correctly**, and container logs no longer grow without limit.
+
 ### Changed — 2026-10-20 · Faster and steadier under load (docs/22)
 
 - **Actions no longer wait for notifications to send.** Accepting, approving and publishing used to wait while push notifications and emails went out; they are now sent in the background, retried if an email fails, and never sent twice.

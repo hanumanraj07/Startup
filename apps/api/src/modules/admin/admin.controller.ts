@@ -27,6 +27,7 @@ import { DisputesService } from '../disputes/disputes.service';
 import { ModerationService } from '../moderation/moderation.service';
 import { AdminGuard } from './admin.guard';
 import { AdminService } from './admin.service';
+import { ReconciliationService } from '../payments/reconciliation.service';
 
 /**
  * docs/07-api-specification.md's Admin section: "All require
@@ -41,7 +42,17 @@ export class AdminController {
     private readonly admin: AdminService,
     private readonly disputes: DisputesService,
     private readonly moderation: ModerationService,
+    private readonly reconciliation: ReconciliationService,
   ) {}
+
+  /**
+   * Runs the ledger reconciliation now and returns what it found (docs/22,
+   * #25). Read-only; the worker also runs it hourly and logs the findings.
+   */
+  @Get('reconciliation')
+  async reconcile() {
+    return this.reconciliation.run();
+  }
 
   /** Blocked tasks and appeals. Default view is appeals waiting for a decision. */
   @Get('moderation')

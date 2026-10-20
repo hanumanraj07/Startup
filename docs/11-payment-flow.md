@@ -196,7 +196,7 @@ Statuses: `PENDING` → `PROCESSING` (gateway accepted) → `PROCESSED`; `FAILED
 | Crash between a status and its money | The stranded-money sweep refunds or releases a finished task whose payment is still held, the way a dispute decided when there was one |
 | Payout fails | Retried with backoff. After repeated failure, flagged for admin intervention with an audit trail |
 | Release succeeds, payout job lost | The stuck-payout sweeper finds `COMPLETED` tasks with no processed payout |
-| Ledger does not balance | Reconciliation job alerts. This is treated as a serious incident, not a warning |
+| Ledger does not balance | Reconciliation job alerts. This is treated as a serious incident, not a warning. `ReconciliationService`, hourly in the worker and at `GET /admin/reconciliation`, logs every finding as an error starting "Reconciliation:" (unbalanced ledger, escrow below zero or left after settlement, a capture never booked, a refund not queued, refunds or payouts that gave up, Razorpay disagreeing on a recent payment) |
 
 ## Non-negotiable rules
 

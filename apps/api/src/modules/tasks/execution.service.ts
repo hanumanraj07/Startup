@@ -11,6 +11,7 @@ import { LiveLocationService } from '../realtime/live-location.service';
 import { RealtimePublisher } from '../realtime/realtime.publisher';
 import { StorageService } from '../storage/storage.service';
 import { assertTransitionAllowed, TASK_CHANGED_MESSAGE, writeTransition } from './transitions';
+import { queueStorageDeletion } from '../retention/retention.service';
 
 /** How long after capture an upload is treated as suspiciously delayed. */
 const UPLOAD_DELAY_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2 hours
@@ -235,7 +236,10 @@ export class ExecutionService {
       throw new NotFoundError('Proof not found.');
     }
 
-    await this.prisma.taskProof.delete({ where: { id: proofId } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.taskProof.delete({ where: { id: proofId } });
+      await queueStorageDeletion(tx, [proof.storageKey], 'proof removed by the worker');
+    });
     return { success: true };
   }
 

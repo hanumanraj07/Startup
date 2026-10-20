@@ -72,7 +72,13 @@ EXPOSE 4000
 # Liveness only (no dependency checks) per docs/20's health-check split —
 # readiness (/health/ready) is what should gate traffic/rollout, checked by
 # the orchestrator's own readiness probe against this same port, not here.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:4000/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
+#
+# The worker (ROLE=worker) has no HTTP server; it is alive when its sweeper
+# has touched the heartbeat file within 3 minutes (it ticks every minute).
+# Calling port 4000 there always failed, so the worker always showed
+# unhealthy, a false alarm that teaches everyone to ignore health status
+# (docs/22, #26).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD node -e "if (process.env.ROLE === 'worker') { try { process.exit(Date.now() - require('fs').statSync(require('path').join(require('os').tmpdir(), 'onsite-worker-heartbeat')).mtimeMs < 180000 ? 0 : 1) } catch { process.exit(1) } } else { require('http').get('http://localhost:4000/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1)) }"
 
 CMD ["node", "dist/main.js"]

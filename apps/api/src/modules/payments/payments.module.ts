@@ -12,6 +12,7 @@ import { PaymentsService } from './payments.service';
 import { PayoutsService } from './payouts.service';
 import { RazorpayService } from './razorpay.service';
 import { RefundsService } from './refunds.service';
+import { ReconciliationService } from './reconciliation.service';
 
 // LedgerService's PrismaClient constructor param is auto-wired from the
 // @Global() PrismaModule (which binds PrismaClient to PrismaService); no
@@ -19,7 +20,7 @@ import { RefundsService } from './refunds.service';
 @Module({
   imports: [ModerationModule, NotificationsModule, RealtimeModule, StorageModule],
   controllers: [PaymentsController, PayoutsController, ItemPurchasesController],
-  providers: [PaymentsService, PayoutsService, LedgerService, RazorpayService, ItemPurchasesService, RefundsService],
-  exports: [PaymentsService, PayoutsService, LedgerService, ItemPurchasesService, RefundsService],
+  providers: [PaymentsService, PayoutsService, LedgerService, RazorpayService, ItemPurchasesService, RefundsService, ReconciliationService],
+  exports: [PaymentsService, PayoutsService, LedgerService, ItemPurchasesService, RefundsService, ReconciliationService],
 })
 export class PaymentsModule {}

@@ -32,6 +32,56 @@ Matches docs/20-scalability-performance.md's connection-pool arithmetic and docs
 
 Readiness (`/health/ready`, checks database) gates traffic; liveness (`/health`, no dependency checks) does not — a brief Redis blip should not restart an otherwise-healthy container, exactly as docs/20 specifies.
 
+## Production runbook (current single VM)
+
+Written down 2026-10-20 (docs/22, #26) so a deploy does not depend on anyone's memory. Production today is one Oracle VM (`ubuntu@onsite-api.duckdns.org`, SSH key `infra/oracle-instance.pem`, never committed), with Caddy on the host serving `onsite-api.duckdns.org` and proxying to `localhost:4000`. The API and the worker are the same image with a different `ROLE`. Secrets live in `~/onsite.env` on the server, never in the repo. The frontend is Vercel, deployed by a push to `owl-frontend`.
+
+Every container gets log rotation (`--log-opt max-size=10m --log-opt max-file=5`): Docker's default keeps logs forever and would eventually fill the disk.
+
+### Deploy a backend release
+
+```bash
+# On the server, from ~/onsite. SHA is the commit being deployed.
+git pull -q origin main && SHA=$(git rev-parse --short HEAD)
+docker build -f apps/api/Dockerfile -t onsite-api:$SHA .
+
+# Back up first (the direct, non-pooler Neon URL; pg_dump needs it).
+docker run --rm --env-file ~/onsite.env postgres:18-alpine sh -c \
+  'U=$(echo "$DATABASE_URL" | sed -E "s/\?.*//; s/-pooler//"); pg_dump "$U?sslmode=require" -Fc' > ~/backup-before-$SHA.dump
+
+# Migrations, with the new image, before any container switches to it.
+docker run --rm --env-file ~/onsite.env --network onsite-net onsite-api:$SHA npx prisma migrate deploy
+
+# Swap the API and the worker (keep the old containers until the new ones are healthy).
+for c in onsite-api onsite-worker; do docker stop $c && docker rename $c $c-old-$SHA && docker update --restart=no $c-old-$SHA; done
+LOGS="--log-opt max-size=10m --log-opt max-file=5"
+docker run -d --name onsite-api --network onsite-net --restart unless-stopped $LOGS -p 4000:4000 --env-file ~/onsite.env -e ROLE=api onsite-api:$SHA
+docker run -d --name onsite-worker --network onsite-net --restart unless-stopped $LOGS --env-file ~/onsite.env -e ROLE=worker onsite-api:$SHA
+
+curl -s http://localhost:4000/health/ready        # {"status":"ready",...}
+docker ps --format '{{.Names}} {{.Status}}'       # both "healthy" within a minute or two
+docker logs onsite-worker 2>&1 | grep -E 'worker process started|Reconciliation|rror' | head
+```
+
+Roll back by stopping the new containers and starting the `-old-$SHA` ones (`docker start`, `docker update --restart unless-stopped`). A migration is not rolled back that way; restore the backup if one must be undone.
+
+### Redis
+
+Run with persistence so a restart does not lose queued matching, auto-approve and notification jobs or rate-limit state (docs/22, #15). Recreating the container loses what the old one held; do it between deploys, when queues are near empty.
+
+```bash
+docker run -d --name onsite-redis --network onsite-net --restart unless-stopped \
+  --log-opt max-size=10m --log-opt max-file=5 -v onsite-redis-data:/data \
+  redis:7-alpine redis-server --appendonly yes --appendfsync everysec --save 300 100 \
+  --maxmemory 128mb --maxmemory-policy noeviction
+```
+
+`noeviction` is deliberate: queue data must never be silently evicted. The rate limiter and sign-in lock fail open if Redis refuses writes, so a full Redis slows nothing; watch for it in the logs.
+
+### Release 2026-10-20 (P6 and the audit fixes)
+
+Four migrations run with this deploy: `20261020090000_item_bill_approval`, `20261020120000_gateway_refunds`, `20261020150000_notification_outbox`, `20261020170000_storage_deletions`. In the Razorpay dashboard, add `refund.processed` and `refund.failed` to the webhook's events. After the deploy, within a couple of minutes, the worker log should show the 2 stranded expired tasks refunded ("refunded by the repair sweep") and a reconciliation line.
+
 ## Backup and restore
 
 **Verified live**, not asserted: took a real `pg_dump`, restored it into a fresh database, and confirmed exact row counts and the `unbalanced_tasks` ledger-integrity view still returned zero rows afterward.

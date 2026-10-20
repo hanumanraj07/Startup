@@ -43,11 +43,11 @@ Severity:
 | 22 | Live sockets keep working after a user is suspended or signs out elsewhere | P2 · **fixed locally** |
 | 23 | Free public map tiles and geocoder are not allowed for production traffic | P2 |
 | 24 | Free-tier hosting everywhere (Neon, Oracle, DuckDNS, Vercel Hobby) with limits and terms that don't fit a commercial launch | P2 |
-| 25 | No ledger reconciliation job, despite the docs saying one exists | P2 |
-| 26 | Container logs grow forever; worker shows "unhealthy" because its health check calls an HTTP server it doesn't have | P2 |
-| 27 | Uploaded files are never cleaned up; tables (notifications, messages, offers) grow without limit | P3 |
+| 25 | No ledger reconciliation job, despite the docs saying one exists | P2 · **fixed locally** |
+| 26 | Container logs grow forever; worker shows "unhealthy" because its health check calls an HTTP server it doesn't have | P2 · **fixed locally** |
+| 27 | Uploaded files are never cleaned up; tables (notifications, messages, offers) grow without limit | P3 · **fixed locally** |
 | 28 | Task status writes live in many files, against the "only in transitions.ts" rule | P3 · **fixed locally** |
-| 29 | CI on `main` has failed since September; no automated gate before production | P3 |
+| 29 | CI on `main` has failed since September; no automated gate before production | P3 · **fixed locally** |
 | 30 | Item bills (P6): a "shop" UPI ID could be a colluder's personal one; tax treatment unconfirmed | P3 |
 | 31 | Compliance: escrow licence position, DPDP Act data handling, GST/TDS, refund policy | Business |
 
@@ -265,9 +265,13 @@ Fine for a demo; for a paid launch, move to paid plans with backups and a domain
 
 `docs/11` says a periodic job checks that every task's ledger sums to zero; none exists. Today's production ledger does balance (checked: 0 unbalanced tasks), but that was checked by hand. Add a nightly job that checks sums, checks that no escrow is negative, compares captured and refunded amounts with Razorpay settlement reports, and alerts on any difference. Payment companies treat this daily reconciliation as non-negotiable.
 
+**Status (2026-10-20): fixed locally, not yet deployed.** `ReconciliationService` runs hourly in the worker and on demand at `GET /admin/reconciliation`. It reports, as error log lines starting "Reconciliation:", any task whose ledger does not sum to zero, escrow below zero, escrow left after a payment settled, a captured payment never booked into escrow, a booked refund without matching gateway refunds, refunds or payouts that gave up or sit unsettled for 2 days, and, for Razorpay payments of the last 48 hours, any difference from Razorpay in status, amount or refunds. It changes nothing. **Verified locally:** clean over 113 tasks; a planted stray escrow entry was reported as both an unbalanced ledger and money left after settlement. **Not covered:** Razorpay settlement reports (what reached the bank), which need the settlements API and someone in finance to own them.
+
 ### 26. Logs and health checks
 
 Container logs use Docker's default with no size limit; on a 45 GB disk (58% used) they will eventually fill it. Set `max-size`/`max-file`. The `onsite-worker` container reports **unhealthy** because its health check calls `http://localhost:4000/health`, but the worker has no HTTP server. It's a false alarm, but it trains everyone to ignore health status. Give the worker its own check (for example a heartbeat key in Redis).
+
+**Status (2026-10-20): fixed in the repo; applied at the next deploy.** The worker touches a heartbeat file every sweeper tick and the image's HEALTHCHECK reads it when `ROLE=worker` (healthy within 3 minutes of a tick), keeping the HTTP check for the API. **Verified:** exit 0 with a live worker, 1 with no heartbeat. The production commands, now written down in docs/21's "Production runbook", run every container with `--log-opt max-size=10m --log-opt max-file=5`, and Redis with persistence (#15).
 
 ---
 
@@ -276,6 +280,8 @@ Container logs use Docker's default with no size limit; on a 45 GB disk (58% use
 ### 27. Data that only grows
 
 Uploaded proofs and bill photos are never deleted from storage, including proofs removed when a worker leaves a task. `notifications`, `messages`, `task_offers`, `task_status_history` and `webhook_events` have no retention policy. Add retention jobs and storage lifecycle rules (R2 supports them).
+
+**Status (2026-10-20): fixed locally, not yet deployed.** When proof rows are removed (a worker leaves or is removed, or deletes a proof), their storage keys are queued in the same transaction (`storage_deletions`, migration `20261020170000_storage_deletions`), and `RetentionService` (daily, in the worker) deletes the objects. It also deletes read notifications after 180 days and all after a year, webhook records after 180 days, used or expired one-time codes after 30 days, refresh tokens 30 days after expiry, and offers on finished tasks after a year. **Kept, pending a legal decision:** chat messages, status history, ledger, payments, refunds, payouts, disputes, audit records and the proof of completed tasks. **Verified locally:** an uploaded file queued for deletion was gone from storage after the job. **Still to do outside the code:** a storage lifecycle rule for uploads that were presigned but never recorded.
 
 ### 28. Status writes everywhere
 
@@ -286,6 +292,8 @@ Uploaded proofs and bill photos are never deleted from storage, including proofs
 ### 29. No working CI
 
 CI on `main` has failed since September (Prisma client not generated before seeding), so nothing stops a broken commit, and pushing `owl-frontend` deploys the frontend straight to production. Fix CI and require it to pass before deploying.
+
+**Status (2026-10-20): fixed in the repo.** The workflow now generates the Prisma client before seeding, uses Node 22, and runs on `owl-frontend` as well as `main`. **Verified locally:** the 14 migrations applied to an empty database, the seed completed, and all 349 API tests passed against it. **Still needs the owner:** GitHub branch protection requiring the CI check on `owl-frontend` and `main`; Vercel then waits for it before a production deploy only if its "Ignored Build Step" or required checks are set, which is a project setting.
 
 ### 30. Item bills (P6)
 

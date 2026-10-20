@@ -17,6 +17,8 @@ function build(rows: { id: string; status: string; disputes?: { id: string }[] }
     disputes as never,
     {} as never,
     {} as never,
+    {} as never,
+    {} as never,
   );
   return { sweeper, findMany, review, tasks, disputes };
 }

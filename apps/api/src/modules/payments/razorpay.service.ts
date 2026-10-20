@@ -92,6 +92,12 @@ export class RazorpayService {
     return items.find((p) => p.status === 'captured')?.id ?? null;
   }
 
+  /** A payment's state at the gateway, for reconciliation. */
+  async fetchPayment(gatewayPaymentId: string): Promise<{ status: string; amount: number; amount_refunded?: number }> {
+    const p = await this.client().payments.fetch(gatewayPaymentId);
+    return { status: p.status, amount: Number(p.amount), amount_refunded: Number(p.amount_refunded ?? 0) };
+  }
+
   /** The captured payment on an order, for a record that never stored its payment id. */
   async capturedPaymentForOrder(orderId: string): Promise<string | null> {
     const list = await this.client().orders.fetchPayments(orderId);

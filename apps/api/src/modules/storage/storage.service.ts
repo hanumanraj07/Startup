@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { loadEnv } from '../../config/env';
 
@@ -116,6 +116,11 @@ export class StorageService {
     const env = loadEnv();
     const command = new GetObjectCommand({ Bucket: this.bucket, Key: storageKey });
     return getSignedUrl(this.client, command, { expiresIn: env.STORAGE_PRESIGN_TTL_SECONDS });
+  }
+
+  /** Removes an object. Deleting one that is already gone succeeds (S3 semantics). */
+  async deleteObject(storageKey: string): Promise<void> {
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: storageKey }));
   }
 
   /**

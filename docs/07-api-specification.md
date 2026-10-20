@@ -218,6 +218,7 @@ All require `platform_role = ADMIN`. All write actions produce an audit log entr
 |---|---|---|
 | GET | `/admin/kyc` | Review queue |
 | POST | `/admin/kyc/:id/decision` | Approve, reject with reason, or request resubmission |
+| GET | `/admin/reconciliation` | Runs the ledger reconciliation now and returns its findings (read-only; docs/11, docs/22 #25) |
 | GET | `/admin/disputes` | Queue |
 | GET | `/admin/disputes/:id/evidence` | The full assembled bundle |
 | POST | `/admin/disputes/:id/resolve` | Release, refund, or split. Reasoning required |

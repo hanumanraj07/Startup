@@ -5,6 +5,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { DisputesModule } from '../disputes/disputes.module';
+import { RetentionModule } from '../retention/retention.module';
 import { SafetyModule } from '../safety/safety.module';
 import { StorageModule } from '../storage/storage.module';
 import { ExecutionService } from './execution.service';
@@ -15,7 +16,7 @@ import { TasksController } from './tasks.controller';
 import { TasksService } from './tasks.service';
 
 @Module({
-  imports: [PaymentsModule, StorageModule, NotificationsModule, SafetyModule, RealtimeModule, ModerationModule, MatchingModule, DisputesModule],
+  imports: [PaymentsModule, StorageModule, NotificationsModule, SafetyModule, RealtimeModule, ModerationModule, MatchingModule, DisputesModule, RetentionModule],
   controllers: [TasksController],
   providers: [TasksService, RiskService, ExecutionService, ReviewService, SweeperService],
   exports: [TasksService, ReviewService, SweeperService],

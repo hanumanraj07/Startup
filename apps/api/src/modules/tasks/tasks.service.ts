@@ -39,6 +39,7 @@ import {
 } from './transitions';
 import { RiskService } from './risk.service';
 import { adjustWorkerStats } from '../workers/worker-stats';
+import { queueStorageDeletion } from '../retention/retention.service';
 import { PaymentsService } from '../payments/payments.service';
 
 /** How many times a requester may remove a worker from one task before only cancel or report remain. */
@@ -967,6 +968,9 @@ export class TasksService {
       await tx.taskRelease.create({
         data: { taskId: task.id, workerId, initiatedBy, fromStatus: task.status, reason, note },
       });
+      // The released worker's files go too, once this commits (docs/22, #27).
+      const discarded = await tx.taskProof.findMany({ where: { taskId: task.id, workerId }, select: { storageKey: true } });
+      await queueStorageDeletion(tx, discarded.map((p) => p.storageKey), 'proof of a released worker');
       await tx.taskProof.deleteMany({ where: { taskId: task.id, workerId } });
       // An unanswered bill goes with the worker; the next one sends their own.
       await tx.itemPurchase.updateMany({
