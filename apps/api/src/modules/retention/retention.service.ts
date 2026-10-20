@@ -6,11 +6,21 @@ import { StorageService } from '../storage/storage.service';
 const DAY_MS = 24 * 3_600_000;
 
 /**
- * How long operational records are kept (docs/22, #27). Records that are
- * evidence or money are kept: chat messages, task status history, ledger
- * entries, payments, refunds, payouts, disputes, audit records, and the proof
- * of completed tasks. How long those must be kept is a legal decision (DPDP
- * Act, GST and dispute periods), not made here.
+ * How long records are kept (docs/22, #27; policy in docs/06, "Data
+ * retention"). Set by the founder's delegation on 2026-10-20 from the rules
+ * as understood then, to be confirmed by a lawyer:
+ *
+ * - Money records (payments, ledger, refunds, payouts, item bills and their
+ *   photos, disputes) are never deleted here: GST law keeps accounts for 72
+ *   months from the annual return's due date, and income-tax rules for a
+ *   similar period, so 8 years is the floor; they are only deleted by a
+ *   future job after that.
+ * - Chat messages and proof (photos, locations, notes) of a finished task are
+ *   personal data whose purpose ends with the task (DPDP Act, s. 8(7)): kept
+ *   1 year after the task closed, as the window for complaints, or 3 years if
+ *   the task was disputed.
+ * - Task status history and audit records stay with the task.
+ * - Operational records have the short lives below.
  */
 export const RETENTION = {
   /** A notification the user has read. */
@@ -25,7 +35,14 @@ export const RETENTION = {
   refreshTokenDaysAfterExpiry: 30,
   /** Offers on a finished task (the admin dashboard's all-time offer figures read them). */
   finishedTaskOfferDays: 365,
+  /** Chat and proof of a finished task with no dispute. */
+  closedTaskEvidenceDays: 365,
+  /** Chat and proof of a finished task that was disputed. */
+  disputedTaskEvidenceDays: 3 * 365,
 } as const;
+
+/** Statuses after which a task's chat and proof only serve as evidence. */
+const CLOSED_STATUSES = ['PAYMENT_RELEASED', 'COMPLETED', 'CANCELLED', 'EXPIRED'] as const;
 
 /** Storage deletions tried this many times are left for a person. */
 const MAX_STORAGE_ATTEMPTS = 10;
@@ -58,6 +75,7 @@ export class RetentionService {
     const before = (days: number) => new Date(now.getTime() - days * DAY_MS);
     const counts: Record<string, number> = {};
 
+    counts.taskEvidence = await this.deleteClosedTaskEvidence(now);
     counts.storageObjects = await this.deleteQueuedObjects();
 
     counts.notifications = (
@@ -100,6 +118,49 @@ export class RetentionService {
 
     this.logger.log(`Retention: ${Object.entries(counts).map(([k, v]) => `${k} ${v}`).join(', ')}.`);
     return counts;
+  }
+
+  /**
+   * Chat messages and proof of tasks closed longer than the evidence window,
+   * with their files queued for deletion in the same transaction. The task
+   * itself, its status history and every money record stay. Returns how many
+   * tasks were cleared.
+   */
+  private async deleteClosedTaskEvidence(now: Date): Promise<number> {
+    const before = (days: number) => new Date(now.getTime() - days * DAY_MS);
+    const tasks = await this.prisma.task.findMany({
+      where: {
+        status: { in: [...CLOSED_STATUSES] },
+        OR: [{ messages: { some: {} } }, { proofs: { some: {} } }],
+        AND: [
+          {
+            OR: [
+              { updatedAt: { lt: before(RETENTION.closedTaskEvidenceDays) }, disputes: { none: {} } },
+              { updatedAt: { lt: before(RETENTION.disputedTaskEvidenceDays) } },
+            ],
+          },
+        ],
+      },
+      select: { id: true },
+      take: 200,
+    });
+
+    for (const { id } of tasks) {
+      await this.prisma.$transaction(async (tx) => {
+        const [messages, proofs] = await Promise.all([
+          tx.message.findMany({ where: { taskId: id }, select: { attachmentKey: true } }),
+          tx.taskProof.findMany({ where: { taskId: id }, select: { storageKey: true } }),
+        ]);
+        await queueStorageDeletion(
+          tx,
+          [...messages.map((m) => m.attachmentKey), ...proofs.map((p) => p.storageKey)],
+          'evidence of a closed task past retention',
+        );
+        await tx.message.deleteMany({ where: { taskId: id } });
+        await tx.taskProof.deleteMany({ where: { taskId: id } });
+      });
+    }
+    return tasks.length;
   }
 
   private async deleteQueuedObjects(): Promise<number> {

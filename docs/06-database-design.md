@@ -343,6 +343,25 @@ RETURNING id;
 
 Zero rows returned means another worker won. That is a `409`, not an error state, and the interface says so plainly. This is verified under concurrent load: fifty simultaneous accepts must produce exactly one success and forty-nine clean conflicts.
 
+## Data retention
+
+Set 2026-10-20 (docs/22, #27) under the founder's delegation, from the Indian rules as understood then. **Not legal advice; to be confirmed by a lawyer before launch.** Enforced by `RetentionService` (daily, in the worker); every period is in `RETENTION` in `apps/api/src/modules/retention/retention.service.ts`.
+
+| Records | Kept for | Why |
+|---|---|---|
+| Payments, ledger entries, refunds, payouts, item bills and their photos, disputes | At least 8 years; nothing deletes them yet | GST law (CGST Act s. 36) keeps accounts for 72 months from the annual return's due date; income-tax rules are similar |
+| Task, its status history, audit records | With the money records | The audit trail for the money |
+| Chat messages, proof (photos, video, locations, notes) of a finished task | 1 year after the task closed; 3 years if it was disputed | Personal data whose purpose ends with the task (DPDP Act s. 8(7)); the year is the window for complaints and chargebacks |
+| Files of a removed proof or a released worker's proof | Deleted within a day | Nothing refers to them any more |
+| Notifications | 180 days once read, 1 year regardless | Operational |
+| Webhook deliveries | 180 days | Audit of gateway calls |
+| One-time codes | 30 days once used or expired | Operational |
+| Refresh tokens | 30 days after expiry | Reuse detection only needs live ones |
+| Task offers on finished tasks | 1 year | Feed the admin dashboard's offer statistics |
+| A deleted account | Anonymized at once (UsersService.deleteAccount); its money records stay as above | DPDP erasure, with the legal retention of financial records |
+
+Open for the lawyer: the exact GST/income-tax period that applies to platform commission and pass-through item money, whether the DPDP Rules set a minimum retention for logs, and the KYC document period (the payment partner's PMLA duties may set it).
+
 ## Migrations
 
 Prisma owns the schema, with three things in hand-written SQL because Prisma cannot express them:
