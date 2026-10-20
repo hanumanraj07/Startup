@@ -74,7 +74,7 @@ export class ChatPanel extends Component {
 
     // `isMine` on the broadcast payload is computed once, from the SENDER's
     // perspective, then fanned out identically to the whole room (see
-    // realtime.gateway.ts's emitNewMessage). Trusting it would show the other
+    // RealtimePublisher.newMessage). Trusting it would show the other
     // party's message as "mine" on their own screen, so it is recomputed from
     // the actually-logged-in user.
     useTaskSocket(this.props.taskId, {

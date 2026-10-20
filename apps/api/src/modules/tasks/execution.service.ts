@@ -8,7 +8,7 @@ import { AutoApproveQueue } from '../../queue/auto-approve.queue';
 import { NotificationService } from '../notifications/notification.service';
 import { ItemPurchasesService } from '../payments/item-purchases.service';
 import { LiveLocationService } from '../realtime/live-location.service';
-import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { RealtimePublisher } from '../realtime/realtime.publisher';
 import { StorageService } from '../storage/storage.service';
 import { assertTransitionAllowed } from './transitions';
 
@@ -36,7 +36,7 @@ export class ExecutionService {
     private readonly storage: StorageService,
     private readonly autoApproveQueue: AutoApproveQueue,
     private readonly notifications: NotificationService,
-    private readonly realtime: RealtimeGateway,
+    private readonly realtime: RealtimePublisher,
     private readonly live: LiveLocationService,
     private readonly purchases: ItemPurchasesService,
   ) {}
@@ -93,7 +93,7 @@ export class ExecutionService {
         },
       }),
     ]);
-    this.realtime.emitTaskStatus(taskId, 'ARRIVED');
+    this.realtime.taskStatus(taskId, 'ARRIVED');
     // Arrival ends the trip, so it ends location sharing (for a delivery,
     // the leg to the pickup; the leg to the drop-off starts with the pickup).
     await this.live.end(taskId);
@@ -298,7 +298,7 @@ export class ExecutionService {
         },
       }),
     ]);
-    this.realtime.emitTaskStatus(taskId, 'SUBMITTED');
+    this.realtime.taskStatus(taskId, 'SUBMITTED');
     await this.live.end(taskId);
 
     // The fast path. If this fails or Redis is unavailable, the task is
@@ -387,7 +387,7 @@ export class ExecutionService {
         data: { taskId, fromStatus: from, toStatus: to, actorUserId, actorRole: 'WORKER' },
       }),
     ]);
-    this.realtime.emitTaskStatus(taskId, to);
+    this.realtime.taskStatus(taskId, to);
   }
 
   private async toProofView(proof: {

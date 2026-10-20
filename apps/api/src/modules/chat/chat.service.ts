@@ -4,7 +4,7 @@ import { decodeCursor, encodeCursor } from '@onsite/utils';
 import { ForbiddenError, NotFoundError } from '../../common/errors';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
-import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { RealtimePublisher } from '../realtime/realtime.publisher';
 import { ACTIVE_WORK, AWAITING_REVIEW } from '../tasks/transitions';
 import { redactContactInfo } from './redaction';
 
@@ -57,7 +57,7 @@ export class ChatService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationService,
-    private readonly realtime: RealtimeGateway,
+    private readonly realtime: RealtimePublisher,
   ) {}
 
   /**
@@ -102,13 +102,9 @@ export class ChatService {
 
     const view = this.toView(message, senderId);
 
-    // Best-effort real-time delivery. Never lets a socket problem fail the
-    // send itself — the message is already durably stored above.
-    try {
-      this.realtime.emitNewMessage(taskId, view);
-    } catch (error) {
-      this.logger.warn(`Realtime broadcast failed for message ${message.id}: ${String(error)}`);
-    }
+    // Best-effort real-time delivery; the publisher never throws, and the
+    // message is already durably stored above.
+    this.realtime.newMessage(taskId, view);
 
     try {
       const sender = await this.prisma.user.findUnique({ where: { id: senderId }, select: { displayName: true } });

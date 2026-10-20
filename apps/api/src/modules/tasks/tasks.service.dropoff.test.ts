@@ -51,7 +51,6 @@ function build(locationMode: 'SINGLE' | 'PICKUP_DROPOFF', distanceMeters = 2_900
     {} as never,
     {} as never,
     {} as never,
-    {} as never,
     moderation as never,
     {} as never,
     {} as never,

@@ -172,6 +172,18 @@ Webhook replay is not hypothetical. Gateways deliberately redeliver when they do
 
 Refunds are idempotent and produce their own ledger entries. A partial refund never leaves the ledger unbalanced.
 
+### How a refund reaches the requester (2026-10-20, docs/22 #4)
+
+The ledger entry is the decision; the money is sent by the gateway. Until 2026-10-20 only the first half existed: refunds were booked and never sent.
+
+1. **Outbox.** Every credit to the `REFUND` account writes a `refunds` row in the same database transaction (`LedgerService.writeEntries`). No refund can be booked without one, whichever flow books it.
+2. **Allocation.** The gateway refunds each captured payment separately and never more than it captured, so the amount is split across the task's own payment first, then item top-ups, oldest first, net of earlier refunds. One row is one gateway refund.
+3. **Sending.** The sweeper (`RefundsService.sweep`, every minute) sends due rows at normal speed (free), with our row id in the refund's notes and receipt. Each attempt is claimed with a conditional update, so two replicas never both send. A retry first asks the gateway for a refund carrying the row's id and adopts it, so a call that timed out after reaching the gateway is never sent twice.
+4. **Settlement.** `refund.processed` / `refund.failed` webhooks settle the row; anything still pending after 30 minutes is polled. A failed gateway refund is sent again with backoff (1 minute up to 12 hours, 8 attempts); after the last it is logged as an error for a person.
+5. **Mock gateway.** Settled at once.
+
+Statuses: `PENDING` → `PROCESSING` (gateway accepted) → `PROCESSED`; `FAILED` is retried. Refunds booked before this existed have no row and were never sent; production used Razorpay test keys throughout, so no real money is affected.
+
 ## Failure handling
 
 | Failure | Response |

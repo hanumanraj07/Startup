@@ -5,7 +5,7 @@ import { AutoApproveQueue } from '../../queue/auto-approve.queue';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
 import { PaymentsService } from '../payments/payments.service';
-import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { RealtimePublisher } from '../realtime/realtime.publisher';
 import { assertTransitionAllowed } from './transitions';
 
 /**
@@ -35,7 +35,7 @@ export class ReviewService {
     private readonly payments: PaymentsService,
     private readonly autoApproveQueue: AutoApproveQueue,
     private readonly notifications: NotificationService,
-    private readonly realtime: RealtimeGateway,
+    private readonly realtime: RealtimePublisher,
   ) {}
 
   async approve(taskId: string, requesterId: string): Promise<{ status: 'COMPLETED' }> {
@@ -80,7 +80,7 @@ export class ReviewService {
         reason,
       },
     });
-    this.realtime.emitTaskStatus(taskId, 'IN_PROGRESS');
+    this.realtime.taskStatus(taskId, 'IN_PROGRESS');
 
     await this.autoApproveQueue.cancel(taskId);
 
@@ -166,7 +166,7 @@ export class ReviewService {
         reason: actorRole === 'SYSTEM' ? 'Auto-approved after the 24-hour review window.' : undefined,
       },
     });
-    this.realtime.emitTaskStatus(task.id, 'COMPLETED');
+    this.realtime.taskStatus(task.id, 'COMPLETED');
 
     // Only reached once this call has won the race above — money moves
     // strictly after the status write it depends on is confirmed real.
@@ -179,6 +179,47 @@ export class ReviewService {
       workerPayoutPaise: Number(task.workerPayoutPaise),
     });
 
+    await this.afterRelease(task, actorRole);
+
+    this.logger.log(
+      `Task ${task.id} completed (${actorRole}). Worker payable: ₹${Number(task.workerPayoutPaise) / 100}.`,
+    );
+
+    return { acted: true };
+  }
+
+  /**
+   * Repair for a task that reached COMPLETED but whose payment is still held:
+   * the status write committed and the release after it never ran (docs/22,
+   * #2: the broadcast between them threw in the worker process). Called by
+   * the sweeper's stranded-money sweep; release claims the payment
+   * atomically, so a second attempt is a no-op.
+   */
+  async releaseStranded(taskId: string): Promise<{ acted: boolean }> {
+    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
+    if (!task || task.status !== 'COMPLETED') return { acted: false };
+
+    const released = await this.payments.release({
+      taskId: task.id,
+      commissionPaise: Number(task.commissionPaise),
+      gstPaise: Number(task.gstPaise),
+      tcsPaise: Number(task.tcsPaise),
+      tdsPaise: Number(task.tdsPaise),
+      workerPayoutPaise: Number(task.workerPayoutPaise),
+    });
+    if (!released) return { acted: false };
+
+    const completion = await this.prisma.taskStatusHistory.findFirst({
+      where: { taskId, toStatus: 'COMPLETED' },
+      orderBy: { createdAt: 'desc' },
+    });
+    await this.afterRelease(task, completion?.actorRole === 'SYSTEM' ? 'SYSTEM' : 'REQUESTER');
+    this.logger.warn(`Task ${taskId} was COMPLETED with its payment still held; released by the repair sweep.`);
+    return { acted: true };
+  }
+
+  /** Worker stats and the one completion notification, once the payment is released. */
+  private async afterRelease(task: Task, actorRole: 'REQUESTER' | 'SYSTEM'): Promise<void> {
     if (task.assignedWorkerId) {
       await this.bumpWorkerCompletionStats(task.assignedWorkerId);
 
@@ -201,12 +242,6 @@ export class ReviewService {
         this.logger.warn(`Notification dispatch failed for task ${task.id} completion: ${String(error)}`);
       }
     }
-
-    this.logger.log(
-      `Task ${task.id} completed (${actorRole}). Worker payable: ₹${Number(task.workerPayoutPaise) / 100}.`,
-    );
-
-    return { acted: true };
   }
 
   private async requireOwnedTask(taskId: string, requesterId: string) {

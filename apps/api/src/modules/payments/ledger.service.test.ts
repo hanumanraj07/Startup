@@ -1,10 +1,32 @@
 import { describe, expect, it, vi } from 'vitest';
 import { LedgerService } from './ledger.service';
 
-/** A fake Prisma client narrow enough for the balancing check to exercise without a database. */
-function fakePrisma() {
+/**
+ * A fake Prisma client narrow enough for the balancing check to exercise
+ * without a database. A refund credit also queues a gateway refund, so the
+ * task's payment, its top-ups and its earlier refunds are faked too.
+ */
+function fakePrisma(
+  options: {
+    payment?: { id: string; gateway: string; gatewayPaymentId: string | null; amountPaise: bigint } | null;
+    topUps?: { id: string; topUpGateway: string | null; topUpGatewayPaymentId: string | null; topUpPaise: bigint }[];
+    earlierRefunds?: { paymentId: string | null; itemPurchaseId: string | null; amountPaise: bigint }[];
+  } = {},
+) {
   const createMany = vi.fn().mockResolvedValue({ count: 0 });
-  return { client: { ledgerEntry: { createMany } } as never, createMany };
+  const refundCreateMany = vi.fn().mockResolvedValue({ count: 0 });
+  const client: Record<string, unknown> = {
+    ledgerEntry: { createMany },
+    payment: {
+      findUnique: vi.fn().mockResolvedValue(
+        options.payment === undefined ? { id: 'p1', gateway: 'RAZORPAY', gatewayPaymentId: 'pay_1', amountPaise: 1_000_000n } : options.payment,
+      ),
+    },
+    itemPurchase: { findMany: vi.fn().mockResolvedValue(options.topUps ?? []) },
+    refund: { findMany: vi.fn().mockResolvedValue(options.earlierRefunds ?? []), createMany: refundCreateMany },
+  };
+  client.$transaction = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(client));
+  return { client: client as never, createMany, refundCreateMany };
 }
 
 describe('LedgerService.writeEntries', () => {
@@ -171,5 +193,54 @@ describe('LedgerService — buying an item (P6)', () => {
       ['WORKER_PAYABLE', -17_000n],
       ['WORKER_SETTLED', 17_000n],
     ]);
+  });
+});
+
+describe('LedgerService — every refund credit queues a gateway refund (docs/22, #4)', () => {
+  it('queues the full amount against the task payment', async () => {
+    const { client, refundCreateMany } = fakePrisma();
+    const service = new LedgerService(client);
+
+    await service.recordFullRefund({ taskId: 't1', paymentId: 'p1', amountPaise: 50_000 });
+
+    expect(refundCreateMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ taskId: 't1', paymentId: 'p1', gateway: 'RAZORPAY', gatewayPaymentId: 'pay_1', amountPaise: 50_000n })],
+    });
+  });
+
+  it('queues nothing for entries that refund nobody', async () => {
+    const { client, refundCreateMany } = fakePrisma();
+    const service = new LedgerService(client);
+
+    await service.recordCapture({ taskId: 't1', paymentId: 'p1', amountPaise: 50_000 });
+    expect(refundCreateMany).not.toHaveBeenCalled();
+  });
+
+  it('splits a refund across the task payment and a top-up, never above what each captured', async () => {
+    const { client, refundCreateMany } = fakePrisma({
+      payment: { id: 'p1', gateway: 'RAZORPAY', gatewayPaymentId: 'pay_1', amountPaise: 150_000n },
+      topUps: [{ id: 'ip1', topUpGateway: 'RAZORPAY', topUpGatewayPaymentId: 'pay_tu', topUpPaise: 25_000n }],
+      earlierRefunds: [{ paymentId: 'p1', itemPurchaseId: null, amountPaise: 140_000n }],
+    });
+    const service = new LedgerService(client);
+
+    await service.recordFullRefund({ taskId: 't1', paymentId: 'p1', amountPaise: 30_000 });
+
+    expect(refundCreateMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({ paymentId: 'p1', amountPaise: 10_000n }),
+        expect.objectContaining({ itemPurchaseId: 'ip1', gatewayPaymentId: 'pay_tu', amountPaise: 20_000n }),
+      ],
+    });
+  });
+
+  it('refuses a refund larger than everything captured, and writes nothing', async () => {
+    const { client, refundCreateMany } = fakePrisma({
+      payment: { id: 'p1', gateway: 'MOCK', gatewayPaymentId: null, amountPaise: 10_000n },
+    });
+    const service = new LedgerService(client);
+
+    await expect(service.recordFullRefund({ taskId: 't1', paymentId: 'p1', amountPaise: 20_000 })).rejects.toThrow(/exceeds/);
+    expect(refundCreateMany).not.toHaveBeenCalled();
   });
 });

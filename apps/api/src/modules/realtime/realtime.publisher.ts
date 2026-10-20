@@ -14,6 +14,12 @@ import { taskRoom, userRoom } from './rooms';
  * Best-effort by design: a lost event is covered by the REST endpoints the
  * clients also poll on (re)connect — GET /workers/me/offers for requests,
  * GET /tasks/:id for status — so nothing depends on an event arriving.
+ *
+ * Every outbound event goes through here, never through RealtimeGateway's
+ * `server`, which exists only in the API process. Found in production
+ * (docs/22, #1): the sweeper, running in the worker process, broadcast an
+ * expiry through the gateway, threw on the undefined server, and never
+ * reached the refund that followed. Nothing here throws.
  */
 @Injectable()
 export class RealtimePublisher implements OnModuleDestroy {
@@ -36,6 +42,31 @@ export class RealtimePublisher implements OnModuleDestroy {
 
   toTask(taskId: string, event: string, payload: unknown): void {
     this.emit(taskRoom(taskId), event, payload);
+  }
+
+  /** A task status change, for the live timeline (docs/09). */
+  taskStatus(taskId: string, status: string): void {
+    this.toTask(taskId, 'task:status', { taskId, status });
+  }
+
+  /** A persisted, already-redacted chat message. Never the raw body. */
+  newMessage(taskId: string, message: unknown): void {
+    this.toTask(taskId, 'message:new', message);
+  }
+
+  /**
+   * Takes a user's sockets out of a task's room, on every API instance, when
+   * a worker leaves or is removed, so they stop receiving that task's chat
+   * and updates at once. Every authenticated socket sits in its user's room,
+   * so "the sockets in this user's room leave that task's room" reaches all
+   * of them, from any process.
+   */
+  removeUserFromTask(taskId: string, userId: string): void {
+    try {
+      this.ws.in(userRoom(userId)).socketsLeave(taskRoom(taskId));
+    } catch (error) {
+      this.logger.warn(`Could not remove user ${userId} from task room ${taskId}: ${String(error)}`);
+    }
   }
 
   private emit(room: string, event: string, payload: unknown): void {

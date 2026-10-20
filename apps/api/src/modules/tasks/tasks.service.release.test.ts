@@ -41,7 +41,7 @@ function build(current: Record<string, unknown>, opts: { removals?: number; upda
     user: { findUnique: vi.fn().mockResolvedValue({ displayName: 'Rahul S.' }) },
     $transaction: vi.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };
-  const realtime = { emitTaskStatus: vi.fn(), removeUserFromTask: vi.fn().mockResolvedValue(undefined) };
+  const realtime = { taskStatus: vi.fn(), removeUserFromTask: vi.fn() };
   const queue = { scheduleTier: vi.fn().mockResolvedValue(undefined) };
   const notifications = { notify: vi.fn().mockResolvedValue(undefined) };
   const live = { end: vi.fn().mockResolvedValue(undefined) };
@@ -53,10 +53,9 @@ function build(current: Record<string, unknown>, opts: { removals?: number; upda
     queue as never,
     notifications as never,
     {} as never,
+    {} as never,
+    {} as never,
     realtime as never,
-    {} as never,
-    {} as never,
-    {} as never,
     live as never,
   );
   // removeWorker returns the requester's projection; that read is not under test.

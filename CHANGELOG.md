@@ -4,6 +4,13 @@ Notable changes to OnSite. Format follows [Keep a Changelog](https://keepachange
 
 ## [Unreleased]
 
+### Fixed — 2026-10-20 · Production audit P0 (docs/22)
+
+- **Refunds for expired tasks.** A task that expired with nobody accepting it now refunds the requester. Before, a crash in the background worker skipped the refund. Any task already stuck like this is refunded automatically, and its requester is told.
+- **Workers are paid when a task is auto-approved.** The same crash would have left the payment held after the 24-hour automatic approval.
+- **A paid task's price can no longer change.** Once payment has started, the price, item budget and category are fixed; a task is only published when what was paid matches what it costs.
+- **Refunds reach your bank or card.** Refunds used to be recorded without being sent to the payment gateway. They are now sent, followed until the gateway confirms them, and retried if they fail.
+
 ### Changed — 2026-10-20 · P6: buying an item, safely
 
 - **Approve the bill before anything is paid.** At the shop your worker sends a photo of the bill and the exact amount. You approve it (or reject it) within 10 minutes; nothing is paid until you do. If the price changed or there is a substitute, it is just a new bill.

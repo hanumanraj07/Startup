@@ -26,7 +26,6 @@ import { ModerationService, type ModerationStage } from '../moderation/moderatio
 import { NotificationService } from '../notifications/notification.service';
 import { OffersService } from '../matching/offers.service';
 import { LiveLocationService } from '../realtime/live-location.service';
-import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { RealtimePublisher } from '../realtime/realtime.publisher';
 import { SafetyService } from '../safety/safety.service';
 import { assertTransitionAllowed, checkTransition, REMOVABLE_BEFORE_ARRIVAL } from './transitions';
@@ -93,7 +92,6 @@ export class TasksService {
     private readonly matchingQueue: MatchingQueue,
     private readonly notifications: NotificationService,
     private readonly safety: SafetyService,
-    private readonly realtime: RealtimeGateway,
     private readonly moderation: ModerationService,
     private readonly offers: OffersService,
     private readonly publisher: RealtimePublisher,
@@ -300,6 +298,20 @@ export class TasksService {
     const task = await this.requireOwnedTask(taskId, requesterId);
     if (task.status !== 'DRAFT') {
       throw new BusinessRuleError('A task can only be edited while it is still a draft.');
+    }
+
+    // The price is frozen once payment has started (docs/22, #3). A payment
+    // or an open gateway order covers the amount the draft had then; letting
+    // the budget, the item budget or the category (which can drop the item
+    // budget) change afterwards would publish a task worth more than escrow
+    // holds. publish() checks the amounts match as well; this refuses early.
+    if (input.budgetPaise !== undefined || input.itemBudgetPaise !== undefined || input.categorySlug !== undefined) {
+      if (await this.payments.forTask(taskId)) {
+        throw new BusinessRuleError(
+          'Payment for this task has already started, so its price, item budget and category can no longer change. ' +
+            'Cancel it for a full refund and post it again with the new details.',
+        );
+      }
     }
 
     // Content edits are re-screened; every edit, content or not, waits out
@@ -512,8 +524,21 @@ export class TasksService {
       throw new BusinessRuleError('This task\'s deadline has already passed. Update it before publishing.');
     }
 
-    const captured = await this.payments.isCaptured(taskId);
-    assertTransitionAllowed(task.status, 'PUBLISHED', 'REQUESTER', { paymentCaptured: captured });
+    const payment = await this.payments.forTask(taskId);
+    assertTransitionAllowed(task.status, 'PUBLISHED', 'REQUESTER', { paymentCaptured: payment?.status === 'CAPTURED' });
+
+    // What was captured must be exactly what the task owes, never just "some
+    // payment exists" (docs/22, #3). update() already refuses a price change
+    // once payment starts; this catches anything that slipped past it.
+    const owedPaise = requesterTotal(Number(task.budgetPaise), Number(task.itemBudgetPaise));
+    if (Number(payment?.amountPaise) !== owedPaise) {
+      this.logger.error(
+        `Task ${taskId}: publish refused, captured ${String(payment?.amountPaise)} paise but the task owes ${owedPaise}.`,
+      );
+      throw new BusinessRuleError(
+        'The payment held for this task does not match its price. Cancel it for a full refund and post it again.',
+      );
+    }
 
     const env = loadEnv();
     const firstTier = env.MATCH_TIER_RADII_M[0] ?? 3_000;
@@ -533,7 +558,7 @@ export class TasksService {
         },
       }),
     ]);
-    this.realtime.emitTaskStatus(taskId, 'PUBLISHED');
+    this.publisher.taskStatus(taskId, 'PUBLISHED');
 
     // Hand off to the background matching pipeline. Best-effort: if Redis is
     // down at this exact moment, the task still stays PUBLISHED and visible
@@ -575,7 +600,7 @@ export class TasksService {
         },
       });
     });
-    this.realtime.emitTaskStatus(taskId, 'CANCELLED');
+    this.publisher.taskStatus(taskId, 'CANCELLED');
     await this.matchingQueue.cancelPending(taskId);
     await this.offers.withdraw(taskId).catch(() => undefined);
 
@@ -622,7 +647,7 @@ export class TasksService {
         },
       }),
     ]);
-    this.realtime.emitTaskStatus(taskId, 'EXPIRED');
+    this.publisher.taskStatus(taskId, 'EXPIRED');
 
     await this.matchingQueue.cancelPending(taskId);
     await this.offers.withdraw(taskId).catch(() => undefined);
@@ -644,6 +669,37 @@ export class TasksService {
     }
 
     this.logger.log(`Task ${taskId} expired with no acceptance; refunded.`);
+    return { acted: true };
+  }
+
+  /**
+   * Repair for a task that reached EXPIRED or CANCELLED with its payment
+   * still held: the status write committed and the refund after it never ran
+   * (docs/22, #1: two expired tasks in production were never refunded).
+   * Called by the sweeper's stranded-money sweep; refundFull claims the
+   * payment atomically, so a second attempt is a no-op. An expired task's
+   * requester was never told, so they are told now.
+   */
+  async refundStranded(taskId: string): Promise<{ acted: boolean }> {
+    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
+    if (!task || (task.status !== 'EXPIRED' && task.status !== 'CANCELLED')) return { acted: false };
+
+    const refunded = await this.payments.refundFull(taskId);
+    if (!refunded) return { acted: false };
+
+    if (task.status === 'EXPIRED') {
+      try {
+        await this.notifications.notify(task.requesterId, {
+          event: 'TASK_EXPIRED_REFUNDED',
+          taskId,
+          taskTitle: task.title,
+          refundPaise: Number(task.budgetPaise),
+        });
+      } catch (error) {
+        this.logger.warn(`Notification dispatch failed for task ${taskId} expiry: ${String(error)}`);
+      }
+    }
+    this.logger.warn(`Task ${taskId} was ${task.status} with its payment still held; refunded by the repair sweep.`);
     return { acted: true };
   }
 
@@ -739,7 +795,7 @@ export class TasksService {
         data: { tasksAccepted: { increment: 1 }, lastActiveAt: new Date() },
       }),
     ]);
-    this.realtime.emitTaskStatus(taskId, 'ASSIGNED');
+    this.publisher.taskStatus(taskId, 'ASSIGNED');
     // Everyone else's request disappears at once, and the requester hears
     // about it wherever they are in the app, not only on the task page.
     await this.offers.closeForAssignment(taskId, workerId).catch((error) =>
@@ -930,8 +986,8 @@ export class TasksService {
       }
     });
 
-    this.realtime.emitTaskStatus(task.id, 'MATCHING');
-    await this.realtime.removeUserFromTask(task.id, workerId);
+    this.publisher.taskStatus(task.id, 'MATCHING');
+    this.publisher.removeUserFromTask(task.id, workerId);
     await this.live.end(task.id);
     await this.matchingQueue.scheduleTier(task.id, 0, 0);
     this.logger.log(`Task ${task.id}: worker ${workerId} released by ${initiatedBy.toLowerCase()} (${reason}); re-matching.`);

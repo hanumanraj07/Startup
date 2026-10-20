@@ -28,6 +28,12 @@ export class LedgerService {
    * Writes a balanced group of entries in one transaction (or as part of an
    * existing one, via `tx`). Throws before writing anything if the group does
    * not sum to zero — an unbalanced entry never reaches the database.
+   *
+   * Money credited to REFUND is owed back to the requester, and the gateway
+   * has to send it: in the same transaction a refund row is queued for it
+   * (an outbox), which RefundsService sends. A refund can therefore never be
+   * booked without one, from any caller (docs/22, #4: refunds used to be
+   * bookkeeping only).
    */
   async writeEntries(
     entries: {
@@ -48,18 +54,95 @@ export class LedgerService {
       );
     }
 
-    const client = tx ?? this.prisma;
-    await client.ledgerEntry.createMany({
-      data: entries.map((e) => ({
-        taskId: e.taskId,
-        paymentId: e.paymentId,
-        payoutId: e.payoutId,
-        account: e.account,
-        entryType: e.entryType,
-        amountPaise: BigInt(e.amountPaise),
-        description: e.description,
+    const refundPaise = entries
+      .filter((e) => e.account === 'REFUND' && e.amountPaise > 0)
+      .reduce((total, e) => total + e.amountPaise, 0);
+    const refundTaskId = entries.find((e) => e.account === 'REFUND')?.taskId;
+    if (refundPaise > 0 && !refundTaskId) {
+      throw new Error('A refund entry must name its task, so the gateway refund can be queued. This is a defect.');
+    }
+
+    const write = async (client: Prisma.TransactionClient) => {
+      await client.ledgerEntry.createMany({
+        data: entries.map((e) => ({
+          taskId: e.taskId,
+          paymentId: e.paymentId,
+          payoutId: e.payoutId,
+          account: e.account,
+          entryType: e.entryType,
+          amountPaise: BigInt(e.amountPaise),
+          description: e.description,
+        })),
+      });
+      if (refundPaise > 0 && refundTaskId) await this.queueRefunds(client, refundTaskId, refundPaise);
+    };
+
+    if (tx) await write(tx);
+    else if (refundPaise > 0) await this.prisma.$transaction(write);
+    else await write(this.prisma);
+  }
+
+  /**
+   * Splits a refund across the captured payments it can go back to, since
+   * the gateway refunds each payment separately and never more than it
+   * captured: the task's own payment first, then item top-ups, oldest first.
+   * What each has already had refunded is read from earlier refund rows.
+   */
+  private async queueRefunds(client: Prisma.TransactionClient, taskId: string, amountPaise: number): Promise<void> {
+    const [payment, topUps, earlier] = await Promise.all([
+      client.payment.findUnique({
+        where: { taskId },
+        select: { id: true, gateway: true, gatewayPaymentId: true, amountPaise: true },
+      }),
+      client.itemPurchase.findMany({
+        where: { taskId, topUpCapturedAt: { not: null }, topUpPaise: { gt: 0 } },
+        select: { id: true, topUpGateway: true, topUpGatewayPaymentId: true, topUpPaise: true },
+        orderBy: { createdAt: 'asc' },
+      }),
+      client.refund.findMany({ where: { taskId }, select: { paymentId: true, itemPurchaseId: true, amountPaise: true } }),
+    ]);
+    if (!payment) throw new Error(`Task ${taskId} has no payment to refund against. This is a defect.`);
+
+    const refunded = (key: { paymentId?: string; itemPurchaseId?: string }) =>
+      earlier
+        .filter((r) => (key.paymentId ? r.paymentId === key.paymentId : r.itemPurchaseId === key.itemPurchaseId))
+        .reduce((total, r) => total + Number(r.amountPaise), 0);
+
+    const sources = [
+      {
+        paymentId: payment.id,
+        gateway: payment.gateway,
+        gatewayPaymentId: payment.gatewayPaymentId,
+        capacity: Number(payment.amountPaise) - refunded({ paymentId: payment.id }),
+      },
+      ...topUps.map((p) => ({
+        itemPurchaseId: p.id,
+        gateway: p.topUpGateway ?? payment.gateway,
+        gatewayPaymentId: p.topUpGatewayPaymentId,
+        capacity: Number(p.topUpPaise) - refunded({ itemPurchaseId: p.id }),
       })),
-    });
+    ];
+
+    let left = amountPaise;
+    const rows: Prisma.RefundCreateManyInput[] = [];
+    for (const source of sources) {
+      if (left === 0) break;
+      const part = Math.min(left, source.capacity);
+      if (part <= 0) continue;
+      rows.push({
+        taskId,
+        paymentId: 'paymentId' in source ? source.paymentId : undefined,
+        itemPurchaseId: 'itemPurchaseId' in source ? source.itemPurchaseId : undefined,
+        gateway: source.gateway,
+        gatewayPaymentId: source.gatewayPaymentId,
+        amountPaise: BigInt(part),
+      });
+      left -= part;
+    }
+    if (left > 0) {
+      throw new Error(`Task ${taskId}: refund of ${amountPaise} paise exceeds what its payments captured. This is a defect.`);
+    }
+    await client.refund.createMany({ data: rows });
   }
 
   /**

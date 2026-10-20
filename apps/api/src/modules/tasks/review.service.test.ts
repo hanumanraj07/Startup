@@ -17,7 +17,7 @@ function fakePrisma(task: Record<string, unknown> | null, updateManyCount: numbe
 
   const client = {
     task: { findUnique: vi.fn().mockResolvedValue(task), updateMany },
-    taskStatusHistory: { create: historyCreate },
+    taskStatusHistory: { create: historyCreate, findFirst: vi.fn().mockResolvedValue({ actorRole: 'SYSTEM' }) },
     workerProfile: { findUnique: workerProfileFindUnique, update: vi.fn() },
     $transaction: vi.fn(async (ops: Promise<unknown>[]) => Promise.all(ops)),
   };
@@ -26,7 +26,7 @@ function fakePrisma(task: Record<string, unknown> | null, updateManyCount: numbe
 }
 
 function fakePayments() {
-  return { release: vi.fn().mockResolvedValue(undefined) };
+  return { release: vi.fn().mockResolvedValue(true) };
 }
 
 function fakeAutoApproveQueue() {
@@ -38,7 +38,7 @@ function fakeNotifications() {
 }
 
 function fakeRealtime() {
-  return { emitTaskStatus: vi.fn() };
+  return { taskStatus: vi.fn() };
 }
 
 function baseTask(overrides: Record<string, unknown> = {}) {
@@ -130,5 +130,40 @@ describe('ReviewService.reject', () => {
     const result = await service.reject('t1', 'req1', 'Not good enough');
     expect(result).toEqual({ status: 'IN_PROGRESS' });
     expect(autoApproveQueue.cancel).toHaveBeenCalledWith('t1');
+  });
+});
+
+describe('ReviewService.releaseStranded — COMPLETED with the payment still held (docs/22, #2)', () => {
+  it('releases, then tells the worker once', async () => {
+    const { client } = fakePrisma(baseTask({ status: 'COMPLETED' }), 1);
+    const payments = fakePayments();
+    const notifications = fakeNotifications();
+    const service = new ReviewService(client as never, payments as never, fakeAutoApproveQueue() as never, notifications as never, fakeRealtime() as never);
+
+    const result = await service.releaseStranded('t1');
+
+    expect(result.acted).toBe(true);
+    expect(payments.release).toHaveBeenCalledWith(expect.objectContaining({ taskId: 't1', workerPayoutPaise: 42_500 }));
+    expect(notifications.notify).toHaveBeenCalledOnce();
+    expect(notifications.notify).toHaveBeenCalledWith('worker1', expect.objectContaining({ event: 'TASK_AUTO_APPROVED' }));
+  });
+
+  it('does nothing more when another caller released first', async () => {
+    const { client } = fakePrisma(baseTask({ status: 'COMPLETED' }), 1);
+    const payments = { release: vi.fn().mockResolvedValue(false) };
+    const notifications = fakeNotifications();
+    const service = new ReviewService(client as never, payments as never, fakeAutoApproveQueue() as never, notifications as never, fakeRealtime() as never);
+
+    expect((await service.releaseStranded('t1')).acted).toBe(false);
+    expect(notifications.notify).not.toHaveBeenCalled();
+  });
+
+  it('ignores a task that is not COMPLETED', async () => {
+    const { client } = fakePrisma(baseTask({ status: 'DISPUTED' }), 1);
+    const payments = fakePayments();
+    const service = new ReviewService(client as never, payments as never, fakeAutoApproveQueue() as never, fakeNotifications() as never, fakeRealtime() as never);
+
+    expect((await service.releaseStranded('t1')).acted).toBe(false);
+    expect(payments.release).not.toHaveBeenCalled();
   });
 });

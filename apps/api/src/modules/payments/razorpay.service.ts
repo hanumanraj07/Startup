@@ -9,6 +9,18 @@ export interface RazorpayOrder {
   currency: string;
 }
 
+/** The fields of a Razorpay refund this codebase reads, from the API or a webhook. */
+export interface RazorpayRefundEntity {
+  id: string;
+  payment_id: string;
+  amount: number;
+  status: 'pending' | 'processed' | 'failed';
+  notes?: Record<string, string | number> | unknown[];
+}
+
+/** Our refund id, carried on the gateway refund so a retry can find it. */
+export const REFUND_REFERENCE_NOTE = 'onsite_refund_id';
+
 /**
  * Thin wrapper around the Razorpay SDK. Kept separate from PaymentsService so
  * that service stays testable against a fake without needing real
@@ -44,6 +56,40 @@ export class RazorpayService {
   }
 
   /**
+   * Refunds part or all of a captured payment, at normal speed (free). Our
+   * refund id goes in the notes and the receipt, so a retry after an
+   * unanswered call can find the refund instead of sending a second one.
+   */
+  async createRefund(params: { gatewayPaymentId: string; amountPaise: number; refundId: string }): Promise<RazorpayRefundEntity> {
+    const refund = await this.client().payments.refund(params.gatewayPaymentId, {
+      amount: params.amountPaise,
+      speed: 'normal',
+      receipt: `rf-${params.refundId}`.slice(0, 40),
+      notes: { [REFUND_REFERENCE_NOTE]: params.refundId },
+    });
+    return refund as unknown as RazorpayRefundEntity;
+  }
+
+  /** A refund on this payment that carries our refund id, if the gateway has one. */
+  async findRefund(gatewayPaymentId: string, refundId: string): Promise<RazorpayRefundEntity | null> {
+    const list = await this.client().payments.fetchMultipleRefund(gatewayPaymentId, { count: 100 });
+    const items = (list.items ?? []) as unknown as RazorpayRefundEntity[];
+    return items.find((r) => refundReference(r) === refundId) ?? null;
+  }
+
+  async fetchRefund(gatewayPaymentId: string, gatewayRefundId: string): Promise<RazorpayRefundEntity> {
+    const refund = await this.client().payments.fetchRefund(gatewayPaymentId, gatewayRefundId);
+    return refund as unknown as RazorpayRefundEntity;
+  }
+
+  /** The captured payment on an order, for a record that never stored its payment id. */
+  async capturedPaymentForOrder(orderId: string): Promise<string | null> {
+    const list = await this.client().orders.fetchPayments(orderId);
+    const items = (list.items ?? []) as unknown as { id: string; status: string }[];
+    return items.find((p) => p.status === 'captured' || p.status === 'refunded')?.id ?? null;
+  }
+
+  /**
    * HMAC-SHA256 over the raw webhook body, per Razorpay's own verification
    * scheme. `timingSafeEqual` rather than `===`, so comparing a forged
    * signature doesn't leak timing information about how much of it matched.
@@ -60,4 +106,12 @@ export class RazorpayService {
     if (expectedBuf.length !== receivedBuf.length) return false;
     return timingSafeEqual(expectedBuf, receivedBuf);
   }
+}
+
+/** Our refund id on a gateway refund, from its notes. */
+export function refundReference(refund: Pick<RazorpayRefundEntity, 'notes'>): string | undefined {
+  const notes = refund.notes;
+  if (!notes || Array.isArray(notes)) return undefined;
+  const value = notes[REFUND_REFERENCE_NOTE];
+  return value === undefined ? undefined : String(value);
 }

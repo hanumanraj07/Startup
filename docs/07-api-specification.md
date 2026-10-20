@@ -82,8 +82,8 @@ REST over HTTPS. JSON. Base path `/api/v1`.
 | POST | `/tasks` | user | Creates a **draft**. Server computes commission and payout. Client-supplied fee values are ignored. Prohibited screening and risk scoring run here. `budgetPaise` is the task payment the requester chose (₹100–₹50,000); `itemBudgetPaise` (pickup & delivery only, up to ₹10,000) adds an item to buy; nothing is spent until the requester approves a bill (see Item bills) |
 | GET | `/tasks/mine` | requester | Own tasks |
 | GET | `/tasks/:id` | party | Projection differs by role. See below |
-| PATCH | `/tasks/:id` | requester | Draft only |
-| POST | `/tasks/:id/publish` | requester | **Requires captured payment.** Fails otherwise |
+| PATCH | `/tasks/:id` | requester | Draft only. Once a payment exists (even an unpaid gateway order), `budgetPaise`, `itemBudgetPaise` and `categorySlug` are refused; cancel for a full refund instead |
+| POST | `/tasks/:id/publish` | requester | **Requires captured payment of exactly the task payment plus item budget.** Fails otherwise |
 | POST | `/tasks/:id/cancel` | requester | Refund per policy |
 | GET | `/tasks/:id/history` | party | Status transition history |
 
@@ -152,7 +152,7 @@ Unassigned tasks show an approximate location to workers, not the exact address.
 |---|---|---|---|
 | POST | `/payments/orders` | requester | Creates a gateway order for a draft task. **Amount computed server-side from the task**, never taken from the client. Idempotency key required |
 | GET | `/payments/:id` | requester | Server-side truth, not a client claim |
-| POST | `/payments/webhook` | **public, signature-verified** | Razorpay callback. Signature verified before anything else. Deduplicated on event id. Replay-safe |
+| POST | `/payments/webhook` | **public, signature-verified** | Razorpay callback. Signature verified before anything else. Deduplicated on event id (the refund id for `refund.*` events, else the payment id). Replay-safe. Handles `payment.captured`, `payment.failed`, `refund.processed`, `refund.failed` (and `refund.created`); the Razorpay dashboard must send the refund events too |
 | GET | `/payouts/mine` | worker | Payout history: amount, earnings and item reimbursement apart, status, failure reason, reference, masked destination |
 | GET | `/payouts/summary` | worker | Ready to pay out, on the way, paid; lifetime earnings and reimbursements; the account payouts go to; provider |
 | POST | `/payouts/settle` | worker | "Pay out": sends everything owed to the verified default account, retrying failures at once. 10 per hour |

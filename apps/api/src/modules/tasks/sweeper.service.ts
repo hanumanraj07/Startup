@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { OffersService } from '../matching/offers.service';
 import { PayoutsService } from '../payments/payouts.service';
+import { RefundsService } from '../payments/refunds.service';
 import { ReviewService } from './review.service';
 import { TasksService } from './tasks.service';
 
@@ -29,6 +30,9 @@ import { TasksService } from './tasks.service';
  * tick or job wins for a given task, every other attempt is a harmless
  * no-op. See docs/05-system-architecture.md and ai/memory.md.
  */
+/** How long a finished task must sit untouched before its held payment counts as stranded. */
+const STRANDED_AFTER_MS = 2 * 60 * 1000;
+
 @Injectable()
 export class SweeperService {
   private readonly logger = new Logger(SweeperService.name);
@@ -40,6 +44,7 @@ export class SweeperService {
     private readonly tasks: TasksService,
     private readonly offers: OffersService,
     private readonly payouts: PayoutsService,
+    private readonly refunds: RefundsService,
   ) {}
 
   start(intervalMs: number): void {
@@ -49,6 +54,8 @@ export class SweeperService {
       void this.runTaskExpirySweep();
       void this.runOfferExpirySweep();
       void this.runPayoutSweep();
+      void this.runStrandedMoneySweep();
+      void this.runRefundSweep();
     }, intervalMs);
     // Never let a scheduled tick keep the process alive on its own if
     // everything else has shut down.
@@ -142,6 +149,59 @@ export class SweeperService {
         }
       } catch (error) {
         this.logger.error(`Sweeper failed to expire task ${id}: ${String(error)}`);
+      }
+    }
+
+    return { processed: due.length, acted };
+  }
+
+  /**
+   * Sends the refunds the ledger has queued to the gateway, retries failed
+   * ones, and checks on any the gateway has not settled (docs/22, #4).
+   */
+  async runRefundSweep(): Promise<number> {
+    try {
+      return await this.refunds.sweep();
+    } catch (error) {
+      this.logger.error(`Sweeper failed to send refunds: ${String(error)}`);
+      return 0;
+    }
+  }
+
+  /**
+   * Money left behind a finished status: a task EXPIRED or CANCELLED whose
+   * payment was never refunded, or COMPLETED whose payment was never
+   * released. Each of those flows writes the status first and moves money
+   * after, so a crash between the two strands the payment, and nothing else
+   * revisits a task once it has left the statuses the other sweeps read.
+   * Only tasks untouched for STRANDED_AFTER_MS are considered, so this never
+   * races the live path that is about to move the money itself.
+   */
+  async runStrandedMoneySweep(): Promise<{ processed: number; acted: number }> {
+    let due: { id: string; status: string }[];
+    try {
+      due = await this.prisma.task.findMany({
+        where: {
+          status: { in: ['EXPIRED', 'CANCELLED', 'COMPLETED'] },
+          payment: { status: 'CAPTURED' },
+          updatedAt: { lte: new Date(Date.now() - STRANDED_AFTER_MS) },
+        },
+        select: { id: true, status: true },
+        take: 50,
+      });
+    } catch (error) {
+      this.logger.error(`Sweeper failed to look for stranded payments: ${String(error)}`);
+      return { processed: 0, acted: 0 };
+    }
+
+    let acted = 0;
+    for (const { id, status } of due) {
+      try {
+        const result =
+          status === 'COMPLETED' ? await this.review.releaseStranded(id) : await this.tasks.refundStranded(id);
+        if (result.acted) acted += 1;
+      } catch (error) {
+        this.logger.error(`Sweeper failed to repair the stranded payment of task ${id}: ${String(error)}`);
       }
     }
 

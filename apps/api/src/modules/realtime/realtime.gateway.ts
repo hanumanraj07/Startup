@@ -6,9 +6,8 @@ import {
   OnGatewayDisconnect,
   SubscribeMessage,
   WebSocketGateway,
-  WebSocketServer,
 } from '@nestjs/websockets';
-import type { Server, Socket } from 'socket.io';
+import type { Socket } from 'socket.io';
 import { loadEnv } from '../../config/env';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TokenService } from '../auth/token.service';
@@ -52,9 +51,6 @@ import { taskRoom, userRoom } from './rooms';
 })
 export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(RealtimeGateway.name);
-
-  @WebSocketServer()
-  server!: Server;
 
   constructor(
     private readonly tokens: TokenService,
@@ -141,31 +137,8 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     if (data?.taskId) void client.leave(taskRoom(data.taskId));
   }
 
-  /** Called by ChatService after a message is persisted and redacted. Never emits the raw body. */
-  emitNewMessage(taskId: string, message: unknown): void {
-    this.server.to(taskRoom(taskId)).emit('message:new', message);
-  }
-
-  /**
-   * Takes a user's sockets out of a task's room — used when a worker leaves
-   * or is removed, so they stop receiving that task's chat and updates at
-   * once rather than whenever they next reconnect. fetchSockets goes through
-   * the Redis adapter, so this reaches sockets held by any API instance.
-   */
-  async removeUserFromTask(taskId: string, userId: string): Promise<void> {
-    try {
-      const sockets = await this.server.in(taskRoom(taskId)).fetchSockets();
-      for (const socket of sockets) {
-        if (socket.data.userId === userId) socket.leave(taskRoom(taskId));
-      }
-    } catch (error) {
-      this.logger.warn(`Could not remove user ${userId} from task room ${taskId}: ${String(error)}`);
-    }
-  }
-
-  /** Broadcasts a task status change to its room — used for the live timeline (docs/09, docs/07-ui-design). */
-  emitTaskStatus(taskId: string, status: string): void {
-    this.server.to(taskRoom(taskId)).emit('task:status', { taskId, status });
-  }
+  // Outbound events (status changes, chat messages, removing a user from a
+  // room) go through RealtimePublisher, which works from any process. This
+  // gateway's `server` exists only in the API process; calling it from the
+  // worker process threw and skipped refunds (docs/22, #1).
 }
-

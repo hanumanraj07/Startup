@@ -6,6 +6,29 @@ Newest entries at the top. Every entry states the decision, the reasoning, and w
 
 ---
 
+## 2026-10-20 — Production audit P0 fixes: broadcasts never block money, stranded payments are swept, the price freezes once paid, refunds reach the gateway
+
+The production readiness audit (`docs/22-production-readiness-audit.md`) found four P0 defects; the founder asked for them to be fixed one by one.
+
+**#1 and #2: a broadcast crashed the worker process before money moved.** The sweeper and auto-approval run in `ROLE=worker`, where `RealtimeGateway.server` does not exist; `emitTaskStatus` threw between the status write and the refund (or release). Two expired production tasks kept the requester's money.
+- **Decision:** every outbound event goes through `RealtimePublisher` (the Redis emitter, which works from any process and never throws): `taskStatus`, `newMessage`, and `removeUserFromTask` (now `socketsLeave` on the user's room, so it reaches every instance). The gateway is inbound-only, and its `server` field is gone, so nobody can call it from the wrong process again.
+- **Decision:** a stranded-money sweep (`SweeperService.runStrandedMoneySweep`): a task EXPIRED or CANCELLED with its payment still CAPTURED is refunded, and COMPLETED with it still CAPTURED is released, with the stats and notification the crash skipped. Only tasks untouched for 2 minutes, so it never races the live path. `refundFull` and `release` now claim the payment with a conditional update and report whether they acted, so the sweep and the live path cannot both move money.
+- **Rejected for now:** a full transactional outbox for status events (the publisher is already best-effort and clients re-fetch on reconnect); making status and money one transaction everywhere (that is audit #10, a larger change).
+
+**#3: the price of a paid draft could be raised before publishing.**
+- **Decision:** once any payment row exists (even an unpaid Razorpay order, whose amount is fixed), `PATCH /tasks/:id` refuses budget, item budget and category. Location stays editable, since it moves no money. `publish` requires the captured amount to equal `requesterTotal(budget, itemBudget)` and logs an error when it does not. The wizard never edits a draft after creating it, so nothing in the app changes.
+
+**#4: refunds were bookkeeping only.**
+- **Decision:** a refund outbox in the ledger. `LedgerService.writeEntries` writes a `refunds` row in the same transaction as every credit to REFUND, so no flow (cancel, expiry, release's unspent item money, dispute refund or split, any future one) can book a refund without sending it. The amount is split across the task payment, then item top-ups, since a gateway refunds each payment separately and never above what it captured. `RefundsService` (sweeper, every minute) sends each row, claims each attempt by attempt count, checks Razorpay for a refund carrying the row id before any retry (a timed-out call may have reached the gateway), follows it by `refund.*` webhook and a 30-minute poll, retries failures with backoff, and logs an error after the eighth attempt.
+- **Decision:** the ledger keeps recording the obligation at decision time, and the refund row tracks the transfer: the same split as WORKER_PAYABLE and payouts. Considered and turned down: moving the ledger only on gateway confirmation, which would change every money flow and its tests for no gain in what the ledger can prove.
+- Top-ups now store their gateway payment id (`item_purchases.top_up_gateway_payment_id`); one never stored is looked up from its order.
+- **Not covered:** refunds booked before this existed have no row and were never sent. Production used Razorpay test keys throughout, so no real money is affected, and no backfill was written.
+- **Deploy needs:** the Razorpay dashboard webhook must also send `refund.processed` and `refund.failed`.
+
+**Verified locally:** the worker role expired and refunded an overdue task with no error; the repair sweep refunded 29 stranded expired tasks and released 1 stranded completed task (ledger unbalanced: 0); a raised price after paying was refused, a mismatched payment could not publish; a cancelled paid task queued its refund with the ledger entry and the worker settled it (mock). A real Razorpay test-mode refund could not be completed locally (no genuine test payment, and no webhooks reach localhost); the first will be the 2 stuck production tasks after deploy. Found while testing: a bare gateway error (`{ statusCode: 404 }`) was stored as "[object Object]"; it is now kept readable.
+
+---
+
 ## 2026-10-20 — P6: item purchases are approved before anything is paid; the platform pays the shop, the worker fronts nothing by default
 
 **The founder questioned P3's item money**, and rightly. P3 had the worker pay at the shop with their own money (up to ₹10,000), type in the cost with a receipt photo, and be reimbursed on approval, 24 hours or more later. Problems: the worker carried the risk (a full-refund dispute left them out of pocket); the cost was whatever they typed, against an easily edited photo; a colluding requester and worker could move ₹10,000 between themselves with a fake receipt, which is the unexplained money movement trust & safety bans; a price change or substitute had no path; and the reimbursement sat inside the worker's payout, so it looked like income.

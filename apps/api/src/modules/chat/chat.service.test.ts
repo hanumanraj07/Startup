@@ -30,7 +30,7 @@ function fakeNotifications() {
 }
 
 function fakeRealtime() {
-  return { emitNewMessage: vi.fn() };
+  return { newMessage: vi.fn() };
 }
 
 describe('ChatService.send — chat closes once the task is finished', () => {

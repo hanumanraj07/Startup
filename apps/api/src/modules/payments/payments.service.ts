@@ -1,11 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
+import type { PaymentStatus } from '@prisma/client';
 import { requesterTotal } from '@onsite/money';
 import { decodeCursor, encodeCursor } from '@onsite/utils';
 import { BusinessRuleError, ForbiddenError, NotFoundError } from '../../common/errors';
 import { loadEnv } from '../../config/env';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LedgerService } from './ledger.service';
-import { RazorpayService } from './razorpay.service';
+import { RazorpayService, type RazorpayRefundEntity } from './razorpay.service';
+import { RefundsService } from './refunds.service';
 import { ModerationService } from '../moderation/moderation.service';
 import { PayoutsService } from './payouts.service';
 
@@ -31,6 +33,7 @@ export class PaymentsService {
     private readonly razorpay: RazorpayService,
     private readonly moderation: ModerationService,
     private readonly payouts: PayoutsService,
+    private readonly refunds: RefundsService,
   ) {}
 
   async createOrder(params: { taskId: string; requesterId: string; idempotencyKey: string }) {
@@ -117,7 +120,10 @@ export class PaymentsService {
   async handleWebhook(rawBody: Buffer, signatureHeader: string | undefined): Promise<{ received: true }> {
     const signatureVerified = this.razorpay.verifyWebhookSignature(rawBody, signatureHeader);
 
-    let payload: { event?: string; payload?: { payment?: { entity?: RazorpayPaymentEntity } } };
+    let payload: {
+      event?: string;
+      payload?: { payment?: { entity?: RazorpayPaymentEntity }; refund?: { entity?: RazorpayRefundEntity } };
+    };
     try {
       payload = JSON.parse(rawBody.toString('utf8'));
     } catch {
@@ -125,7 +131,11 @@ export class PaymentsService {
     }
 
     const paymentEntity = payload.payload?.payment?.entity;
-    const eventId = paymentEntity?.id ? `${payload.event}:${paymentEntity.id}` : undefined;
+    // A refund event names the refund: one payment can have several refunds,
+    // each with its own processed/failed events.
+    const refundEntity = payload.payload?.refund?.entity;
+    const entityId = refundEntity?.id ?? paymentEntity?.id;
+    const eventId = entityId ? `${payload.event}:${entityId}` : undefined;
 
     if (!signatureVerified || !eventId) {
       // Recorded even when unverified — a forged or malformed delivery is
@@ -166,6 +176,8 @@ export class PaymentsService {
         await this.captureFromWebhook(paymentEntity);
       } else if (payload.event === 'payment.failed' && paymentEntity) {
         await this.failFromWebhook(paymentEntity);
+      } else if (payload.event?.startsWith('refund.') && refundEntity) {
+        await this.refunds.applyGatewayUpdate(refundEntity);
       }
       await this.prisma.webhookEvent.update({ where: { id: event.id }, data: { processedAt: new Date() } });
     } catch (error) {
@@ -187,7 +199,7 @@ export class PaymentsService {
       // paid to approve a bill above the budget.
       const purchase = await this.prisma.itemPurchase.findUnique({ where: { topUpGatewayOrderId: entity.order_id } });
       if (purchase) {
-        await this.captureTopUp(purchase.id);
+        await this.captureTopUp(purchase.id, entity.id);
         return;
       }
       this.logger.warn(`payment.captured for unknown order ${entity.order_id} (payment ${entity.id}).`);
@@ -295,11 +307,13 @@ export class PaymentsService {
    * A top-up's money is held: escrow grows by it and so does the task's item
    * top-up. The conditional update makes a replayed webhook a no-op.
    */
-  async captureTopUp(purchaseId: string): Promise<void> {
+  async captureTopUp(purchaseId: string, gatewayPaymentId?: string): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.itemPurchase.updateMany({
         where: { id: purchaseId, topUpCapturedAt: null },
-        data: { topUpCapturedAt: new Date() },
+        // The gateway payment is kept so unspent top-up money can be
+        // refunded against it.
+        data: { topUpCapturedAt: new Date(), ...(gatewayPaymentId && { topUpGatewayPaymentId: gatewayPaymentId }) },
       });
       if (claimed.count === 0) return;
       const purchase = await tx.itemPurchase.findUniqueOrThrow({ where: { id: purchaseId } });
@@ -311,34 +325,43 @@ export class PaymentsService {
     });
   }
 
-  /** Read by the task service to decide whether DRAFT → PUBLISHED is allowed. */
-  async isCaptured(taskId: string): Promise<boolean> {
-    const payment = await this.prisma.payment.findUnique({ where: { taskId } });
-    return payment?.status === 'CAPTURED';
+  /**
+   * The task's payment, if one was ever started: its status and the amount
+   * it covers. Read by the task service to freeze a draft's price once
+   * payment has begun, and to check at publish that what was captured is
+   * what the task owes.
+   */
+  async forTask(taskId: string): Promise<{ status: PaymentStatus; amountPaise: bigint } | null> {
+    return this.prisma.payment.findUnique({ where: { taskId }, select: { status: true, amountPaise: true } });
   }
 
   /**
    * Full refund on pre-assignment cancellation or expiry. Idempotent: calling
    * it on an already-refunded payment is a no-op rather than a double entry.
    */
-  async refundFull(taskId: string): Promise<void> {
+  async refundFull(taskId: string): Promise<boolean> {
     const payment = await this.prisma.payment.findUnique({ where: { taskId } });
-    if (!payment || payment.status !== 'CAPTURED') return;
+    if (!payment || payment.status !== 'CAPTURED') return false;
 
-    await this.prisma.payment.update({
-      where: { id: payment.id },
+    // Conditional claim: of two callers racing (the live path and the
+    // stranded-money sweep), only the one whose write still finds CAPTURED
+    // goes on to write ledger entries.
+    const claimed = await this.prisma.payment.updateMany({
+      where: { id: payment.id, status: 'CAPTURED' },
       data: {
         status: 'REFUNDED',
         refundedAt: new Date(),
         refundAmountPaise: payment.amountPaise,
       },
     });
+    if (claimed.count === 0) return false;
 
     await this.ledger.recordFullRefund({
       taskId,
       paymentId: payment.id,
       amountPaise: Number(payment.amountPaise),
     });
+    return true;
   }
 
   /**
@@ -359,9 +382,9 @@ export class PaymentsService {
     tcsPaise: number;
     tdsPaise: number;
     workerPayoutPaise: number;
-  }, options: { sendNow?: boolean } = {}): Promise<void> {
+  }, options: { sendNow?: boolean } = {}): Promise<boolean> {
     const payment = await this.prisma.payment.findUnique({ where: { taskId: params.taskId } });
-    if (!payment || payment.status !== 'CAPTURED') return;
+    if (!payment || payment.status !== 'CAPTURED') return false;
 
     const task = await this.prisma.task.findUniqueOrThrow({ where: { id: params.taskId } });
     if (!task.assignedWorkerId) {
@@ -371,14 +394,16 @@ export class PaymentsService {
     const budgetPaise = Number(task.budgetPaise);
     const itemRefundPaise = await this.heldItemPaise(task.id, budgetPaise);
 
-    await this.prisma.payment.update({
-      where: { id: payment.id },
+    // Conditional claim, as in refundFull: only one caller releases.
+    const claimed = await this.prisma.payment.updateMany({
+      where: { id: payment.id, status: 'CAPTURED' },
       data: {
         status: 'RELEASED',
         releasedAt: new Date(),
         ...(itemRefundPaise > 0 && { refundAmountPaise: itemRefundPaise, refundedAt: new Date() }),
       },
     });
+    if (claimed.count === 0) return false;
 
     await this.payouts.recordOwed({
       taskId: params.taskId,
@@ -401,6 +426,7 @@ export class PaymentsService {
     // A caller that has not yet written the task's own final status (a
     // dispute decision) sends afterwards, so the payout can mark it paid.
     if (options.sendNow !== false) await this.payouts.sendOwed(task.assignedWorkerId);
+    return true;
   }
 
   /**
