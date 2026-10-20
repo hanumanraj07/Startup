@@ -6,6 +6,7 @@ import { toSelfUser } from '../../common/projections';
 import { loadEnv } from '../../config/env';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GoogleAuthService } from './google-auth.service';
+import { LoginAttemptsService } from './login-attempts.service';
 import { PasswordService } from './password.service';
 import { TokenService } from './token.service';
 import { VerificationService } from './verification.service';
@@ -37,6 +38,7 @@ export class AuthService {
     private readonly tokens: TokenService,
     private readonly verification: VerificationService,
     private readonly google: GoogleAuthService,
+    private readonly attempts: LoginAttemptsService,
   ) {}
 
   async register(input: RegisterInput): Promise<AuthResult> {
@@ -61,6 +63,8 @@ export class AuthService {
   }
 
   async login(input: LoginInput): Promise<AuthResult> {
+    // Per-account backoff on wrong passwords, before any work (docs/22, #7).
+    await this.attempts.assertMayTry(input.email);
     const user = await this.prisma.user.findUnique({ where: { email: input.email } });
 
     // Constant-shaped failure: whether the account exists or the password is
@@ -71,8 +75,10 @@ export class AuthService {
     const passwordOk = await this.passwords.verify(passwordHash, input.password);
 
     if (!user || !user.passwordHash || !passwordOk) {
+      await this.attempts.recordFailure(input.email);
       throw new UnauthenticatedError('Incorrect email or password.');
     }
+    await this.attempts.recordSuccess(input.email);
 
     if (user.status !== 'ACTIVE') {
       throw new UnauthenticatedError('This account is not active.');

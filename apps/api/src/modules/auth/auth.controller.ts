@@ -33,22 +33,35 @@ import { VerificationService } from './verification.service';
 const verifyEmailSchema = z.object({ token: z.string().min(1) });
 
 /**
- * Rate limits from docs/07-api-specification.md: the strictest tier, applied
- * per route. Two independent dimensions, per docs/16-security-requirements.md
- * ("per IP and per account, whichever binds first") — `default` is IP-based
- * (AccountAwareThrottlerGuard's normal behavior), `account` is keyed by the
- * email/phone in the request body. Either exceeding its own limit blocks the
- * request; a flood spread across many IPs against one account is caught by
- * `account` exactly as a flood from one IP against many accounts is caught
- * by `default`.
+ * Rate limits from docs/07-api-specification.md, revised for shared mobile
+ * IPs (docs/22, #7). The account is what is protected, so the account is
+ * what is limited: `account` is keyed by the email/phone in the request
+ * body, `user` by the signed-in user, and the real brute-force defence for
+ * passwords is LoginAttemptsService's per-account backoff on failures.
+ *
+ * The per-IP `ip` dimension is only a flood guard. Jio and Airtel put
+ * thousands of phones behind one public IP (carrier-grade NAT), so a tight
+ * per-IP limit locks out everyone on a tower because a few people mistyped;
+ * it used to be 5 per 15 minutes. Either dimension exceeding its own limit
+ * blocks the request ("whichever binds first", docs/16).
  */
 const AUTH_THROTTLE = {
-  default: { limit: 5, ttl: 900_000 }, // 5 per 15 minutes, per IP
-  account: { limit: 5, ttl: 900_000 }, // 5 per 15 minutes, per account
+  ip: { limit: 300, ttl: 900_000 }, // flood guard: 300 per 15 minutes, per IP
+  account: { limit: 20, ttl: 900_000 }, // 20 per 15 minutes, per account
 };
-const OTP_THROTTLE = {
-  default: { limit: 3, ttl: 3_600_000 }, // 3 per hour, per IP
-  account: { limit: 3, ttl: 3_600_000 }, // 3 per hour, per account
+/** Each email costs money and lands in someone's inbox: few per account. */
+const EMAIL_THROTTLE = {
+  ip: { limit: 300, ttl: 900_000 },
+  account: { limit: 3, ttl: 3_600_000 },
+};
+/** Signed-in routes: an SMS costs money, so sends are few per user. Wrong codes lock the code itself. */
+const OTP_SEND_THROTTLE = {
+  ip: { limit: 300, ttl: 3_600_000 },
+  user: { limit: 3, ttl: 3_600_000 },
+};
+const OTP_VERIFY_THROTTLE = {
+  ip: { limit: 300, ttl: 3_600_000 },
+  user: { limit: 10, ttl: 3_600_000 },
 };
 
 @Controller('auth')
@@ -129,7 +142,7 @@ export class AuthController {
     return { success: true };
   }
 
-  @Throttle(OTP_THROTTLE)
+  @Throttle(OTP_SEND_THROTTLE)
   @Post('phone/send-otp')
   async sendPhoneOtp(
     @Body(zodPipe(sendOtpSchema)) body: { phone: string },
@@ -139,7 +152,7 @@ export class AuthController {
     return { success: true };
   }
 
-  @Throttle(OTP_THROTTLE)
+  @Throttle(OTP_VERIFY_THROTTLE)
   @Post('phone/verify-otp')
   async verifyPhoneOtp(
     @Body(zodPipe(verifyOtpSchema)) body: { phone: string; code: string },
@@ -154,7 +167,7 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle(AUTH_THROTTLE)
+  @Throttle(EMAIL_THROTTLE)
   @Post('password/forgot')
   @UsePipes(zodPipe(forgotPasswordSchema))
   async forgotPassword(@Body() body: { email: string }) {

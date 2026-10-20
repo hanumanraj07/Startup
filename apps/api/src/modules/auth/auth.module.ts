@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { LoginAttemptsService } from './login-attempts.service';
 import { GoogleAuthService } from './google-auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { PasswordService } from './password.service';
@@ -15,7 +16,7 @@ import { VerificationService } from './verification.service';
   // sync with the same validated environment everything else uses.
   imports: [JwtModule.register({})],
   controllers: [AuthController],
-  providers: [
+  providers: [LoginAttemptsService, 
     AuthService,
     PasswordService,
     TokenService,

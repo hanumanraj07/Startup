@@ -242,14 +242,19 @@ All require `platform_role = ADMIN`. All write actions produce an audit log entr
 
 | Class | Limit |
 |---|---|
-| Login, register, password reset | 5 per 15 minutes per IP and per account |
-| OTP send | 3 per hour per user and per phone |
+| Wrong passwords | 5 per account, then the account waits 1 minute, doubling per further failure up to 1 hour; a correct password clears it (`429 TOO_MANY_ATTEMPTS`). Counted per email, so addresses with no account behave the same |
+| Login, register, password reset, Google sign-in | 20 per 15 minutes per account; 300 per 15 minutes per IP as a flood guard only |
+| Password reset email | 3 per hour per account |
+| OTP send / verify | 3 / 10 per hour per signed-in user (each code also locks after 5 wrong tries) |
 | Payment creation | 10 per hour per user |
 | Task creation | 20 per hour per user |
 | Accept | 30 per minute per worker |
 | Messages | 60 per minute per user |
 | Presign | 60 per hour per task |
-| General authenticated reads | 300 per minute per user |
+| General authenticated reads | 300 per minute per user (per IP for requests without a token) |
+| Every request | 3,000 per minute per IP: a flood guard, sized for a carrier NAT's worth of phones |
+
+Limits are keyed by the account or user, never by IP alone: Indian mobile carriers put thousands of phones behind one public IP (carrier-grade NAT), so a per-IP limit is only a flood guard (docs/22, #7). The counters live in Redis; if Redis is unreachable the limits are skipped (fail open) rather than failing or stalling every request, and a warning is logged.
 
 ## Server-side enforcement, non-negotiable
 

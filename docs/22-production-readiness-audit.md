@@ -25,7 +25,7 @@ Severity:
 | 4 | Refunds are bookkeeping only; no refund is ever sent to Razorpay | P0 · **fixed locally** |
 | 5 | Workers can never actually be paid (no payout partner; mock driver only) | P1 (launch blocker) |
 | 6 | Email is printed to server logs, so email sign-ups can't verify or reset passwords | P1 (launch blocker) |
-| 7 | Login limited to 5 tries per 15 minutes **per IP**; Indian mobile networks share IPs across thousands of users | P1 |
+| 7 | Login limited to 5 tries per 15 minutes **per IP**; Indian mobile networks share IPs across thousands of users | P1 · **fixed locally** |
 | 8 | Many status changes are unconditional writes that race each other (cancel vs accept, expiry vs accept, matching vs accept, en-route vs removal) | P1 · **fixed locally** |
 | 9 | Refunds, releases and dispute decisions can run twice at the same time and double-book money | P1 · **fixed locally** |
 | 10 | Multi-step money flows are not atomic; a crash midway leaves tasks stuck with nobody retrying | P1 · **mostly fixed locally** |
@@ -39,7 +39,7 @@ Severity:
 | 18 | Matching jobs have no retry and run one at a time; a burst of tasks queues up behind each other | P2 |
 | 19 | Sweeper ticks can overlap, and it loads every due task at once | P2 |
 | 20 | Worker stats (completed count, completion rate) lose updates under concurrency | P2 |
-| 21 | Rate-limit counters can become permanent blocks if a request dies mid-count; Redis outage fails every request | P2 |
+| 21 | Rate-limit counters can become permanent blocks if a request dies mid-count; Redis outage fails every request | P2 · **fixed locally** |
 | 22 | Live sockets keep working after a user is suspended or signs out elsewhere | P2 |
 | 23 | Free public map tiles and geocoder are not allowed for production traffic | P2 |
 | 24 | Free-tier hosting everywhere (Neon, Oracle, DuckDNS, Vercel Hobby) with limits and terms that don't fit a commercial launch | P2 |
@@ -124,6 +124,8 @@ The first four are the ones to fix first: two are live bugs that are holding rea
 Login allows 5 attempts per 15 minutes per IP; OTP 3 per hour per IP (`apps/api/src/modules/auth/auth.controller.ts:46`, `:50`). Jio and Airtel put thousands of phones behind one public IP (carrier-grade NAT), so a handful of users mistyping passwords locks out everyone on that tower, and a few OTP requests do the same. The global default (300 requests per minute per IP) has the same problem at scale.
 
 **How large companies do it:** limit per account and per device. Use IP only as a loose secondary signal with high limits, add CAPTCHA or proof-of-work after repeated failures rather than a hard lockout, and use exponential backoff per account.
+
+**Status (2026-10-20): fixed locally, not yet deployed.** Wrong passwords are counted per account (`LoginAttemptsService`, Redis): 5 free, then a wait of 1 minute doubling to 1 hour, cleared by a correct password; the same for addresses with no account, so it reveals nothing. Per-IP limits on auth routes are now a flood guard (300 per 15 minutes); per account 20 per 15 minutes; reset emails 3 per hour per account; OTP send and verify are per signed-in user. The global 300-per-minute default is per user when a token is present, with a new 3,000-per-minute per-IP flood guard behind it. **Verified against the local API, all from one IP:** after 5 wrong passwords the account waited (429, the right password refused too until the wait ended), while 40 sign-ins by 4 other accounts in the same minute all succeeded. **Not done:** CAPTCHA after repeated failures (needs a provider such as Cloudflare Turnstile or hCaptcha).
 
 ### 8. Status changes race each other
 
@@ -227,6 +229,8 @@ Completion stats are read, changed in code, and written back (`review.service.ts
 ### 21. Rate limiter edge cases
 
 The counter is `INCR` then `PEXPIRE` as two calls (`common/redis-throttler-storage.ts:50`–`:52`). If the process dies between them, the key never expires and that IP or user stays blocked forever. Use one Lua script or `SET … NX PX` plus `INCR`. Also decide what happens when Redis is down: today every request fails.
+
+**Status (2026-10-20): fixed locally.** The count and its expiry are one `MULTI` with `PEXPIRE … NX`. Rate limiting and the sign-in lock use a separate fail-fast Redis connection (no offline queue, 500 ms command timeout) and fail open with a warning. Every Redis connection now logs one line a minute while disconnected, where ioredis used to print a stack trace per reconnect attempt. **Verified:** with the local Redis stopped, sign-in answered in 56 ms and an authenticated read in 9 ms, and the API recovered by itself when Redis returned.
 
 ### 22. Sockets outlive their sessions
 

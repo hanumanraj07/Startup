@@ -24,7 +24,9 @@ export class SocketRedisAdapter extends IoAdapter {
   override createIOServer(port: number, options?: ServerOptions): unknown {
     const server = super.createIOServer(port, options);
     const pubClient = createBullConnection();
-    const subClient = pubClient.duplicate();
+    // A second connection rather than pubClient.duplicate(), which would not
+    // carry the quiet error listener createBullConnection attaches.
+    const subClient = createBullConnection();
     server.adapter(createAdapter(pubClient, subClient));
     return server;
   }

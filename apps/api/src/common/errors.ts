@@ -78,6 +78,12 @@ export class TaskBlockedError extends DomainError {
   readonly status = 422;
 }
 
+/** Too many wrong passwords for one account; it waits before the next try (docs/22, #7). */
+export class TooManyAttemptsError extends DomainError {
+  readonly code = 'TOO_MANY_ATTEMPTS';
+  readonly status = 429;
+}
+
 /** The user is inside the posting cooldown that follows a moderation violation. */
 export class PostingRestrictedError extends DomainError {
   readonly code = 'POSTING_RESTRICTED';

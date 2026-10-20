@@ -56,7 +56,12 @@ import { PrismaModule } from './prisma/prisma.module';
     // them down to something real.
     ThrottlerModule.forRoot({
       throttlers: [
+        // Per signed-in user when the request carries a token, else per IP
+        // (AccountAwareThrottlerGuard).
         { name: 'default', ttl: 60_000, limit: 300 },
+        // Per IP for every request, high enough for a carrier NAT's worth of
+        // phones: a flood guard, not a per-person limit (docs/22, #7).
+        { name: 'ip', ttl: 60_000, limit: 3_000 },
         { name: 'account', ttl: 60_000, limit: 1_000_000 },
         { name: 'user', ttl: 60_000, limit: 1_000_000 },
       ],

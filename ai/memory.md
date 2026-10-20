@@ -6,6 +6,21 @@ Newest entries at the top. Every entry states the decision, the reasoning, and w
 
 ---
 
+## 2026-10-20 — Sign-in limits are per account, not per IP; the rate limiter fails open (docs/22, #7 and #21)
+
+**Why:** login was 5 per 15 minutes per IP. Jio and Airtel put thousands of phones behind one public IP (carrier-grade NAT), so a few people mistyping on one tower would lock out everyone on it, and the global 300-per-minute per-IP default had the same problem at scale. And the limiter waited forever on a down Redis (the BullMQ connection queues commands), so a Redis outage would stall every request.
+
+**Decision:**
+- The brute-force defence is `LoginAttemptsService`: failures only, per email, 5 free, then 1 minute doubling to 1 hour, cleared by success; identical for addresses with no account. The throttler's per-IP limits are flood guards (auth 300 per 15 minutes per IP; every request 3,000 per minute per IP under a new `ip` throttler name). Per-account and per-user limits are the real ones: auth 20 per 15 minutes per account, reset email 3 per hour per account, OTP send 3 and verify 10 per hour per user. The `default` throttler is now per user (unverified `sub`, as `user` already was) when a token is present.
+- The throttler counts in one `MULTI` with `PEXPIRE NX`, so no counter is ever left without an expiry.
+- Request-path Redis use (`createFastFailConnection`: no offline queue, 500 ms timeout) fails open with a warning. Every Redis connection gets an error listener that logs once a minute.
+
+**Rejected:** a hard account lockout until a reset (lets anyone lock anyone out by typing their email); CAPTCHA now (needs a provider; noted as the next step); failing closed when Redis is down (one Redis failure would take the whole product offline, which is worse than an hour without rate limits, and the password hash cost still slows guessing).
+
+**Verified locally, all from one IP:** 5 wrong passwords then 429 (the right password too, until the wait ended); 40 sign-ins by 4 other accounts in the same minute all succeeded; with Redis stopped, sign-in answered in 56 ms and an authenticated read in 9 ms, and the API recovered by itself when Redis returned.
+
+---
+
 ## 2026-10-20 — Production audit P1 (#8–#13, #28): every status write is a compare-and-set; money claims before it moves; the ledger refuses an overdraft; lost webhooks are polled
 
 The founder said "yes continue" after the P0 fixes. These are the next items in docs/22's order.

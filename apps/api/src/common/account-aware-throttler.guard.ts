@@ -31,6 +31,14 @@ import { ThrottlerGuard } from '@nestjs/throttler';
  * would. The unverified claim is trusted only to decide which counter to
  * increment, never to authorize anything.
  *
+ * **`default`** — the baseline every route gets: per signed-in user when
+ * the request carries a Bearer token (the same unverified `sub`), else per
+ * IP. Per-IP alone made thousands of phones behind one carrier NAT share a
+ * single 300-per-minute bucket (docs/22, #7).
+ *
+ * **`ip`** — always the IP, with limits high enough for a carrier NAT: the
+ * flood guard behind everything, including requests with forged tokens.
+ *
  * Both dimensions are additive, not substitutional: the route's `default`
  * throttler still enforces its own IP-based limit unmodified, and either
  * dimension exceeding its own limit blocks the request — "whichever binds
@@ -50,7 +58,7 @@ export class AccountAwareThrottlerGuard extends ThrottlerGuard {
       return super.generateKey(context, accountSuffix, name);
     }
 
-    if (name === 'user') {
+    if (name === 'user' || name === 'default') {
       const req = context.switchToHttp().getRequest<{ headers: Record<string, string | undefined> }>();
       const claimedSub = decodeUnverifiedSubject(req.headers?.authorization);
       return super.generateKey(context, claimedSub ?? suffix, name);

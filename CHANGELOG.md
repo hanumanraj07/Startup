@@ -4,6 +4,11 @@ Notable changes to OnSite. Format follows [Keep a Changelog](https://keepachange
 
 ## [Unreleased]
 
+### Fixed — 2026-10-20 · Sign-in limits that work on mobile networks (docs/22)
+
+- **Other people on your network can no longer lock you out.** Mobile networks share one internet address across thousands of phones, and sign-in used to allow only 5 tries per address. Limits now follow your account: after 5 wrong passwords your account waits a minute before the next try, then a little longer each time, and the right password clears it.
+- **The app keeps working if our rate-limit store goes down**, instead of every request failing.
+
 ### Fixed — 2026-10-20 · Production audit P1 (docs/22)
 
 - **Two actions at the same moment no longer collide.** If a worker accepts just as you cancel, or the deadline passes as someone accepts, exactly one of them happens; the other is told the task changed. Before, both could happen, leaving a cancelled task with a worker on the way.
